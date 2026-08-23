@@ -1,0 +1,137 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+#root {
+  overflow-x: hidden;
+}
+/* iOS dynamic viewport: avoids 100vh notch/home-indicator overflow */
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+body {
+  @apply bg-set-bg text-set-text antialiased;
+  /* kill phone rubber-band/scrollbars: the app shell manages its own scrolling */
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3040;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- Prose (editor + markdown render) ---------- */
+.prose-set {
+  @apply text-[15px] leading-relaxed;
+}
+.prose-set h1 { @apply text-2xl font-bold mt-6 mb-3 text-white; }
+.prose-set h2 { @apply text-xl font-semibold mt-5 mb-2 text-white; }
+.prose-set h3 { @apply text-lg font-semibold mt-4 mb-2 text-white; }
+.prose-set p { @apply my-2; }
+.prose-set ul { @apply list-disc pl-6 my-2; }
+.prose-set ol { @apply list-decimal pl-6 my-2; }
+.prose-set blockquote { @apply border-l-2 border-set-accent pl-3 my-2 text-set-dim; }
+.prose-set code { @apply bg-set-panel2 rounded px-1 py-0.5 text-[13px] text-violet-300; }
+.prose-set pre { @apply bg-set-panel2 rounded-lg p-3 my-3 overflow-x-auto text-[13px]; }
+.prose-set pre code { @apply bg-transparent p-0; }
+.prose-set a { @apply text-set-accent underline underline-offset-2; }
+.prose-set hr { @apply border-set-border my-4; }
+.prose-set table { @apply w-full text-sm my-3; }
+.prose-set th { @apply text-left border-b border-set-border py-1 pr-3; }
+.prose-set td { @apply border-b border-set-border/50 py-1 pr-3; }
+.prose-set ul[data-type="taskList"] { @apply list-none pl-1; }
+.prose-set ul[data-type="taskList"] li { @apply flex items-start gap-2 my-1; }
+.prose-set ul[data-type="taskList"] label { @apply mt-1; }
+
+/* Wiki links */
+.wikilink {
+  @apply text-violet-300 underline decoration-dotted underline-offset-2 cursor-pointer;
+}
+.wikilink:hover { @apply text-violet-200 bg-violet-400/10 rounded-sm; }
+
+/* Rich markdown: tables, images, highlights */
+.prose-set table { @apply w-full text-sm my-3 border-collapse; }
+.prose-set th { @apply text-left border-b-2 border-set-border py-1.5 pr-3 font-semibold; }
+.prose-set td { @apply border-b border-set-border/60 py-1.5 pr-3 align-top; }
+.prose-set th > p, .prose-set td > p { @apply my-0; }
+.prose-set .selectedCell:after { @apply bg-set-accent/15 pointer-events-none; content: ''; position: absolute; inset: 0; }
+.prose-set img { @apply max-w-full rounded-lg my-2 max-h-[480px]; }
+.prose-set iframe { @apply max-w-full rounded-xl my-3 aspect-video; }
+.prose-set mark { @apply bg-amber-400/30 text-amber-100 rounded px-0.5; }
+.prose-set [data-block-ref] { @apply my-2; }
+
+/* Editor placeholder */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  @apply text-set-dim float-left h-0 pointer-events-none;
+}
+.tiptap:focus { outline: none; }
+
+/* Animations */
+@keyframes fadein {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.fadein { animation: fadein 0.18s ease-out; }
+
+/* Mascot (OpenMausBot / desk-pet inspired) */
+.mascot-idle { animation: mascot-bob 3.2s ease-in-out infinite; transform-origin: 50% 90%; }
+.mascot-talk { animation: mascot-talk 0.55s ease-in-out infinite; transform-origin: 50% 90%; }
+.mascot-think { animation: mascot-lean 1.6s ease-in-out infinite; transform-origin: 50% 90%; }
+.mascot-celebrate { animation: mascot-jump 0.6s ease-in-out infinite; transform-origin: 50% 100%; }
+.mascot-halo { animation: mascot-halo 2.4s ease-in-out infinite; }
+.mascot-antenna { animation: mascot-wiggle 0.8s ease-in-out infinite; transform-origin: 50px 24px; }
+.mascot-antenna-dot { animation: mascot-pulse 1s ease-in-out infinite; }
+.mascot-bubbles { animation: mascot-float 1.4s ease-in-out infinite; }
+
+@keyframes mascot-bob { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-3%) } }
+@keyframes mascot-talk { 0%, 100% { transform: translateY(0) scale(1) } 50% { transform: translateY(-5%) scale(1.03) } }
+@keyframes mascot-lean { 0%, 100% { transform: rotate(0deg) } 50% { transform: rotate(-4deg) } }
+@keyframes mascot-jump { 0%, 100% { transform: translateY(0) } 40% { transform: translateY(-14%) } 60% { transform: translateY(-10%) } }
+@keyframes mascot-halo { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-8%) } }
+@keyframes mascot-wiggle { 0%, 100% { transform: rotate(0deg) } 50% { transform: rotate(14deg) } }
+@keyframes mascot-pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.35 } }
+@keyframes mascot-float { 0% { opacity: 0; transform: translateY(4px) } 40% { opacity: 1 } 100% { opacity: 0; transform: translateY(-6px) } }
+
+.set-card {
+  @apply bg-set-panel border border-set-border rounded-xl;
+}
+.set-input {
+  @apply bg-set-panel2 border border-set-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-set-accent w-full;
+}
+.set-btn {
+  @apply bg-set-accent/20 text-blue-200 border border-set-accent/40 rounded-lg px-3 py-1.5 text-sm hover:bg-set-accent/30 transition-colors;
+}
+.set-btn-primary {
+  @apply bg-set-accent text-white rounded-lg px-3 py-1.5 text-sm hover:brightness-110 transition-all;
+}
+.set-btn-ghost {
+  @apply text-set-dim hover:text-set-text hover:bg-set-panel2 rounded-lg px-2 py-1 text-sm transition-colors;
+}
+.set-chip {
+  @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs border;
+}
