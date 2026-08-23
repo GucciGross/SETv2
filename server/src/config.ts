@@ -26,6 +26,7 @@ const env = z
     // Optional HuggingFace token for the Library surface (higher rate limits / gated repos)
     HF_TOKEN: z.string().optional(),
     SEED_DEMO: z.string().optional(),
+    REGISTRATION_OPEN: z.string().default('1'),
   })
   .passthrough()
   .parse(process.env);
@@ -50,6 +51,7 @@ export const config = {
   smtp: { host: env.SMTP_HOST, port: env.SMTP_PORT, user: env.SMTP_USER, pass: env.SMTP_PASS, from: env.SMTP_FROM },
   hfToken: env.HF_TOKEN,
   seedDemo: env.SEED_DEMO === '1',
+  registrationOpen: env.REGISTRATION_OPEN !== '0',
 };
 
 export const HASH_EMBED_DIM = 384;

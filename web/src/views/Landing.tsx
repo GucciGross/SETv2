@@ -254,6 +254,42 @@ export default function Landing() {
               </div>
             </div>
           </div>
+
+          {/* Which one is for you */}
+          <div className="set-card p-5 mb-6">
+            <div className="text-sm font-semibold text-white mb-3">Which one is right for you?</div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[540px]">
+                <thead>
+                  <tr className="text-left text-set-dim text-xs uppercase">
+                    <th className="py-2 pr-4"></th>
+                    <th className="py-2 pr-4">Self-hosted</th>
+                    <th className="py-2">SET Cloud</th>
+                  </tr>
+                </thead>
+                <tbody className="text-set-text/90">
+                  {[
+                    ['Setup', 'One Docker command on your machine or server', 'None — we run it for you'],
+                    ['Cost', 'Free forever (AGPL-3.0)', 'Cheap flat monthly price per workspace'],
+                    ['Where your data lives', 'Your Postgres, your disks, your network', 'Our managed servers, with full Markdown export anytime'],
+                    ['Maintenance', 'You update, back up, and secure the stack', 'Automatic updates, backups, and TLS'],
+                    ['Who can access', 'Only you — it can run fully offline', 'Your invited team members, over TLS'],
+                    ['LLM', 'Bring any key: local models or any API', 'Bring your own key, or bundle one with llm.wandgx.com'],
+                    ['Best for', 'Privacy-first users, homelabbers, companies with data policies', 'Teams that want to start in minutes with zero ops'],
+                  ].map(([label, selfHost, cloud]) => (
+                    <tr key={label} className="border-t border-set-border/50">
+                      <td className="py-2 pr-4 text-set-dim whitespace-nowrap">{label}</td>
+                      <td className="py-2 pr-4">{selfHost}</td>
+                      <td className="py-2">{cloud}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-set-dim mt-3">
+              Both run the same open-source core — the cloud is just our copy, operated for you. Start self-hosted and move to cloud (or back) anytime: export everything as Markdown, import it anywhere.
+            </p>
+          </div>
         </div>
       </section>
 

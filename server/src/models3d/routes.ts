@@ -130,6 +130,7 @@ export async function modelsRoutes(app: FastifyInstance) {
     const id = rid((req.params as any).id);
     const ctx = await requireResourceSpace(req, reply, 'models3d', id, 'editor');
     if (!ctx) return;
+    if (!(await requireSurface(reply, ctx.spaceId, 'threeD'))) return;
     const body = z
       .object({
         name: z.string().optional(),
@@ -147,6 +148,7 @@ export async function modelsRoutes(app: FastifyInstance) {
     const id = rid((req.params as any).id);
     const ctx = await requireResourceSpace(req, reply, 'models3d', id, 'editor');
     if (!ctx) return;
+    if (!(await requireSurface(reply, ctx.spaceId, 'threeD'))) return;
     await q(`DELETE FROM models3d WHERE id = $1`, [id]);
     return { ok: true };
   });
@@ -155,6 +157,7 @@ export async function modelsRoutes(app: FastifyInstance) {
     const id = rid((req.params as any).id);
     const ctx = await requireResourceSpace(req, reply, 'models3d', id);
     if (!ctx) return;
+    if (!(await requireSurface(reply, ctx.spaceId, 'threeD'))) return;
     const model = await one<{ name: string; kind: string; file_path: string }>(`SELECT name, kind, file_path FROM models3d WHERE id = $1`, [id]);
     if (!model || !fs.existsSync(model.file_path)) return reply.code(404).send({ error: 'File missing' });
     const ext = path.extname(model.file_path).toLowerCase();
@@ -168,6 +171,7 @@ export async function modelsRoutes(app: FastifyInstance) {
     const id = rid((req.params as any).id);
     const ctx = await requireResourceSpace(req, reply, 'models3d', id, 'editor');
     if (!ctx) return;
+    if (!(await requireSurface(reply, ctx.spaceId, 'threeD'))) return;
     const model = await one<any>(`SELECT parts FROM models3d WHERE id = $1`, [id]);
     const pages = await q<{ id: string; title: string }>(`SELECT id, title FROM pages WHERE space_id = $1 AND deleted_at IS NULL`, [ctx.spaceId]);
     // URDF models store {links, joints}; glTF models store a flat part array

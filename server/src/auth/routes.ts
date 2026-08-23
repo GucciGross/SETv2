@@ -57,6 +57,7 @@ async function createPersonalSpace(userId: string, name: string) {
 
 export async function authRoutes(app: FastifyInstance) {
   app.post('/auth/register', async (req, reply) => {
+    if (!config.registrationOpen) return reply.code(403).send({ error: 'Registration is closed on this server' });
     if (rateLimited(req.routerPath ?? 'unknown', req.ip)) return reply.code(429).send({ error: 'Too many attempts — try again in a minute' });
     const parsed = creds.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid registration (password  8 chars)' });
