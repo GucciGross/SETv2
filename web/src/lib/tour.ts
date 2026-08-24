@@ -71,7 +71,9 @@ export function startTour() {
     prevBtnText: 'Back',
     doneBtnText: 'Done',
     allowClose: true,
-    overlayColor: 'rgba(4, 6, 12, 0.78)',
+    stagePadding: 8,
+    stageRadius: 12,
+    overlayColor: 'rgba(4, 6, 12, 0.72)',
     popoverClass: 'set-tour-popover',
     onDestroyed: () => {
       void api.put('/users/onboarding', { tourDone: true }).catch(() => {});

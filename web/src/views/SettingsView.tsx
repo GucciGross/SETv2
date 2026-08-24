@@ -65,14 +65,26 @@ function MascotTab() {
 
   const randomize = () => {
     const pick = <T,>(arr: readonly T[]) => arr[Math.floor(Math.random() * arr.length)];
-    const hue = () => '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
+    // harmonious pairs: body at full-ish saturation, accent hue-shifted so the
+    // combo always reads well together (pure-random hex tends to go muddy)
+    const h = Math.floor(Math.random() * 360);
+    const hsl = (hue: number, s: number, l: number) => {
+      const a = s * Math.min(l, 1 - l);
+      const f = (n: number) => {
+        const k = (n + hue / 30) % 12;
+        const c = l - a * Math.max(-1, Math.min(Math.min(k - 3, 9 - k), 1));
+        return Math.round(255 * c).toString(16).padStart(2, '0');
+      };
+      return `#${f(0)}${f(8)}${f(4)}`;
+    };
+    const shift = pick([150, 180, 210, -30, 30]);
     setCfg({
-      name: pick(['Pixel', 'Maus', 'Bit', 'Nova', 'Gears', 'Sprout', 'Ziggy', 'Tinker', 'Ember', 'Waffle']),
-      species: pick(['bot', 'cat', 'blob', 'mouse'] as const),
-      bodyColor: hue(),
-      accentColor: hue(),
+      name: pick(['Pixel', 'Maus', 'Bit', 'Nova', 'Gears', 'Sprout', 'Ziggy', 'Tinker', 'Ember', 'Waffle', 'Comet', 'Juno', 'Rune', 'Pip', 'Bolt', 'Fern', 'Echo', 'Mochi', 'Clank', 'Widget']),
+      species: pick(['bot', 'cat', 'blob', 'mouse', 'dog', 'fox', 'bird', 'dragon', 'ghost'] as const),
+      bodyColor: hsl(h, 0.65, 0.66),
+      accentColor: hsl((h + shift + 360) % 360, 0.72, 0.58),
       eyes: pick(['normal', 'happy', 'sleepy', 'visor'] as const),
-      accessory: pick(['none', 'antenna', 'halo', 'headphones', 'hardhat', 'party'] as const),
+      accessory: pick(['none', 'antenna', 'halo', 'headphones', 'hardhat', 'party', 'scarf', 'bow'] as const),
       enabled: cfg.enabled,
     });
   };
@@ -134,6 +146,11 @@ function MascotTab() {
               <option value="cat">Cat</option>
               <option value="blob">Blob</option>
               <option value="mouse">Mouse</option>
+              <option value="dog">Dog</option>
+              <option value="fox">Fox</option>
+              <option value="bird">Bird</option>
+              <option value="dragon">Dragon</option>
+              <option value="ghost">Ghost</option>
             </select>
           </Row>
           <Row label="Body color">
@@ -160,6 +177,8 @@ function MascotTab() {
               <option value="headphones">Headphones</option>
               <option value="hardhat">Hard hat</option>
               <option value="party">Party hat</option>
+              <option value="scarf">Scarf</option>
+              <option value="bow">Bow</option>
             </select>
           </Row>
           <div className="flex gap-2 pt-1">

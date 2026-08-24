@@ -143,11 +143,11 @@ This link expires in 1 hour.`);
     const body = z
       .object({
         name: z.string().min(1).max(40),
-        species: z.enum(['bot', 'cat', 'blob', 'mouse']),
+        species: z.enum(['bot', 'cat', 'blob', 'mouse', 'dog', 'fox', 'bird', 'dragon', 'ghost']),
         bodyColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
         accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
         eyes: z.enum(['normal', 'happy', 'sleepy', 'visor']),
-        accessory: z.enum(['none', 'antenna', 'halo', 'headphones', 'hardhat', 'party']),
+        accessory: z.enum(['none', 'antenna', 'halo', 'headphones', 'hardhat', 'party', 'scarf', 'bow']),
         enabled: z.boolean().optional(),
       })
       .parse(req.body);

@@ -137,59 +137,89 @@ body {
   @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs border;
 }
 
-/* Spotlight tour (driver.js) themed to SET */
-.set-tour-popover {
-  background: var(--set-panel, #12141c);
-  border: 1px solid rgba(108, 140, 255, 0.35);
-  border-radius: 12px;
-  color: #e6e8f0;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
-  max-width: 320px;
+/* Spotlight tour (driver.js) themed to SET.
+   Doubled selectors (.driver-popover.set-tour-popover) beat driver.css's
+   single-class rules regardless of import order. */
+.driver-popover.set-tour-popover {
+  background-color: #12141c !important;
+  background: #12141c !important;
+  border: 1px solid rgba(108, 140, 255, 0.45) !important;
+  border-radius: 12px !important;
+  color: #e6e8f0 !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6) !important;
+  min-width: 260px;
+  max-width: 340px !important;
+  padding: 16px !important;
 }
-.set-tour-popover .driver-popover-title {
-  font-weight: 600;
-  font-size: 14px;
-  color: #fff;
-  margin-bottom: 4px;
+.driver-popover.set-tour-popover .driver-popover-title {
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  color: #ffffff !important;
+  margin: 0 0 4px !important;
+  line-height: 1.4 !important;
 }
-.set-tour-popover .driver-popover-description {
-  font-size: 13px;
-  line-height: 1.5;
-  color: #9aa0b4;
+.driver-popover.set-tour-popover .driver-popover-description {
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  color: #a8aec4 !important;
 }
-.set-tour-popover .driver-popover-progress-text {
-  color: #6c8cff;
-  font-size: 11px;
+.driver-popover.set-tour-popover .driver-popover-progress-text {
+  color: #6c8cff !important;
+  font-size: 11px !important;
 }
-.set-tour-popover .driver-popover-close-btn {
-  color: #9aa0b4;
+.driver-popover.set-tour-popover .driver-popover-close-btn {
+  color: #9aa0b4 !important;
 }
-.set-tour-popover .driver-popover-arrow-side-bottom {
-  border-bottom-color: #12141c;
+.driver-popover.set-tour-popover .driver-popover-close-btn:hover,
+.driver-popover.set-tour-popover .driver-popover-close-btn:focus {
+  color: #e6e8f0 !important;
 }
-.set-tour-popover .driver-popover-arrow-side-top {
-  border-top-color: #12141c;
+.driver-popover.set-tour-popover .driver-popover-arrow-side-bottom {
+  border-bottom-color: #12141c !important;
 }
-.set-tour-popover .driver-popover-arrow-side-left {
-  border-left-color: #12141c;
+.driver-popover.set-tour-popover .driver-popover-arrow-side-top {
+  border-top-color: #12141c !important;
 }
-.set-tour-popover .driver-popover-arrow-side-right {
-  border-right-color: #12141c;
+.driver-popover.set-tour-popover .driver-popover-arrow-side-left {
+  border-left-color: #12141c !important;
 }
-.set-tour-popover button.driver-popover-next-btn {
-  background: rgba(108, 140, 255, 0.25);
-  color: #c7d2fe;
-  border: 1px solid rgba(108, 140, 255, 0.45);
-  border-radius: 8px;
-  text-shadow: none;
-  padding: 4px 12px;
-  font-size: 12px;
+.driver-popover.set-tour-popover .driver-popover-arrow-side-right {
+  border-right-color: #12141c !important;
 }
-.set-tour-popover button.driver-popover-prev-btn,
-.set-tour-popover button.driver-popover-close-btn {
-  color: #9aa0b4;
-  text-shadow: none;
-  font-size: 12px;
+.driver-popover.set-tour-popover button.driver-popover-next-btn {
+  background-color: rgba(108, 140, 255, 0.28) !important;
+  background: rgba(108, 140, 255, 0.28) !important;
+  color: #c7d2fe !important;
+  border: 1px solid rgba(108, 140, 255, 0.5) !important;
+  border-radius: 8px !important;
+  text-shadow: none !important;
+  padding: 5px 14px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+}
+.driver-popover.set-tour-popover button.driver-popover-next-btn:hover {
+  background: rgba(108, 140, 255, 0.4) !important;
+}
+.driver-popover.set-tour-popover button.driver-popover-prev-btn {
+  color: #9aa0b4 !important;
+  text-shadow: none !important;
+  font-size: 12px !important;
+  border-radius: 8px !important;
+}
+.driver-popover.set-tour-popover button.driver-popover-prev-btn:hover {
+  color: #e6e8f0 !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* The element the tour is talking about: visible accent ring + lift. */
+.driver-active-element {
+  box-shadow:
+    0 0 0 3px rgba(108, 140, 255, 0.95),
+    0 0 0 6px rgba(108, 140, 255, 0.25),
+    0 8px 32px rgba(0, 0, 0, 0.5) !important;
+  border-radius: 10px;
+  isolation: isolate;
+  transition: box-shadow 0.18s ease;
 }
 .safe-outer {
   padding-top: env(safe-area-inset-top);
@@ -197,3 +227,9 @@ body {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
+
+@keyframes mascot-flap {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-14deg); }
+}
+.mascot-wing { animation: mascot-flap 0.5s ease-in-out infinite; transform-origin: 50% 45%; transform-box: fill-box; }

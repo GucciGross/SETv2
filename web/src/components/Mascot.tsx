@@ -7,11 +7,11 @@ import { useEffect, useState } from 'react';
 
 export interface MascotConfig {
   name: string;
-  species: 'bot' | 'cat' | 'blob' | 'mouse';
+  species: 'bot' | 'cat' | 'blob' | 'mouse' | 'dog' | 'fox' | 'bird' | 'dragon' | 'ghost';
   bodyColor: string;
   accentColor: string;
   eyes: 'normal' | 'happy' | 'sleepy' | 'visor';
-  accessory: 'none' | 'antenna' | 'halo' | 'headphones' | 'hardhat' | 'party';
+  accessory: 'none' | 'antenna' | 'halo' | 'headphones' | 'hardhat' | 'party' | 'scarf' | 'bow';
   /** false hides the mascot app-wide (Settings -> Mascot). Absent = shown. */
   enabled?: boolean;
 }
@@ -185,9 +185,96 @@ export default function Mascot({ config, mood = 'idle', size = 64, preview = fal
           <rect x={55} y={82} width={13} height={6} rx={3} fill={darken(body, 0.7)} />
         </g>
       )}
+      {c.species === 'dog' && (
+        <g>
+          {/* wagging tail */}
+          <path d="M 74 70 q 15 -2 13 -16" stroke={body} strokeWidth={7} fill="none" strokeLinecap="round" className={mood === 'celebrating' ? 'mascot-tail' : ''} />
+          {/* floppy ears */}
+          <path d="M 27 28 q -12 4 -10 26 q 1 8 8 7 q 5 -1 6 -9 z" fill={darken(body, 0.8)} stroke={darken(body, 0.65)} strokeWidth={1.5} />
+          <path d="M 73 28 q 12 4 10 26 q -1 8 -8 7 q -5 -1 -6 -9 z" fill={darken(body, 0.8)} stroke={darken(body, 0.65)} strokeWidth={1.5} />
+          {/* body + snout patch */}
+          <ellipse cx={50} cy={54} rx={27} ry={30} fill={`url(#mg-${c.species})`} stroke={darken(body, 0.75)} strokeWidth={2} />
+          <ellipse cx={50} cy={61} rx={13} ry={10} fill={lighten(c.bodyColor, 0.6)} opacity={0.9} />
+          <ellipse cx={50} cy={50} rx={5.5} ry={4} fill={ink} opacity={0.9} />
+          {/* paw pads */}
+          <ellipse cx={33} cy={82} rx={5} ry={3} fill={lighten(accent, 0.35)} opacity={0.8} />
+          <ellipse cx={67} cy={82} rx={5} ry={3} fill={lighten(accent, 0.35)} opacity={0.8} />
+        </g>
+      )}
+      {c.species === 'fox' && (
+        <g>
+          {/* bushy tail with accent tip */}
+          <path d="M 72 70 q 20 2 18 -20 q -0.5 -6 -6 -5" stroke={body} strokeWidth={12} fill="none" strokeLinecap="round" className={mood === 'celebrating' ? 'mascot-tail' : ''} />
+          <circle cx={87} cy={49} r={6.4} fill={lighten(accent, 0.35)} stroke={darken(body, 0.7)} strokeWidth={1.4} />
+          {/* tall pointed ears, accent tips */}
+          <path d="M 28 34 L 21 10 L 42 24 Z" fill={body} stroke={darken(body, 0.75)} strokeWidth={1.6} />
+          <path d="M 72 34 L 79 10 L 58 24 Z" fill={body} stroke={darken(body, 0.75)} strokeWidth={1.6} />
+          <path d="M 29 29 L 25 16 L 37 24 Z" fill={accent} opacity={0.85} />
+          <path d="M 71 29 L 75 16 L 63 24 Z" fill={accent} opacity={0.85} />
+          {/* body + white muzzle */}
+          <ellipse cx={50} cy={54} rx={26} ry={29} fill={`url(#mg-${c.species})`} stroke={darken(body, 0.75)} strokeWidth={2} />
+          <path d="M 38 56 q 12 12 24 0 q -4 10 -12 10 q -8 0 -12 -10 z" fill={lighten(c.bodyColor, 0.62)} opacity={0.92} />
+        </g>
+      )}
+      {c.species === 'bird' && (
+        <g>
+          {/* head tuft */}
+          <path d="M 46 22 q 2 -9 6 -10 M 52 22 q 4 -7 8 -7" stroke={accent} strokeWidth={2.6} fill="none" strokeLinecap="round" />
+          {/* wing */}
+          <path d="M 24 54 q -10 6 -4 16 q 4 6 10 2 z" fill={darken(body, 0.85)} stroke={darken(body, 0.7)} strokeWidth={1.4} className={mood === 'celebrating' ? 'mascot-wing' : ''} />
+          <path d="M 76 54 q 10 6 4 16 q -4 6 -10 2 z" fill={darken(body, 0.85)} stroke={darken(body, 0.7)} strokeWidth={1.4} className={mood === 'celebrating' ? 'mascot-wing' : ''} />
+          {/* round body */}
+          <circle cx={50} cy={54} r={28} fill={`url(#mg-${c.species})`} stroke={darken(body, 0.75)} strokeWidth={2} />
+          {/* beak */}
+          <path d="M 45 53 L 55 53 L 50 61 Z" fill={accent} stroke={darken(accent, 0.75)} strokeWidth={1.2} />
+          {/* tail feathers */}
+          <path d="M 70 72 l 12 6 M 70 74 l 11 9" stroke={darken(body, 0.8)} strokeWidth={3} strokeLinecap="round" />
+          {/* feet */}
+          <path d="M 42 82 v 5 M 58 82 v 5 M 38 87 h 8 M 54 87 h 8" stroke={accent} strokeWidth={2.4} strokeLinecap="round" />
+        </g>
+      )}
+      {c.species === 'dragon' && (
+        <g>
+          {/* tail with spade */}
+          <path d="M 72 72 q 16 4 16 -12" stroke={body} strokeWidth={6.5} fill="none" strokeLinecap="round" className={mood === 'celebrating' ? 'mascot-tail' : ''} />
+          <path d="M 86 52 l 7 6 l -8 5 z" fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.2} />
+          {/* wings */}
+          <path d="M 26 44 q -16 -14 -13 2 q 2 10 14 10 z" fill={accent} opacity={0.85} stroke={darken(accent, 0.7)} strokeWidth={1.4} className={mood === 'celebrating' ? 'mascot-wing' : ''} />
+          <path d="M 74 44 q 16 -14 13 2 q -2 10 -14 10 z" fill={accent} opacity={0.85} stroke={darken(accent, 0.7)} strokeWidth={1.4} className={mood === 'celebrating' ? 'mascot-wing' : ''} />
+          {/* horns */}
+          <path d="M 38 28 q -4 -10 -1 -14" stroke={lighten(accent, 0.3)} strokeWidth={4} fill="none" strokeLinecap="round" />
+          <path d="M 62 28 q 4 -10 1 -14" stroke={lighten(accent, 0.3)} strokeWidth={4} fill="none" strokeLinecap="round" />
+          {/* body */}
+          <ellipse cx={50} cy={54} rx={26} ry={29} fill={`url(#mg-${c.species})`} stroke={darken(body, 0.75)} strokeWidth={2} />
+          {/* nostrils */}
+          <circle cx={45} cy={51} r={1.3} fill={ink} opacity={0.8} />
+          <circle cx={55} cy={51} r={1.3} fill={ink} opacity={0.8} />
+          {/* belly scales */}
+          <g fill={lighten(c.bodyColor, 0.58)} opacity={0.9}>
+            <ellipse cx={50} cy={68} rx={12} ry={8} />
+            <path d="M 42 66 q 4 -4 8 0 q 4 -4 8 0" stroke={darken(body, 0.7)} strokeWidth={1} fill="none" />
+          </g>
+          {/* back spikes */}
+          <path d="M 30 40 l -5 -3 M 70 40 l 5 -3" stroke={lighten(accent, 0.3)} strokeWidth={2.6} strokeLinecap="round" />
+        </g>
+      )}
+      {c.species === 'ghost' && (
+        <g>
+          {/* translucent floaty body with wavy hem */}
+          <path
+            d="M 50 22 C 70 22 80 36 80 54 L 80 78 Q 75 72 70 78 Q 65 84 60 78 Q 55 72 50 78 Q 45 84 40 78 Q 35 72 30 78 Q 26 82 22 79 L 22 54 C 22 36 30 22 50 22 Z"
+            fill={`url(#mg-${c.species})`}
+            stroke={darken(body, 0.75)}
+            strokeWidth={2}
+            opacity={0.94}
+          />
+          {/* inner glow */}
+          <ellipse cx={50} cy={44} rx={14} ry={10} fill={lighten(c.bodyColor, 0.5)} opacity={0.28} />
+        </g>
+      )}
 
-      {/* belly patch */}
-      {c.species !== 'bot' && (
+      {/* belly patch (species with their own muzzle/belly art skip it) */}
+      {!['bot', 'dog', 'fox', 'dragon', 'ghost'].includes(c.species) && (
         <ellipse cx={50} cy={66} rx={15} ry={13} fill={lighten(c.bodyColor, 0.55)} opacity={0.85} />
       )}
 
@@ -210,7 +297,7 @@ export default function Mascot({ config, mood = 'idle', size = 64, preview = fal
           <Eye cx={62} />
         </>
       )}
-      {mouth()}
+      {c.species !== 'bird' && mouth()}
 
       {/* blush */}
       {(mood === 'celebrating' || c.eyes === 'happy') && (
@@ -250,6 +337,20 @@ export default function Mascot({ config, mood = 'idle', size = 64, preview = fal
           <path d="M 28 28 C 30 12 70 12 72 28 Z" fill="#ffcf5c" stroke="#d9a629" strokeWidth={1.6} />
           <rect x={23} y={26.5} width={54} height={5.5} rx={2.7} fill="#ffcf5c" stroke="#d9a629" strokeWidth={1.6} />
           <rect x={46.5} y={13} width={7} height={9} rx={2} fill="#ffcf5c" stroke="#d9a629" strokeWidth={1.4} />
+        </g>
+      )}
+      {c.accessory === 'scarf' && (
+        <g>
+          <path d="M 30 72 q 20 10 40 0 l 0 7 q -20 10 -40 0 z" fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.4} />
+          <path d="M 62 76 l 6 16 l 8 -2 l -5 -14 z" fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.4} />
+          <path d="M 36 74 q 14 6 28 0" stroke={lighten(accent, 0.45)} strokeWidth={1.6} fill="none" />
+        </g>
+      )}
+      {c.accessory === 'bow' && (
+        <g>
+          <path d="M 50 24 l -14 -7 q -4 8 0 14 z" fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.3} />
+          <path d="M 50 24 l 14 -7 q 4 8 0 14 z" fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.3} />
+          <circle cx={50} cy={24} r={4} fill={lighten(accent, 0.4)} stroke={darken(accent, 0.7)} strokeWidth={1.2} />
         </g>
       )}
 
