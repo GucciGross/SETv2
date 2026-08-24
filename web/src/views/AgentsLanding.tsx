@@ -95,6 +95,14 @@ export default function AgentsLanding() {
           <div className="mt-4 set-card bg-set-panel2/60 p-3.5 font-mono text-xs overflow-x-auto text-set-dim">
             {`# Claude Code\nclaude mcp add --transport http set "${mcpUrl}"\n\n# Generic client config\n{ "mcpServers": { "set": { "type": "http", "url": "${mcpUrl}" } } }`}
           </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a href="/docs?section=mcp" className="set-btn text-xs flex items-center gap-1.5">
+              <BookOpen size={13} /> Full tool documentation — all 26 tools with parameters and examples
+            </a>
+            <a href="/api/mcp/docs.json" target="_blank" rel="noreferrer" className="set-btn-ghost text-xs flex items-center gap-1.5">
+              Machine-readable manifest
+            </a>
+          </div>
         </div>
       </section>
 
@@ -144,7 +152,7 @@ export default function AgentsLanding() {
           <p className="text-set-dim mb-6">Run SET yourself and point agents at your own URL, or use the hosted cloud when it opens.</p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link to="/login" className="set-btn-primary px-6 py-2.5 flex items-center gap-2">Launch SET <ArrowRight size={14} /></Link>
-            <a href="/docs" className="set-btn px-6 py-2.5">Full tool documentation</a>
+            <a href="/docs?section=mcp" className="set-btn px-6 py-2.5">Full tool documentation</a>
           </div>
         </div>
       </section>

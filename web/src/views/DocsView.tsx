@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { marked } from 'marked';
 import { BookOpen, X, Menu } from 'lucide-react';
 
@@ -388,7 +388,11 @@ Resources: \`set://pages\`, \`set://pages/{id}\`, \`set://mytasks\`. Prompts: \`
 ];
 
 export default function DocsView({ standalone = false }: { standalone?: boolean }) {
-  const [active, setActive] = useState(SECTIONS[0].id);
+  const [searchParams] = useSearchParams();
+  const initial = searchParams.get('section');
+  const [active, setActive] = useState(
+    initial && SECTIONS.some((s) => s.id === initial) ? initial : SECTIONS[0].id
+  );
   const [navOpen, setNavOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const section = useMemo(() => SECTIONS.find((s) => s.id === active) ?? SECTIONS[0], [active]);
@@ -398,7 +402,7 @@ export default function DocsView({ standalone = false }: { standalone?: boolean 
   }, [active]);
 
   const nav = (
-    <div className="w-56 shrink-0 border-r border-set-border bg-set-panel/60 overflow-y-auto p-3 space-y-0.5">
+    <div className="w-56 shrink-0 border-r border-set-border bg-set-panel overflow-y-auto p-3 space-y-0.5 pt-[max(0.75rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] max-md:h-full">
       {standalone && (
         <Link to="/login" className="set-btn-ghost text-xs mb-3 flex items-center gap-1.5">
           <BookOpen size={13} /> Open SET
@@ -433,11 +437,11 @@ export default function DocsView({ standalone = false }: { standalone?: boolean 
       <div className="max-md:hidden">{nav}</div>
       {navOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setNavOpen(false)} />
-          <div className="relative">{nav}</div>
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setNavOpen(false)} />
+          <div className="relative h-full">{nav}</div>
         </div>
       )}
-      <div ref={contentRef} className={`flex-1 overflow-y-auto ${standalone ? 'max-md:pt-14' : ''}`}>
+      <div ref={contentRef} className={`flex-1 overflow-y-auto pr-[env(safe-area-inset-right)] ${standalone ? 'max-md:pt-14 pb-[env(safe-area-inset-bottom)]' : ''}`}>
         <div className="max-w-3xl mx-auto px-5 sm:px-10 py-8 pb-24">
           {standalone && (
             <div className="mb-8">
