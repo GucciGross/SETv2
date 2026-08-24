@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Plug, Activity, ScrollText, KeyRound, Ban, Copy, Check } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip } from './DitherChart';
+import { mcpEndpoint } from '../lib/mcpUrl';
 
 /** Settings → MCP: endpoint info, connected clients, tokens, analytics, logs. */
 export default function McpSettings() {
@@ -12,7 +13,7 @@ export default function McpSettings() {
   const [tokens, setTokens] = useState<any[]>([]);
   const [tab, setTab] = useState<'analytics' | 'logs' | 'tokens'>('analytics');
   const [copied, setCopied] = useState(false);
-  const mcpUrl = `${window.location.origin}/api/mcp`;
+  const mcpUrl = mcpEndpoint();
 
   const load = async () => {
     if (!spaceId) return;

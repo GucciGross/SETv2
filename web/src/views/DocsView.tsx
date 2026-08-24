@@ -321,7 +321,7 @@ Set the env vars and bind a notebook to a RAGFlow dataset (\`PATCH /api/notebook
 
 SET speaks the **Model Context Protocol** (Streamable HTTP, OAuth 2.1 + PKCE). Point any MCP client — Claude Desktop, Claude.ai connectors, Cursor, Claude Code, custom agents — at your server URL and complete a one-time consent.
 
-**Endpoint:** \`https://your-set-server/api/mcp\` · Quickstart guides: the **/agents** page on any deployment.
+**Endpoint:** \`http://localhost:8080/api/mcp\` in the default compose stack (\`http://localhost:4000\` in dev) · Quickstart guides: the **/agents** page on any deployment.
 
 **Auth flow:** the client discovers our authorization server via RFC 9728 metadata, registers itself (RFC 7591), and opens the consent page where you pick the workspace and **Read-only** or **Read & write** scope. Tokens are revocable from Settings → MCP, where owners also see per-tool analytics and full call logs.
 

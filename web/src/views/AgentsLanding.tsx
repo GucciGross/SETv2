@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, BookOpen, Github, Terminal, Plug, ShieldCheck, Wrench, Zap, Server } from 'lucide-react';
+import { mcpEndpoint } from '../lib/mcpUrl';
 
 const TOOLS = [
   { group: 'Read', items: ['search_workspace', 'list_pages', 'read_page', 'read_page_backlinks', 'list_databases', 'query_database', 'list_notebooks', 'list_sources', 'search_knowledge', 'list_study_decks', 'get_deck', 'list_my_tasks', 'list_activity', 'list_notifications', 'list_models_3d'] },
@@ -9,9 +9,7 @@ const TOOLS = [
 
 /** Landing page for agentic visitors: connect any MCP client to a SET workspace in under a minute. */
 export default function AgentsLanding() {
-  const [origin, setOrigin] = useState('https://your-set.example.com');
-  useEffect(() => setOrigin(window.location.origin), []);
-  const mcpUrl = `${origin}/api/mcp`;
+  const mcpUrl = mcpEndpoint();
 
   return (
     <div className="min-h-screen bg-set-bg text-set-text overflow-x-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
