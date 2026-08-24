@@ -76,9 +76,9 @@ export function Bar({
             />
           )
         })}
-      <SeriesContext value={{ dataKey, seed, dimmed }}>
+      <SeriesContext.Provider value={{ dataKey, seed, dimmed }}>
         {children}
-      </SeriesContext>
+      </SeriesContext.Provider>
     </>
   )
 }

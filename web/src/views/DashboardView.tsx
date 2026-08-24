@@ -5,6 +5,7 @@ import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 // @ts-nocheck
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from '../components/DitherChart';
+import ErrorBoundary from '../components/ErrorBoundary';
 import {
   FileText, BookOpen, Database, Users, Bell, ListTodo, ArrowRight, Sparkles, TrendingUp,
 } from 'lucide-react';
@@ -118,16 +119,18 @@ export default function DashboardView() {
             <h3 className="text-sm font-semibold text-white">Activity — last 7 days</h3>
           </div>
           {chartData.some((d) => d.events > 0) ? (
-            <div className="rounded-xl border border-set-border overflow-hidden">
-              <AreaChart data={chartData} config={{ events: { label: 'Events', color: 'blue' }, pages: { label: 'Pages created', color: 'purple' } }} bloom="low">
-                <XAxis dataKey="day" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Area dataKey="events" variant="gradient" />
-                <Area dataKey="pages" variant="dotted" />
-              </AreaChart>
-            </div>
+            <ErrorBoundary>
+              <div className="rounded-xl border border-set-border overflow-hidden h-60">
+                <AreaChart data={chartData} config={{ events: { label: 'Events', color: 'blue' }, pages: { label: 'Pages created', color: 'purple' } }} bloom="low">
+                  <XAxis dataKey="day" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Area dataKey="events" variant="gradient" />
+                  <Area dataKey="pages" variant="dotted" />
+                </AreaChart>
+              </div>
+            </ErrorBoundary>
           ) : (
             <p className="text-sm text-set-dim py-8 text-center">No activity yet — start creating pages or commenting.</p>
           )}
@@ -140,15 +143,17 @@ export default function DashboardView() {
             <h3 className="text-sm font-semibold text-white">Agent tool usage</h3>
           </div>
           {mcpData.length > 0 ? (
-            <div className="rounded-xl border border-set-border overflow-hidden">
-              <BarChart data={mcpData} config={{ calls: { label: 'Calls', color: 'green' }, success: { label: 'Success %', color: 'blue' } }} bloom="low">
-                <XAxis dataKey="tool" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="calls" variant="gradient" />
-                <Bar dataKey="success" variant="dotted" />
-              </BarChart>
-            </div>
+            <ErrorBoundary>
+              <div className="rounded-xl border border-set-border overflow-hidden h-60">
+                <BarChart data={mcpData} config={{ calls: { label: 'Calls', color: 'green' }, success: { label: 'Success %', color: 'blue' } }} bloom="low">
+                  <XAxis dataKey="tool" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="calls" variant="gradient" />
+                  <Bar dataKey="success" variant="dotted" />
+                </BarChart>
+              </div>
+            </ErrorBoundary>
           ) : (
             <div className="py-8 text-center">
               <p className="text-sm text-set-dim mb-3">No agent calls yet.</p>

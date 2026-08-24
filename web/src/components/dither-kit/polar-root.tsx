@@ -126,8 +126,8 @@ export function PolarRoot<TData extends Row>({
   }
 
   return (
-    <PolarChartContext value={ctx}>
-      <CommonChartContext value={ctx.common}>
+    <PolarChartContext.Provider value={ctx}>
+      <CommonChartContext.Provider value={ctx.common}>
         <div
           ref={ref}
           className={cn("relative h-full w-full", className)}
@@ -168,7 +168,7 @@ export function PolarRoot<TData extends Row>({
           )}
           {domChildren}
         </div>
-      </CommonChartContext>
-    </PolarChartContext>
+      </CommonChartContext.Provider>
+    </PolarChartContext.Provider>
   )
 }

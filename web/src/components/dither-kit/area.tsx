@@ -83,9 +83,9 @@ function CartesianSeries({
           onClick={onClick}
         />
       )}
-      <SeriesContext value={{ dataKey, seed, dimmed }}>
+      <SeriesContext.Provider value={{ dataKey, seed, dimmed }}>
         {children}
-      </SeriesContext>
+      </SeriesContext.Provider>
     </>
   )
 }

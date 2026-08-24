@@ -99,7 +99,7 @@ export default function McpSettings() {
               ok: { label: 'Success %', color: 'green' },
             };
             return (
-              <div className="rounded-xl border border-set-border overflow-hidden">
+              <div className="rounded-xl border border-set-border overflow-hidden h-60">
                 <BarChart data={data} config={config as any} bloom="low">
                   <XAxis dataKey="tool" />
                   <YAxis />

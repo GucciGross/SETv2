@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client"
 
-import { createContext, use, useCallback, useMemo, useState } from "react"
+import { createContext, useContext, useCallback, useMemo, useState } from "react"
 import {
   type AreaVariant,
   type ChartConfig,
@@ -66,7 +66,7 @@ export type PolarChartContextValue = {
 const PolarChartContext = createContext<PolarChartContextValue | null>(null)
 
 export function usePolarChart() {
-  const ctx = use(PolarChartContext)
+  const ctx = useContext(PolarChartContext)
   if (!ctx) {
     throw new Error("Polar chart parts must be used within a polar root.")
   }
@@ -75,7 +75,7 @@ export function usePolarChart() {
 
 /** Boundary guard for polar parts (`<Pie>`, `<Radar>`). */
 export function usePolarPart(part: string, kind: "pie" | "radar") {
-  const ctx = use(PolarChartContext)
+  const ctx = useContext(PolarChartContext)
   if (!ctx) {
     throw new Error(`<${part} /> must be used within ${ROOT_OF[kind]}.`)
   }

@@ -141,8 +141,8 @@ export function CartesianRoot<TData extends Row>({
   }
 
   return (
-    <ChartContext value={ctx}>
-      <CommonChartContext value={ctx.common}>
+    <ChartContext.Provider value={ctx}>
+      <CommonChartContext.Provider value={ctx.common}>
         <div
           ref={ref}
           className={cn("relative h-full w-full", className)}
@@ -183,8 +183,8 @@ export function CartesianRoot<TData extends Row>({
           )}
           {domChildren}
         </div>
-      </CommonChartContext>
-    </ChartContext>
+      </CommonChartContext.Provider>
+    </ChartContext.Provider>
   )
 }
 
