@@ -17,6 +17,9 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@ag-ui/client": "^0.0.57",
+    "@ag-ui/core": "^0.0.57",
+    "@copilotkit/runtime": "^1.69.0",
     "@fastify/cors": "^9.0.1",
     "@fastify/multipart": "^8.3.0",
     "@fastify/static": "^7.0.4",
@@ -33,6 +36,7 @@
     "nodemailer": "^9.0.5",
     "pdf-parse": "^1.1.1",
     "pg": "^8.11.5",
+    "rxjs": "^7.8.1",
     "turndown": "^7.1.3",
     "zod": "^3.23.6"
   },

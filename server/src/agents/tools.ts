@@ -90,6 +90,8 @@ export const TOOLS: ToolDef2[] = [
         [ctx.spaceId, args.parentId ?? null, args.title, args.markdown ?? '', JSON.stringify(mdToDoc(args.markdown ?? '')), ctx.userId]
       );
       await syncLinks(page!.id, ctx.spaceId, args.markdown ?? '');
+      const { telemetry } = await import('../telemetry/index.js');
+      telemetry.track('page_created');
       return {
         ok: true,
         result: { pageId: page!.id, title: page!.title },

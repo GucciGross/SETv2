@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { one } from '../db.js';
-import { verifyToken, type JwtUser } from './tokens.js';
+import { verifyToken, SERVICE_IDENTITY, type JwtUser } from './tokens.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -22,6 +22,17 @@ export async function requireUser(req: FastifyRequest, reply: FastifyReply): Pro
   }
   req.user = user;
   return user;
+}
+
+/** Guard internal service endpoints (channels listener). Sends the reply when denied. */
+export async function requireService(req: FastifyRequest, reply: FastifyReply): Promise<boolean> {
+  const user = getUser(req);
+  if (!user || user.id !== SERVICE_IDENTITY.id) {
+    reply.code(403).send({ error: 'Service token required' });
+    return false;
+  }
+  req.user = user;
+  return true;
 }
 
 export type Role = 'owner' | 'editor' | 'viewer';

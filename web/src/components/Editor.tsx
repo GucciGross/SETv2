@@ -149,6 +149,8 @@ interface EditorProps {
   onSave: (md: string) => void;
   onWikiClick?: (target: string) => void;
   debounceMs?: number;
+  /** Called with the live TipTap instance (used by the guide agent's editor bridge). */
+  onReady?: (editor: any | null) => void;
 }
 
 interface MenuItem {
@@ -158,7 +160,7 @@ interface MenuItem {
   action: () => void;
 }
 
-export default function Editor({ markdown, onSave, onWikiClick, debounceMs = 700 }: EditorProps) {
+export default function Editor({ markdown, onSave, onWikiClick, onReady, debounceMs = 700 }: EditorProps) {
   const skipNext = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clickRef = useRef(onWikiClick);
@@ -364,6 +366,16 @@ export default function Editor({ markdown, onSave, onWikiClick, debounceMs = 700
     return () => window.removeEventListener('keydown', keyHandler, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, slash.query, wiki.query, pageTitles]);
+
+  // expose the live editor to the guide agent bridge
+  const readyRef = useRef(onReady);
+  readyRef.current = onReady;
+  useEffect(() => {
+    if (editor && readyRef.current) readyRef.current(editor);
+    return () => {
+      if (readyRef.current) readyRef.current(null);
+    };
+  }, [editor]);
 
   if (!editor) return null;
   editorSelf.current = editor;

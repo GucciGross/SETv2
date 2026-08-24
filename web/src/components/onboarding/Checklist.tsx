@@ -49,7 +49,8 @@ export default function Checklist({ onRevealWelcome }: { onRevealWelcome?: () =>
 
   const go = (to?: string) => {
     if (to === 'copilot') {
-      document.querySelector<HTMLButtonElement>('[data-copilot-open]')?.click();
+      // open the floating copilot overlay (CopilotKit's built-in toggle)
+      document.querySelector<HTMLButtonElement>("[data-slot='chat-toggle-button']")?.click();
     } else if (to) {
       navigate(`/app/space/${spaceId}/${to === 'page' ? '' : to}`.replace(/\/$/, ''));
     }

@@ -6,6 +6,7 @@ import { signToken } from '../lib/tokens.js';
 import { requireUser } from '../lib/http.js';
 import crypto from 'node:crypto';
 import { config } from '../config.js';
+import { sendMail, htmlEmail } from '../lib/mail.js';
 
 /** Naive in-memory IP rate limiter for auth endpoints (10 req/min). */
 const hits = new Map<string, { n: number; reset: number }>();
@@ -21,13 +22,7 @@ function rateLimited(route: string, ip: string, max = 10, windowMs = 60_000): bo
   return h.n > max;
 }
 
-async function sendMail(to: string, subject: string, text: string) {
-  if (!config.smtp.host) return false;
-  const nodemailer = await import('nodemailer');
-  const mail = nodemailer.createTransport({ host: config.smtp.host, port: config.smtp.port, auth: config.smtp.user ? { user: config.smtp.user, pass: config.smtp.pass } : undefined });
-  await mail.sendMail({ from: config.smtp.from, to, subject, text });
-  return true;
-}
+/** Mail delivery lives in lib/mail.ts (ForwardEmail API primary, SMTP fallback, console fallback). */
 
 const creds = z.object({
   email: z.string().email(),
@@ -103,11 +98,16 @@ export async function authRoutes(app: FastifyInstance) {
         [user.id, hash]
       );
       const link = `${config.appUrl}/reset?token=${token}`;
-      const sent = await sendMail(user.email, 'SET password reset', `Reset your SET password:
-
-${link}
-
-This link expires in 1 hour.`);
+      const text = `Reset your SET password:\n\n${link}\n\nThis link expires in 1 hour.`;
+      const { sent } = await sendMail({
+        to: user.email,
+        subject: 'SET password reset',
+        text,
+        html: htmlEmail('Reset your password', 'Someone (hopefully you) asked to reset the password for this SET account. The link below expires in 1 hour.', {
+          label: 'Choose a new password',
+          url: link,
+        }),
+      });
       if (!sent) console.log(`[auth] password reset link for ${user.email}: ${link}`);
     }
     // always 200 — never reveal whether the account exists
@@ -143,7 +143,7 @@ This link expires in 1 hour.`);
     const body = z
       .object({
         name: z.string().min(1).max(40),
-        species: z.enum(['bot', 'cat', 'blob', 'mouse', 'dog', 'fox', 'bird', 'dragon', 'ghost']),
+        species: z.enum(['bot', 'cat', 'blob', 'mouse', 'dog', 'fox', 'bird', 'dragon', 'ghost', 'bloub']),
         bodyColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
         accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
         eyes: z.enum(['normal', 'happy', 'sleepy', 'visor']),

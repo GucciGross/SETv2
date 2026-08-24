@@ -22,7 +22,14 @@ export default function Login() {
         : await api.post('/auth/register', { email, name: name.trim() || undefined, password });
       setToken(res.token);
       useApp.setState({ user: res.user });
-      navigate('/app');
+      // return to a pending workspace invite if Login was reached from /join
+      const pendingJoin = sessionStorage.getItem('set_join_token');
+      if (pendingJoin) {
+        sessionStorage.removeItem('set_join_token');
+        navigate(`/join?token=${encodeURIComponent(pendingJoin)}`);
+      } else {
+        navigate('/app');
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {

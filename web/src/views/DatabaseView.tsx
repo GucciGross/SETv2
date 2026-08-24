@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, Trash2 } from 'lucide-react';
+import { useAgentContext } from '@copilotkit/react-core/v2';
+import { Plus, Trash2, Sparkles, Loader2 } from 'lucide-react';
 
 /** Databases: table / kanban / calendar / gallery views. */
 
@@ -24,6 +25,16 @@ export default function DatabaseView() {
   const [views, setViews] = useState<any[]>([]);
   const [rows, setRows] = useState<any[]>([]);
   const [viewId, setViewId] = useState<string | null>(null);
+  const [fillOpen, setFillOpen] = useState(false);
+  const [fillCount, setFillCount] = useState(5);
+  const [fillHint, setFillHint] = useState('');
+  const [fillBusy, setFillBusy] = useState(false);
+  const [fillMsg, setFillMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useAgentContext({
+    description: 'The database on screen',
+    value: db ? JSON.stringify({ id: db.id, name: db.name, columns: db.schema }) : '(no database open)',
+  });
 
   const load = useCallback(async () => {
     if (!dbId) return;
@@ -63,6 +74,21 @@ export default function DatabaseView() {
     if (!confirm('Delete this row (and its page)?')) return;
     await api.del(`/rows/${rowId}`);
     load();
+  };
+
+  const autofill = async () => {
+    setFillBusy(true);
+    setFillMsg(null);
+    try {
+      const res = await api.post(`/databases/${db.id}/autofill`, { count: fillCount, hint: fillHint.trim() || undefined });
+      setFillMsg({ ok: true, text: `Added ${res.created} row${res.created === 1 ? '' : 's'}` });
+      setFillOpen(false);
+      load();
+    } catch (e: any) {
+      setFillMsg({ ok: false, text: e.message });
+    } finally {
+      setFillBusy(false);
+    }
   };
 
   const CellEditor = ({ row, col }: { row: any; col: Column }) => {
@@ -126,7 +152,7 @@ export default function DatabaseView() {
   };
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col relative">
       <div className="p-3 sm:p-4 border-b border-set-border flex flex-wrap items-center gap-2 sm:gap-3">
         <span className="text-2xl">{db.icon}</span>
         <input
@@ -167,8 +193,51 @@ export default function DatabaseView() {
               </button>
             ))}
         </div>
-        <button className="set-btn ml-auto flex items-center gap-1" onClick={addRow}><Plus size={14} /> New</button>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            className="set-btn flex items-center gap-1"
+            title="Generate rows with your AI provider"
+            onClick={() => {
+              setFillOpen((o) => !o);
+              setFillMsg(null);
+            }}
+          >
+            <Sparkles size={14} /> Auto-fill
+          </button>
+          <button className="set-btn flex items-center gap-1" onClick={addRow}><Plus size={14} /> New</button>
+        </div>
+        {fillOpen && (
+          <div className="absolute right-3 top-14 z-20 set-card p-3 w-80 space-y-2 shadow-xl">
+            <div className="text-sm font-medium text-white">Auto-fill with AI</div>
+            <p className="text-xs text-set-dim">Generates rows that match your columns (select options, dates, numbers). Uses this workspace's default AI provider.</p>
+            <label className="flex items-center gap-2 text-xs text-set-dim">
+              Rows
+              <input
+                type="number"
+                min={1}
+                max={25}
+                className="set-input w-16"
+                value={fillCount}
+                onChange={(e) => setFillCount(Math.max(1, Math.min(25, Number(e.target.value) || 1)))}
+              />
+            </label>
+            <input
+              className="set-input"
+              placeholder="Optional: what should the rows be about?"
+              value={fillHint}
+              onChange={(e) => setFillHint(e.target.value)}
+              maxLength={500}
+            />
+            <button className="set-btn-primary w-full flex items-center justify-center gap-1.5 text-sm" disabled={fillBusy} onClick={autofill}>
+              {fillBusy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              {fillBusy ? 'Generating…' : 'Generate rows'}
+            </button>
+          </div>
+        )}
       </div>
+      {fillMsg && (
+        <div className={`px-4 pt-2 text-xs ${fillMsg.ok ? 'text-green-400' : 'text-red-400'}`}>{fillMsg.text}</div>
+      )}
 
       <div className="flex-1 overflow-auto p-4">
         {view?.type === 'kanban' && <KanbanView {...{ columns, rows, viewConfig, setCell, addRow, removeRow, spaceId, dbId: db.id }} />}

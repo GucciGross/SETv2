@@ -3,6 +3,9 @@ import { z } from 'zod';
 import { one, q } from '../db.js';
 import { requireSpace, requireUser } from '../lib/http.js';
 import { recordActivity } from '../team/activity.js';
+import { config } from '../config.js';
+import { sendMail, htmlEmail } from '../lib/mail.js';
+import { signInviteToken, verifyInviteToken } from '../lib/tokens.js';
 
 export async function spaceRoutes(app: FastifyInstance) {
   app.get('/spaces', async (req, reply) => {
@@ -40,18 +43,59 @@ export async function spaceRoutes(app: FastifyInstance) {
 
   app.post('/spaces/:spaceId/invite', async (req, reply) => {
     if (!(await requireSpace(req, reply, (req.params as any).spaceId, 'owner'))) return;
+    const spaceId = (req.params as any).spaceId;
     const body = z
       .object({ email: z.string().email(), role: z.enum(['editor', 'viewer']).default('editor') })
       .parse(req.body);
-    const user = await one<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [body.email.toLowerCase()]);
-    if (!user) return reply.code(404).send({ error: 'No account with that email yet — they must register first' });
+    const email = body.email.toLowerCase();
+    const user = await one<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email]);
+    if (user) {
+      await q(
+        `INSERT INTO memberships (user_id, space_id, role) VALUES ($1, $2, $3)
+         ON CONFLICT (user_id, space_id) DO UPDATE SET role = EXCLUDED.role`,
+        [user.id, spaceId, body.role]
+      );
+      void recordActivity(String(spaceId), req.user!.id, 'member_joined', { email, role: body.role });
+      return { ok: true, added: true };
+    }
+    // No account yet — email a signed invite link they redeem at /join after signing up
+    const space = await one<{ name: string }>(`SELECT name FROM spaces WHERE id = $1`, [spaceId]);
+    const spaceName = space?.name ?? 'a workspace';
+    const inviter = req.user!;
+    const link = `${config.appUrl}/join?token=${signInviteToken({ spaceId, email, role: body.role })}`;
+    const text = `${inviter.name} invited you to collaborate in "${spaceName}" on SET — the Strategic Enablement Toolkit.\n\nAccept the invite:\n\n${link}\n\nThe link expires in 7 days. If you don't have an account yet, you can create one with this email address (${email}) when you open it.`;
+    const { sent } = await sendMail({
+      to: email,
+      subject: `${inviter.name} invited you to "${spaceName}" on SET`,
+      text,
+      html: htmlEmail(
+        `${inviter.name} invited you to "${spaceName}"`,
+        `<p><b>${inviter.name}</b> invited you to collaborate in <b>${spaceName}</b> on SET — the Strategic Enablement Toolkit.</p><p>The invite expires in 7 days. No account yet? You can create one with this email address after opening the link.</p>`,
+        { label: 'Accept invite', url: link }
+      ),
+    });
+    if (!sent) console.log(`[spaces] invite link for ${email} (email not configured): ${link}`);
+    return { ok: true, invited: true, emailed: sent, ...(sent ? {} : { link }) };
+  });
+
+  /** Redeem an emailed invite: requires being signed in as the invited email. */
+  app.post('/spaces/join', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const body = z.object({ token: z.string().min(10) }).parse(req.body);
+    const invite = verifyInviteToken(body.token);
+    if (!invite) return reply.code(400).send({ error: 'This invite link is invalid or has expired (invites last 7 days)' });
+    if (user.email.toLowerCase() !== invite.email)
+      return reply.code(403).send({ error: `This invite was sent to ${invite.email} — sign in with that email address to accept it` });
+    const space = await one<{ id: string; name: string }>(`SELECT id, name FROM spaces WHERE id = $1`, [invite.spaceId]);
+    if (!space) return reply.code(404).send({ error: 'The workspace for this invite no longer exists' });
     await q(
       `INSERT INTO memberships (user_id, space_id, role) VALUES ($1, $2, $3)
-       ON CONFLICT (user_id, space_id) DO UPDATE SET role = EXCLUDED.role`,
-      [user.id, (req.params as any).spaceId, body.role]
+       ON CONFLICT (user_id, space_id) DO NOTHING`,
+      [user.id, invite.spaceId, invite.role]
     );
-    void recordActivity(String((req.params as any).spaceId), req.user!.id, 'member_joined', { email: body.email, role: body.role });
-    return { ok: true };
+    void recordActivity(invite.spaceId, user.id, 'member_joined', { email: user.email, role: invite.role, via: 'invite_link' });
+    return { ok: true, spaceId: space.id, spaceName: space.name, role: invite.role };
   });
 
   app.patch('/spaces/:spaceId/members/:userId', async (req, reply) => {

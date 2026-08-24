@@ -1,12 +1,43 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import basicSsl from '@vitejs/plugin-basic-ssl';
+
+const nodeRequire = createRequire(import.meta.url);
+
+// CopilotKit v2's stylesheet is Tailwind v4 output (@layer …). Our Tailwind v3
+// PostCSS pipeline rejects it, and even ?raw imports of .css go through the
+// vite:css plugin — so serve it as a virtual string module instead; main.tsx
+// injects it as a <style> tag at runtime.
+function copilotkitRawStyles() {
+  const pkgDir = nodeRequire.resolve('@copilotkit/react-core/package.json').replace(/package\.json$/, '');
+  return {
+    name: 'copilotkit-raw-styles',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      if (source === 'virtual:copilotkit-v2-styles') return '\0virtual:copilotkit-v2-styles';
+      // the package's JS self-imports its stylesheet — redirect that too
+      if (source === './index.css' && importer?.includes('@copilotkit/react-core/dist/v2/')) {
+        return '\0virtual:copilotkit-v2-styles';
+      }
+      return null;
+    },
+    load(id: string) {
+      if (id === '\0virtual:copilotkit-v2-styles') {
+        const css = readFileSync(`${pkgDir}dist/v2/index.css`, 'utf8');
+        return `export default ${JSON.stringify(css)}`;
+      }
+      return null;
+    },
+  };
+}
 
 // HTTPS_DEV=1 npm run dev  → https (required for iOS to honor the PWA manifest —
 // iOS ignores display:standalone over plain http on LAN IPs).
 // npm run dev              → plain http (local dev / tooling).
 export default defineConfig({
-  plugins: [react(), ...(process.env.HTTPS_DEV === '1' ? [basicSsl()] : [])],
+  plugins: [react(), copilotkitRawStyles(), ...(process.env.HTTPS_DEV === '1' ? [basicSsl()] : [])],
   server: {
     host: true, // expose on the LAN for phone / other-device testing
     port: 5173,

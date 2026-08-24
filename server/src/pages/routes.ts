@@ -113,6 +113,8 @@ export async function pageRoutes(app: FastifyInstance) {
     await relinkSpace(body.spaceId); // forward links: [[targets]] that now resolve
     void recordActivity(body.spaceId, req.user!.id, 'page_created', { pageId: page!.id, title: page!.title });
     bus.publish({ spaceId: body.spaceId, type: 'page_created', payload: { pageId: page!.id } });
+    const { telemetry } = await import('../telemetry/index.js');
+    telemetry.track(body.isDaily ? 'daily_note_created' : 'page_created');
     return { page };
   });
 

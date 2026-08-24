@@ -5,6 +5,7 @@ import { requireResourceSpace, requireSpace, rid } from '../lib/http.js';
 import { bus } from '../lib/events.js';
 import { requireSurface } from '../surfaces.js';
 import { recordActivity } from '../team/activity.js';
+import { chatCompletion, ensureBootstrapProvider, getProvider } from '../llm/router.js';
 
 const columnSchema = z.object({
   id: z.string(),
@@ -15,6 +16,54 @@ const columnSchema = z.object({
 
 function notify(spaceId: string, databaseId: string) {
   bus.publish({ spaceId, type: 'db_updated', payload: { databaseId } });
+}
+
+/** Extract the first JSON array from an LLM reply (tolerates fences/prose). */
+function parseJsonArray(text: string | null): any[] | null {
+  if (!text) return null;
+  const stripped = text.replace(/```(?:json)?/gi, '').trim();
+  const start = stripped.indexOf('[');
+  const end = stripped.lastIndexOf(']');
+  if (start === -1 || end <= start) return null;
+  try {
+    const v = JSON.parse(stripped.slice(start, end + 1));
+    return Array.isArray(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Coerce an LLM-produced value to what the column type actually stores. undefined = skip the cell. */
+function coerceCell(value: any, col: { type: string; config?: any }): any {
+  const opts = (col.config?.options ?? []).map((o: any) => String(o.value));
+  switch (col.type) {
+    case 'number': {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    }
+    case 'checkbox':
+      return value === true || value === 'true';
+    case 'date': {
+      const m = String(value ?? '').match(/\d{4}-\d{2}-\d{2}/);
+      return m ? m[0] : null;
+    }
+    case 'select': {
+      const s = String(value ?? '');
+      const hit = opts.find((o: string) => o === s) ?? opts.find((o: string) => o.toLowerCase() === s.toLowerCase());
+      return hit ?? null;
+    }
+    case 'multiSelect': {
+      const arr = Array.isArray(value) ? value : String(value ?? '').split(',');
+      const hits = arr.map((v: any) => String(v).trim()).filter((v: string) => opts.some((o: string) => o.toLowerCase() === v.toLowerCase()));
+      return hits.length ? hits : undefined;
+    }
+    case 'person':
+      return null; // never fabricate people
+    default: {
+      const s = String(value ?? '').slice(0, 2000);
+      return s || undefined;
+    }
+  }
 }
 
 export async function databaseRoutes(app: FastifyInstance) {
@@ -153,6 +202,80 @@ export async function databaseRoutes(app: FastifyInstance) {
     );
     notify(ctx.spaceId, id);
     return { row: { ...row, page_title: pageTitle } };
+  });
+
+  /**
+   * AI auto-fill: generate schema-aware rows with the space's LLM provider so
+   * users don't hand-type structured content (pluely-style assist, in-app).
+   */
+  app.post('/databases/:id/autofill', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'databases', id, 'editor');
+    if (!ctx) return;
+    const body = z
+      .object({ count: z.number().int().min(1).max(25).default(5), hint: z.string().max(500).optional() })
+      .parse(req.body ?? {});
+    const db = await one<{ name: string; schema: any[] }>(`SELECT name, schema FROM databases WHERE id = $1`, [id]);
+    const columns: { id: string; name: string; type: string; config?: any }[] = db?.schema ?? [];
+    if (!columns.length) return reply.code(400).send({ error: 'Add at least one column before auto-filling' });
+
+    await ensureBootstrapProvider(ctx.spaceId);
+    const provider = await getProvider(ctx.spaceId);
+    if (!provider)
+      return reply.code(400).send({ error: 'No AI provider configured — add one under Settings → AI Providers first' });
+
+    const existing = await q<{ cells: any }>(`SELECT cells FROM db_rows WHERE database_id = $1 ORDER BY created_at DESC LIMIT 6`, [id]);
+    const colLines = columns.map((c) => {
+      const opts = c.config?.options?.length ? `; allowed values: ${c.config.options.map((o: any) => o.value).join(' | ')}` : '';
+      return `- "${c.name}" (${c.type}${opts})`;
+    });
+    const fewShot = existing.length
+      ? `Existing rows for style and context — do not repeat them:\n${JSON.stringify(existing.map((r) => r.cells)).slice(0, 1500)}\n`
+      : '';
+    const hint = body.hint?.trim() ? `The user asks: "${body.hint.trim()}".\n` : '';
+    let content: string | null;
+    try {
+      const res = await chatCompletion(provider, null, {
+        messages: [
+          { role: 'system', content: 'You fill in databases for a knowledge-management app. Reply with ONLY a JSON array — no markdown fences, no commentary.' },
+          {
+            role: 'user',
+            content: `Database "${db!.name}" columns:\n${colLines.join('\n')}\n${fewShot}${hint}Generate ${body.count} realistic, diverse new rows as JSON: [{"title":"...","cells":{"<column name>": value}}]. Rules: select values must come from the allowed list; multiSelect is an array of allowed values; date is "YYYY-MM-DD"; number is a number; checkbox is true/false; person is null unless certain; other columns are concise strings.`,
+          },
+        ],
+        temperature: 0.8,
+        signal: AbortSignal.timeout(120_000),
+      });
+      content = res.content;
+    } catch (e: any) {
+      return reply.code(502).send({ error: `LLM call failed: ${e.message}` });
+    }
+
+    const rows = parseJsonArray(content);
+    if (!rows?.length) return reply.code(502).send({ error: 'The model returned malformed JSON — try again' });
+
+    const byName = new Map(columns.map((c) => [c.name.toLowerCase(), c]));
+    let created = 0;
+    for (const row of rows.slice(0, body.count)) {
+      const title = typeof row?.title === 'string' ? row.title.slice(0, 200) : '';
+      const cells: Record<string, any> = {};
+      for (const [name, value] of Object.entries(row.cells ?? {})) {
+        const col = byName.get(String(name).toLowerCase());
+        if (!col) continue;
+        const coerced = coerceCell(value, col);
+        if (coerced !== undefined) cells[col.id] = coerced;
+      }
+      if (title && !cells[columns[0].id]) cells[columns[0].id] = title;
+      const page = await one<{ id: string }>(
+        `INSERT INTO pages (space_id, title, markdown, created_by) VALUES ($1, $2, '', $3) RETURNING id`,
+        [ctx.spaceId, title || `${db!.name} item`, req.user!.id]
+      );
+      await q(`INSERT INTO db_rows (database_id, page_id, cells) VALUES ($1, $2, $3)`, [id, page!.id, JSON.stringify(cells)]);
+      created++;
+    }
+    notify(ctx.spaceId, id);
+    void recordActivity(String(ctx.spaceId), req.user!.id, 'autofill', { databaseId: id, created });
+    return { created };
   });
 
   app.patch('/rows/:rowId', async (req, reply) => {

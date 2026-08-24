@@ -27,6 +27,8 @@ import { importZipRoutes } from './team/importZip.js';
 import { mcpRoutes } from './mcp/routes.js';
 import { skillsRoutes, seedSkills, getActiveSkillPrompt } from './skills/routes.js';
 import { onboardingRoutes } from './onboarding/routes.js';
+import { copilotKitRoutes } from './copilotkit/route.js';
+import { channelRoutes } from './channels/routes.js';
 import { seed } from './seed.js';
 
 async function main() {
@@ -77,6 +79,8 @@ async function main() {
     await importZipRoutes(api);
     await mcpRoutes(api);
     await skillsRoutes(api);
+    await copilotKitRoutes(api);
+    await channelRoutes(api);
   }, { prefix: '/api' });
 
   await migrate();
@@ -85,6 +89,15 @@ async function main() {
 
   await app.listen({ port: config.port, host: config.host });
   console.log(`[SET] server listening on :${config.port}`);
+
+  const { telemetry } = await import('./telemetry/index.js');
+  telemetry.init(config.dataDir);
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(sig, () => {
+      telemetry.stop();
+      void telemetry.flush();
+    });
+  }
 }
 
 main().catch((e) => {

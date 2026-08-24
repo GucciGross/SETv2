@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { marked } from 'marked';
 import { api, sse } from '../lib/api';
+import { useAgentContext } from '@copilotkit/react-core/v2';
 import {
   Upload, Link as LinkIcon, ClipboardPaste, RefreshCw, Trash2, Layers, MessageSquare,
   Network, Clock, BookOpen, GraduationCap, ChevronDown,
@@ -30,6 +31,11 @@ export default function NotebookView() {
   const [textInput, setTextInput] = useState('');
   const [showPaste, setShowPaste] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  useAgentContext({
+    description: 'The research notebook on screen',
+    value: notebook ? JSON.stringify({ id: notebook.id, title: notebook.title, sources: sources.map((x: any) => x.title ?? x.name ?? x.id) }) : '(no notebook open)',
+  });
 
   const load = useCallback(async () => {
     if (!nbId) return;

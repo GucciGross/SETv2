@@ -233,3 +233,191 @@ body {
   50% { transform: rotate(-14deg); }
 }
 .mascot-wing { animation: mascot-flap 0.5s ease-in-out infinite; transform-origin: 50% 45%; transform-box: fill-box; }
+
+/* ---- The floating copilot: glass overlay matching the launcher ----
+   The popup's className prop does NOT reach the popup container (it lands on
+   the welcome wrapper), so everything targets the stable CopilotKit hooks:
+   div[data-copilotkit] (outer fixed wrapper) and [data-copilot-popup]. */
+
+[data-copilot-popup] {
+  /* shadcn token bridge — translucent so the popup's own glass shows through */
+  --background: transparent;
+  --card: rgba(24, 28, 38, 0.42);
+  --popover: rgba(24, 28, 38, 0.55);
+  --foreground: #d7dce6;
+  --primary: rgba(124, 108, 236, 0.72);
+  --primary-foreground: #f2f0ff;
+  --secondary: rgba(24, 28, 38, 0.5);
+  --secondary-foreground: #d7dce6;
+  --muted: rgba(24, 28, 38, 0.5);
+  --muted-foreground: #9aa3b8;
+  --accent: rgba(124, 108, 236, 0.16);
+  --accent-foreground: #e4e7f2;
+  --destructive: #ef4444;
+  --border: rgba(150, 165, 200, 0.16);
+  --input: rgba(150, 165, 200, 0.22);
+  --ring: rgba(139, 92, 246, 0.65);
+  --radius: 0.75rem;
+  /* fit the content instead of a giant default window */
+  --copilot-popup-height: 520px;
+  --copilot-popup-max-height: min(78vh, 660px);
+  color-scheme: dark;
+
+  /* the glass itself — violet washes + an ordered dot grid (SET's dither
+     language), so the surface reads as texture, not flat plastic */
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(158, 172, 205, 0.13) 0.9px, transparent 1.1px),
+    radial-gradient(circle at 1px 1px, rgba(124, 108, 236, 0.1) 0.9px, transparent 1.1px),
+    linear-gradient(160deg, rgba(124, 108, 236, 0.22), rgba(16, 18, 27, 0) 45%),
+    linear-gradient(315deg, rgba(108, 140, 255, 0.13), rgba(16, 18, 27, 0) 48%) !important;
+  background-size: 6px 6px, 6px 6px, 100% 100%, 100% 100% !important;
+  background-position: 0 0, 3px 3px, 0 0, 0 0 !important;
+  background-color: rgba(13, 15, 22, 0.66) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+  border: 1px solid rgba(150, 165, 200, 0.18) !important;
+  border-radius: 1.15rem !important;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.6),
+    0 2px 10px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+}
+
+/* header — hairline glass bar */
+[data-testid='copilot-modal-header'] {
+  background: rgba(18, 21, 29, 0.28) !important;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(150, 165, 200, 0.14) !important;
+}
+[data-testid='copilot-modal-header'] [data-slot='copilot-modal-close-button'],
+[data-testid='copilot-modal-header'] button {
+  color: #9aa3b8;
+}
+[data-testid='copilot-modal-header'] button:hover {
+  color: #e4e7f2;
+  background: rgba(124, 108, 236, 0.14);
+}
+
+/* composer — CopilotKit hardcodes bg-white / dark #303030; frost it */
+[data-testid='copilot-chat-input'] {
+  background: rgba(24, 28, 38, 0.52) !important;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(150, 165, 200, 0.2) !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4) !important;
+}
+[data-testid='copilot-chat-input'] textarea,
+[data-testid='copilot-chat-input'] input {
+  background: transparent !important;
+}
+[data-testid='copilot-chat-input']::placeholder {
+  color: #7d8598;
+}
+
+/* messages sit directly on the glass */
+[data-testid='copilot-message-list'] {
+  background: transparent !important;
+}
+
+/* welcome screen + suggestion pills */
+.set-suggestion-pill {
+  border: 1px solid rgba(150, 165, 200, 0.2) !important;
+  background: rgba(24, 28, 38, 0.42) !important;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: #d7dce6 !important;
+  border-radius: 9999px !important;
+  font-size: 0.78rem !important;
+  padding: 0.42rem 0.85rem !important;
+  text-align: center !important;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease !important;
+}
+.set-suggestion-pill:hover {
+  border-color: rgba(167, 139, 250, 0.6) !important;
+  background: rgba(124, 108, 236, 0.18) !important;
+  transform: translateY(-1px);
+}
+
+/* tool/status cards rendered inline (SET renderers) harmonize with the glass */
+[data-copilot-popup] .set-card,
+[data-copilot-popup] [class*='border-set-border'] {
+  border-color: rgba(150, 165, 200, 0.16);
+}
+
+/* scrollbar */
+[data-testid='copilot-message-list']::-webkit-scrollbar,
+[data-copilot-popup] ::-webkit-scrollbar {
+  width: 8px;
+}
+[data-copilot-popup] ::-webkit-scrollbar-thumb {
+  background: rgba(150, 165, 200, 0.25);
+  border-radius: 4px;
+}
+
+/* Mobile: floating bottom sheet, never a fullscreen takeover. */
+@media (max-width: 768px) {
+  div[data-copilotkit] {
+    /* outer fixed wrapper — CopilotKit defaults to inset-0 on mobile */
+    inset: auto auto 5.5rem 0.75rem !important;
+    width: calc(100vw - 1.5rem) !important;
+    max-width: 400px !important;
+    max-height: min(72dvh, 620px) !important;
+    align-items: stretch !important;
+    z-index: 70 !important;
+    pointer-events: none;
+  }
+  div[data-copilotkit] > [data-copilot-popup] {
+    pointer-events: auto;
+    --copilot-popup-height: min(62dvh, 540px);
+    height: auto !important;
+    max-height: min(72dvh, 620px) !important;
+    min-height: 320px;
+  }
+}
+
+/* Desktop: seat the window a little tighter above the launcher. */
+@media (min-width: 769px) {
+  div[data-copilotkit] {
+    z-index: 70 !important;
+  }
+}
+
+/* First-run: gently pulse the launcher until the copilot is opened once. */
+@keyframes set-guide-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.45), 0 10px 30px rgba(0, 0, 0, 0.45); }
+  50% { box-shadow: 0 0 0 10px rgba(139, 92, 246, 0), 0 10px 30px rgba(0, 0, 0, 0.45); }
+}
+body.set-guide-intro button[data-slot='chat-toggle-button'] {
+  animation: set-guide-pulse 2.2s ease-out infinite;
+}
+
+/* Launcher: same glass language as the popup. */
+button[data-slot='chat-toggle-button'] {
+  right: 1.25rem !important;
+  bottom: 1.25rem !important;
+  z-index: 70 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.5rem !important;
+  padding: 0.625rem 1rem !important;
+  border-radius: 9999px !important;
+  border: 1px solid rgba(150, 165, 200, 0.22) !important;
+  color: #d7dce6 !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  background:
+    linear-gradient(160deg, rgba(124, 108, 236, 0.28), rgba(16, 18, 27, 0) 55%),
+    rgba(13, 15, 22, 0.62) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  backdrop-filter: blur(18px) saturate(150%);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+  transition: transform 0.15s ease, border-color 0.15s ease !important;
+}
+button[data-slot='chat-toggle-button']:hover {
+  transform: scale(1.04);
+  border-color: rgba(167, 139, 250, 0.55) !important;
+}
+button[data-slot='chat-toggle-button']:active {
+  transform: scale(0.95);
+}

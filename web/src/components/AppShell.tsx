@@ -2,15 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import {
   FilePlus, CalendarDays, Network, Database, BookOpen, Boxes, Route, Settings, Search, Plus,
-  PanelRightClose, PanelRightOpen, LogOut, ChevronRight, ChevronDown, Trash2, Import, Sparkles, PenLine,
+  LogOut, ChevronRight, ChevronDown, Trash2, Import, PenLine,
   Code2, SquareTerminal, LibraryBig, Database as DatabaseIcon, Menu, X, ListTodo, Activity as ActivityIcon,
   ChevronsLeft, ChevronsRight, FileText, LayoutDashboard,
 } from 'lucide-react';
 import { useApp, type PageMeta } from '../stores/app';
 import { api } from '../lib/api';
 import { startTour } from '../lib/tour';
+import { SetCopilotProvider, useSetScreenContext } from '../lib/copilot';
 import WelcomeModal from './onboarding/WelcomeModal';
-import CopilotPanel from './CopilotPanel';
+import GuideFab from './GuideFab';
 import Notifications from './Notifications';
 import CommandPalette from './CommandPalette';
 
@@ -135,9 +136,18 @@ function SearchBox() {
 }
 
 export default function AppShell() {
+  return (
+    <SetCopilotProvider>
+      <AppShellInner />
+    </SetCopilotProvider>
+  );
+}
+
+function AppShellInner() {
+  useSetScreenContext();
   const { spaceId } = useParams();
   const location = useLocation();
-  const { spaces, currentSpaceId, setCurrentSpace, user, presence, copilotOpen, setCopilotOpen, logout, createPage, surfaces, loadSurfaces, pages } = useApp();
+  const { spaces, currentSpaceId, setCurrentSpace, user, presence, logout, createPage, surfaces, loadSurfaces, pages } = useApp();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dbs, setDbs] = useState<any[]>([]);
@@ -180,6 +190,30 @@ export default function AppShell() {
     return () => window.removeEventListener('set:open-welcome', open);
   }, []);
 
+  // tour asks for the sidebar while its steps spotlight sidebar controls
+  const tourSidebarPrev = useRef<{ rail: boolean; nav: boolean } | null>(null);
+  useEffect(() => {
+    const onTourSidebar = (e: Event) => {
+      const { open, restore } = (e as CustomEvent).detail ?? {};
+      if (restore) {
+        const prev = tourSidebarPrev.current;
+        tourSidebarPrev.current = null;
+        if (prev) {
+          setRailMode(prev.rail);
+          setMobileNav(prev.nav);
+        }
+      } else if (open) {
+        tourSidebarPrev.current ??= { rail: railMode, nav: mobileNav };
+        setRailMode(false);
+        setMobileNav(true);
+      } else {
+        setMobileNav(false);
+      }
+    };
+    window.addEventListener('set:tour-sidebar', onTourSidebar);
+    return () => window.removeEventListener('set:tour-sidebar', onTourSidebar);
+  }, [railMode, mobileNav]);
+
   const createWorkspace = async () => {
     if (!newSpaceName.trim()) return;
     const { space } = await api.post('/spaces', { name: newSpaceName.trim() });
@@ -211,6 +245,7 @@ export default function AppShell() {
         <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setMobileNav(false)} />
       )}
       <aside
+        data-tour-sidebar
         className={`${railMode ? 'w-14' : 'w-64'} shrink-0 bg-set-panel border-r border-set-border flex flex-col transition-all max-md:w-64 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:transition-transform max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] ${mobileNav ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'}`}
       >
         <div className="p-3 border-b border-set-border" data-tour="space-switcher">
@@ -402,24 +437,19 @@ export default function AppShell() {
             <Menu size={18} />
           </button>
           <Notifications />
-          <button
-            className="set-btn-ghost flex items-center gap-1.5"
-            data-tour="copilot"
-            data-copilot-open
-            onClick={() => setCopilotOpen(!copilotOpen)}
-          >
-            {copilotOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
-            <Sparkles size={14} className="text-violet-300" /> Copilot
-          </button>
         </div>
         <div className="flex-1 overflow-y-auto">
           <Outlet />
         </div>
       </main>
 
+      {/* The copilot lives in the floating overlay (GuideFab) */}
+
       {/* Copilot */}
       <CommandPalette />
-      {copilotOpen && <div className="max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:w-full"><CopilotPanel /></div>}
+
+      {/* On-screen guide agent */}
+      <GuideFab />
 
       {/* New workspace modal */}
       {newSpaceOpen && (

@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { BLOUB_TARGETS, blendParams, sampleBloub, type BloubFrame, type BloubParams } from '../lib/bloub';
 
 /**
  * Copilot mascot — a layered, expressive desk pet with role-aware moods.
  * Concept inspired by OpenMausBot (Apache-2.0); artwork is original parametric SVG.
+ * The "bloub" species is a morphing radial-profile blob (see lib/bloub.ts).
  */
 
 export interface MascotConfig {
   name: string;
-  species: 'bot' | 'cat' | 'blob' | 'mouse' | 'dog' | 'fox' | 'bird' | 'dragon' | 'ghost';
+  species: 'bot' | 'cat' | 'blob' | 'mouse' | 'dog' | 'fox' | 'bird' | 'dragon' | 'ghost' | 'bloub';
   bodyColor: string;
   accentColor: string;
   eyes: 'normal' | 'happy' | 'sleepy' | 'visor';
@@ -48,6 +50,136 @@ const lighten = (hex: string, f = 0.45) => {
   return `rgb(${ch((n >> 16) & 255)},${ch((n >> 8) & 255)},${ch(n & 255)})`;
 };
 
+/** Confetti shared by every species when celebrating. */
+function CelebrateSparkles() {
+  return (
+    <g className="mascot-bubbles">
+      <path d="M 12 24 l 2 5 5 2 -5 2 -2 5 -2 -5 -5 -2 5 -2 Z" fill="#ffd76a" />
+      <path d="M 88 34 l 1.6 4 4 1.6 -4 1.6 -1.6 4 -1.6 -4 -4 -1.6 4 -1.6 Z" fill="#8be28b" />
+      <circle cx={82} cy={12} r={2.4} fill="#ff8fa8" />
+    </g>
+  );
+}
+
+/** Accessories render identically on every species silhouette (drawn on top). */
+function Accessories({ c, mood }: { c: MascotConfig; mood: MascotMood }) {
+  const accent = c.accentColor;
+  return (
+    <>
+      {c.accessory === 'antenna' && (
+        <g className={mood === 'thinking' ? 'mascot-antenna' : ''}>
+          <line x1={50} y1={c.species === 'cat' ? 22 : 26} x2={50} y2={11} stroke={accent} strokeWidth={2.6} strokeLinecap="round" />
+          <circle cx={50} cy={9} r={4.2} fill={accent} className={mood === 'thinking' ? 'mascot-antenna-dot' : ''} />
+          <circle cx={48.6} cy={7.6} r={1.4} fill="#fff" opacity={0.8} />
+        </g>
+      )}
+      {c.accessory === 'halo' && <ellipse className="mascot-halo" cx={50} cy={11} rx={14} ry={4.2} fill="none" stroke="#ffd76a" strokeWidth={3.2} />}
+      {c.accessory === 'party' && (
+        <g>
+          <polygon points="56,26 56,6 74,16" fill="#ff6b8a" />
+          <polygon points="57,24 57,9 69,16.5" fill="#ff9db4" opacity={0.8} />
+          <circle cx={74} cy={16} r={2.6} fill="#ffd76a" className="mascot-antenna-dot" />
+        </g>
+      )}
+      {c.accessory === 'headphones' && (
+        <g>
+          <path d={`M 21 48 C 21 20 79 20 79 48`} stroke={accent} strokeWidth={5} fill="none" strokeLinecap="round" />
+          <rect x={13} y={44} width={11} height={18} rx={5} fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.5} />
+          <rect x={76} y={44} width={11} height={18} rx={5} fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.5} />
+          <circle cx={18.5} cy={53} r={2.4} fill={lighten(accent, 0.55)} />
+          <circle cx={81.5} cy={53} r={2.4} fill={lighten(accent, 0.55)} />
+        </g>
+      )}
+      {c.accessory === 'hardhat' && (
+        <g>
+          <path d="M 28 28 C 30 12 70 12 72 28 Z" fill="#ffcf5c" stroke="#d9a629" strokeWidth={1.6} />
+          <rect x={23} y={26.5} width={54} height={5.5} rx={2.7} fill="#ffcf5c" stroke="#d9a629" strokeWidth={1.6} />
+          <rect x={46.5} y={13} width={7} height={9} rx={2} fill="#ffcf5c" stroke="#d9a629" strokeWidth={1.4} />
+        </g>
+      )}
+      {c.accessory === 'scarf' && (
+        <g>
+          <path d="M 30 72 q 20 10 40 0 l 0 7 q -20 10 -40 0 z" fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.4} />
+          <path d="M 62 76 l 6 16 l 8 -2 l -5 -14 z" fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.4} />
+          <path d="M 36 74 q 14 6 28 0" stroke={lighten(accent, 0.45)} strokeWidth={1.6} fill="none" />
+        </g>
+      )}
+      {c.accessory === 'bow' && (
+        <g>
+          <path d="M 50 24 l -14 -7 q -4 8 0 14 z" fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.3} />
+          <path d="M 50 24 l 14 -7 q 4 8 0 14 z" fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.3} />
+          <circle cx={50} cy={24} r={4} fill={lighten(accent, 0.4)} stroke={darken(accent, 0.7)} strokeWidth={1.2} />
+        </g>
+      )}
+    </>
+  );
+}
+
+/** Morphing blob species — engine-driven, eyes cut as mask holes (lib/bloub.ts). */
+function BloubMascot({ config: c, mood = 'idle', size }: MascotProps) {
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const paramsRef = useRef<BloubParams>({ ...BLOUB_TARGETS.idle });
+  const [frame, setFrame] = useState<BloubFrame>(() => sampleBloub(0.7, BLOUB_TARGETS.idle, c.eyes, mood));
+
+  useEffect(() => {
+    const reduced = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      paramsRef.current = { ...BLOUB_TARGETS[mood] };
+      setFrame(sampleBloub(0.7, paramsRef.current, c.eyes, mood));
+      return;
+    }
+    let raf = 0;
+    let last = performance.now();
+    const loop = (now: number) => {
+      const dt = Math.min((now - last) / 1000, 0.05);
+      last = now;
+      paramsRef.current = blendParams(paramsRef.current, BLOUB_TARGETS[mood], dt);
+      setFrame(sampleBloub(now / 1000, paramsRef.current, c.eyes, mood));
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [mood, c.eyes]);
+
+  const body = darken(c.bodyColor, 0.88);
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" role="img" aria-label={`${c.name} the bloub`} style={{ overflow: 'visible' }}>
+      <defs>
+        <mask id={`bloub-${uid}`}>
+          <rect x={-40} y={-40} width={180} height={180} fill="#fff" />
+          {frame.eyes.map((e, i) => (
+            <path
+              key={i}
+              d={e.path}
+              fill="#000"
+              transform={`translate(${e.x.toFixed(2)} ${e.y.toFixed(2)}) rotate(${e.rot}) scale(1 ${Math.max(e.open, 0.06).toFixed(3)})`}
+            />
+          ))}
+        </mask>
+      </defs>
+
+      {/* ground shadow — shrinks while airborne */}
+      <ellipse cx={50} cy={88} rx={20 * frame.shadow} ry={4 * frame.shadow + 0.8} fill="#000" opacity={0.26 * frame.shadow + 0.05} />
+
+      {/* body with eye holes cut through */}
+      <path d={frame.bodyPath} fill={body} mask={`url(#bloub-${uid})`} />
+
+      {/* comet orbit while thinking */}
+      {frame.comet && (
+        <g>
+          {frame.comet.trail.map((t, i) => (
+            <circle key={i} cx={t.x.toFixed(2)} cy={t.y.toFixed(2)} r={t.r.toFixed(2)} fill={c.accentColor} opacity={t.opacity.toFixed(2)} />
+          ))}
+          <circle cx={frame.comet.x.toFixed(2)} cy={frame.comet.y.toFixed(2)} r={frame.comet.r} fill={c.accentColor} />
+        </g>
+      )}
+
+      {mood === 'celebrating' && <CelebrateSparkles />}
+      <Accessories c={c} mood={mood} />
+    </svg>
+  );
+}
+
 export default function Mascot({ config, mood = 'idle', size = 64, preview = false }: MascotProps) {
   const [blink, setBlink] = useState(false);
   useEffect(() => {
@@ -64,6 +196,7 @@ export default function Mascot({ config, mood = 'idle', size = 64, preview = fal
 
   // hooks above stay unconditional; hiding is a pure render concern
   if (!preview && config.enabled === false) return null;
+  if (config.species === 'bloub') return <BloubMascot config={config} mood={mood} size={size} />;
 
   const c = config;
   const body = darken(c.bodyColor, 0.92);
@@ -308,51 +441,7 @@ export default function Mascot({ config, mood = 'idle', size = 64, preview = fal
       )}
 
       {/* --- accessories --- */}
-      {c.accessory === 'antenna' && (
-        <g className={mood === 'thinking' ? 'mascot-antenna' : ''}>
-          <line x1={50} y1={c.species === 'cat' ? 22 : 26} x2={50} y2={11} stroke={accent} strokeWidth={2.6} strokeLinecap="round" />
-          <circle cx={50} cy={9} r={4.2} fill={accent} className={mood === 'thinking' ? 'mascot-antenna-dot' : ''} />
-          <circle cx={48.6} cy={7.6} r={1.4} fill="#fff" opacity={0.8} />
-        </g>
-      )}
-      {c.accessory === 'halo' && <ellipse className="mascot-halo" cx={50} cy={11} rx={14} ry={4.2} fill="none" stroke="#ffd76a" strokeWidth={3.2} />}
-      {c.accessory === 'party' && (
-        <g>
-          <polygon points="56,26 56,6 74,16" fill="#ff6b8a" />
-          <polygon points="57,24 57,9 69,16.5" fill="#ff9db4" opacity={0.8} />
-          <circle cx={74} cy={16} r={2.6} fill="#ffd76a" className="mascot-antenna-dot" />
-        </g>
-      )}
-      {c.accessory === 'headphones' && (
-        <g>
-          <path d={`M 21 48 C 21 20 79 20 79 48`} stroke={accent} strokeWidth={5} fill="none" strokeLinecap="round" />
-          <rect x={13} y={44} width={11} height={18} rx={5} fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.5} />
-          <rect x={76} y={44} width={11} height={18} rx={5} fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.5} />
-          <circle cx={18.5} cy={53} r={2.4} fill={lighten(accent, 0.55)} />
-          <circle cx={81.5} cy={53} r={2.4} fill={lighten(accent, 0.55)} />
-        </g>
-      )}
-      {c.accessory === 'hardhat' && (
-        <g>
-          <path d="M 28 28 C 30 12 70 12 72 28 Z" fill="#ffcf5c" stroke="#d9a629" strokeWidth={1.6} />
-          <rect x={23} y={26.5} width={54} height={5.5} rx={2.7} fill="#ffcf5c" stroke="#d9a629" strokeWidth={1.6} />
-          <rect x={46.5} y={13} width={7} height={9} rx={2} fill="#ffcf5c" stroke="#d9a629" strokeWidth={1.4} />
-        </g>
-      )}
-      {c.accessory === 'scarf' && (
-        <g>
-          <path d="M 30 72 q 20 10 40 0 l 0 7 q -20 10 -40 0 z" fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.4} />
-          <path d="M 62 76 l 6 16 l 8 -2 l -5 -14 z" fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.4} />
-          <path d="M 36 74 q 14 6 28 0" stroke={lighten(accent, 0.45)} strokeWidth={1.6} fill="none" />
-        </g>
-      )}
-      {c.accessory === 'bow' && (
-        <g>
-          <path d="M 50 24 l -14 -7 q -4 8 0 14 z" fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.3} />
-          <path d="M 50 24 l 14 -7 q 4 8 0 14 z" fill={accent} stroke={darken(accent, 0.7)} strokeWidth={1.3} />
-          <circle cx={50} cy={24} r={4} fill={lighten(accent, 0.4)} stroke={darken(accent, 0.7)} strokeWidth={1.2} />
-        </g>
-      )}
+      <Accessories c={c} mood={mood} />
 
       {/* thinking bubbles / celebrate sparkles */}
       {mood === 'thinking' && (
@@ -362,13 +451,7 @@ export default function Mascot({ config, mood = 'idle', size = 64, preview = fal
           <circle cx={96} cy={5} r={4.2} fill={accent} opacity={0.5} />
         </g>
       )}
-      {mood === 'celebrating' && (
-        <g className="mascot-bubbles">
-          <path d="M 12 24 l 2 5 5 2 -5 2 -2 5 -2 -5 -5 -2 5 -2 Z" fill="#ffd76a" />
-          <path d="M 88 34 l 1.6 4 4 1.6 -4 1.6 -1.6 4 -1.6 -4 -4 -1.6 4 -1.6 Z" fill="#8be28b" />
-          <circle cx={82} cy={12} r={2.4} fill="#ff8fa8" />
-        </g>
-      )}
+      {mood === 'celebrating' && <CelebrateSparkles />}
     </svg>
   );
 }

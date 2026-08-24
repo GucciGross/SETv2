@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Link2, ArrowUpRight, Download, MailQuestion } from 'lucide-react';
 import Editor from '../components/Editor';
+import { useAgentContext } from '@copilotkit/react-core/v2';
+import { registerEditor } from '../lib/editorBridge';
 import { MessageSquare, Send } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../stores/app';
@@ -111,6 +113,12 @@ export default function PageView() {
   const [outgoing, setOutgoing] = useState<any[]>([]);
   const [mentions, setMentions] = useState<any[]>([]);
 
+  // give the guide/copilot agents the note being edited (outline for context)
+  useAgentContext({
+    description: 'The note currently open in the editor',
+    value: page ? JSON.stringify({ title: page.title, markdown: page.markdown.slice(0, 3000) }) : '(no note open)',
+  });
+
   const load = useCallback(async () => {
     if (!pageId) return;
     const { page } = await api.get(`/pages/${pageId}`);
@@ -202,7 +210,7 @@ export default function PageView() {
             </div>
           </div>
           <div className="mt-4">
-            <Editor markdown={page.markdown} onSave={saveMarkdown} onWikiClick={openWikiLink} />
+            <Editor markdown={page.markdown} onSave={saveMarkdown} onWikiClick={openWikiLink} onReady={registerEditor} />
           </div>
           <Comments pageId={page.id} />
         </div>

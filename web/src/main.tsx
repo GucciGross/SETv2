@@ -2,6 +2,16 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import './index.css';
+// CopilotKit v2 styles are Tailwind v4 output; a virtual module (see
+// vite.config.ts) hands them over as a string, bypassing our Tailwind v3
+// PostCSS pipeline — injected as a <style> tag here.
+// @ts-expect-error virtual module provided by copilotkitRawStyles() plugin
+import cpkStyles from 'virtual:copilotkit-v2-styles';
+
+const cpkStyleEl = document.createElement('style');
+cpkStyleEl.dataset.copilotkit = 'v2-styles';
+cpkStyleEl.textContent = cpkStyles;
+document.head.appendChild(cpkStyleEl);
 import App from './App';
 import Login from './views/Login';
 import AppShell from './components/AppShell';
@@ -25,6 +35,7 @@ import Consent from './views/Consent';
 import AgentsLanding from './views/AgentsLanding';
 import DashboardView from './views/DashboardView';
 import Reset from './views/Reset';
+import Join from './views/Join';
 import ActivityView from './views/ActivityView';
 import MyTasksView from './views/MyTasksView';
 
@@ -32,6 +43,7 @@ const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
   { path: '/docs', element: <DocsView standalone /> },
   { path: '/reset', element: <Reset /> },
+  { path: '/join', element: <Join /> },
   { path: '/oauth/consent', element: <Consent /> },
   { path: '/agents', element: <AgentsLanding /> },
   { path: '/', element: <Landing /> },

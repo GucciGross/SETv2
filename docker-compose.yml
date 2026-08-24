@@ -28,13 +28,28 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       DATA_DIR: /app/data
       WEB_ORIGIN: "*"
-      # Optional bootstrap LLM (BYOK) — otherwise configure in the web UI:
-      # LLM_BASE_URL: http://host.docker.internal:11434/v1
-      # LLM_CHAT_MODEL: llama3.1
-      # LLM_EMBED_MODEL: nomic-embed-text
+      # Bootstrap LLM (BYOK) — any OpenAI-compatible endpoint (falls back to
+      # per-space providers configured in the web UI):
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_CHAT_MODEL: ${LLM_CHAT_MODEL:-}
+      LLM_EMBED_MODEL: ${LLM_EMBED_MODEL:-}
+      # Voice input (any OpenAI-compatible /audio/transcriptions endpoint;
+      # falls back to LLM_BASE_URL, then to the browser's Web Speech API):
+      TRANSCRIBE_BASE_URL: ${TRANSCRIBE_BASE_URL:-}
+      TRANSCRIBE_API_KEY: ${TRANSCRIBE_API_KEY:-}
+      TRANSCRIBE_MODEL: ${TRANSCRIBE_MODEL:-whisper-1}
+      # SET anonymous usage telemetry (opt-out with TELEMETRY_ENABLED=0):
+      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-1}
+      TELEMETRY_URL: ${TELEMETRY_URL:-}
       # Optional RAGFlow retrieval integration:
       # RAGFLOW_URL: http://host.docker.internal:9380
       # RAGFLOW_API_KEY: ragflow-xxxx
+      # Email (ForwardEmail API primary, SMTP fallback):
+      APP_URL: ${APP_URL:-}
+      FORWARDEMAIL_API_KEY: ${FORWARDEMAIL_API_KEY:-}
+      FORWARDEMAIL_DOMAIN: ${FORWARDEMAIL_DOMAIN:-trainwithset.com}
+      FORWARDEMAIL_FROM: ${FORWARDEMAIL_FROM:-}
       SEED_DEMO: ${SEED_DEMO:-0}
     volumes:
       - server_data:/app/data
@@ -49,6 +64,35 @@ services:
     build: ./web
     ports:
       - "${SET_PORT:-8080}:80"
+      # HTTPS (SET_TLS=1) — required for voice input on phones (mic access is
+      # blocked on insecure origins). Self-signed cert by default; mount your
+      # own at ./web/certs → /etc/nginx/certs to avoid the browser warning.
+      - "${SET_TLS_PORT:-8443}:443"
+    environment:
+      SET_TLS: ${SET_TLS:-0}
+    volumes:
+      - ${SET_TLS_CERT_DIR:-./web/certs-not-mounted}:/etc/nginx/certs
+    depends_on:
+      - server
+    restart: unless-stopped
+
+  # Optional Slack channel listener (docker compose --profile channels up -d).
+  # Relays Slack mentions/DMs to the SET agent through CopilotKit Intelligence:
+  # create a Channel in https://dashboard.operations.copilotkit.ai, put its Code
+  # here, and link the Slack workspace in Settings → Channels.
+  channels:
+    build: ./channels
+    profiles: ["channels"]
+    environment:
+      CHANNEL_CODE: ${CHANNEL_CODE:-}
+      INTELLIGENCE_API_KEY: ${INTELLIGENCE_API_KEY:-}
+      # Self-hosted Intelligence overrides (pass both together):
+      # INTELLIGENCE_API_URL: https://intelligence.example.com
+      # INTELLIGENCE_GATEWAY_WS_URL: wss://realtime.intelligence.example.com
+      SET_API_URL: http://server:4000
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      # Fallback SET space served when the Slack workspace isn't linked in the UI:
+      # CHANNEL_SPACE_ID: 00000000-0000-0000-0000-000000000000
     depends_on:
       - server
     restart: unless-stopped

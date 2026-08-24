@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles } from 'lucide-react';
+import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink } from 'lucide-react';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 import McpSettings from '../components/McpSettings';
 import SkillsSettings from '../components/SkillsSettings';
+import { DitherButton } from '../components/dither-kit';
 
 export default function SettingsView() {
   const { spaceId } = useParams();
-  const [tab, setTab] = useState<'surfaces' | 'skills' | 'mcp' | 'mascot' | 'providers' | 'members' | 'workspace'>('surfaces');
+  const [tab, setTab] = useState<'surfaces' | 'skills' | 'mcp' | 'channels' | 'mascot' | 'providers' | 'members' | 'workspace'>('surfaces');
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
@@ -19,6 +20,7 @@ export default function SettingsView() {
           ['surfaces', 'Work surfaces', <LayoutGrid key="z" size={14} />],
           ['skills', 'Skills', <Sparkles key="y" size={14} />],
           ['mcp', 'MCP', <Plug key="z" size={14} />],
+          ['channels', 'Channels', <Radio key="ch" size={14} />],
           ['mascot', 'Mascot', <Cat key="m" size={14} />],
           ['providers', 'AI Providers', <Cpu key="a" size={14} />],
           ['members', 'Members', <Users key="b" size={14} />],
@@ -32,6 +34,7 @@ export default function SettingsView() {
       {tab === 'surfaces' && <SurfacesTab spaceId={spaceId!} />}
       {tab === 'skills' && <SkillsSettings />}
       {tab === 'mcp' && <McpSettings />}
+      {tab === 'channels' && <ChannelsTab spaceId={spaceId!} />}
       {tab === 'mascot' && <MascotTab />}
       {tab === 'providers' && <ProvidersTab spaceId={spaceId!} />}
       {tab === 'members' && <MembersTab spaceId={spaceId!} />}
@@ -49,6 +52,95 @@ const SURFACES: { key: string; name: string; description: string; core?: boolean
   { key: 'library', name: 'Library', description: 'Browse and import open datasets from the HuggingFace Hub (CAD corpora, textbooks, 3D models)' },
   { key: 'canvas', name: 'Canvas', description: 'Experimental infinite-canvas spatial view over your pages' },
 ];
+
+function ChannelsTab({ spaceId }: { spaceId: string }) {
+  const [data, setData] = useState<{ links: any[]; service: { online: boolean; lastSeen: number | null; channelCode: string | null } } | null>(null);
+  const [platformId, setPlatformId] = useState('');
+  const [platformName, setPlatformName] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const load = async () => setData(await api.get(`/spaces/${spaceId}/channels`));
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 30_000); // service heartbeat refresh
+    return () => clearInterval(t);
+  }, [spaceId]);
+
+  const link = async () => {
+    setMsg(null);
+    try {
+      await api.post(`/spaces/${spaceId}/channels`, { platform: 'slack', platformId, platformName: platformName || undefined });
+      setPlatformId('');
+      setPlatformName('');
+      setMsg({ ok: true, text: 'Workspace linked — mention the bot in Slack to talk to SET.' });
+      load();
+    } catch (e: any) {
+      setMsg({ ok: false, text: e.message });
+    }
+  };
+
+  const service = data?.service;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-set-dim">
+        Let teammates talk to this workspace from Slack — capture notes, search pages and pull answers without leaving the chat.
+        Runs through the CopilotKit Channels listener (<code className="text-violet-300">channels</code> service in docker compose, profile <code className="text-violet-300">channels</code>).
+      </p>
+
+      <div className="set-card p-4 flex flex-wrap items-center gap-3">
+        <span className={`w-2.5 h-2.5 rounded-full ${service?.online ? 'bg-green-400 animate-pulse' : 'bg-set-dim'}`} />
+        <div className="flex-1">
+          <div className="text-sm text-white">Channel service {service?.online ? 'online' : 'offline'}</div>
+          <div className="text-xs text-set-dim">
+            {service?.online
+              ? `Connected${service.channelCode ? ` as “${service.channelCode}”` : ''} — last heartbeat ${service.lastSeen ? new Date(service.lastSeen).toLocaleTimeString() : '—'}`
+              : 'Start it with: docker compose --profile channels up -d (needs INTELLIGENCE_API_KEY + CHANNEL_CODE from your CopilotKit Intelligence project).'}
+          </div>
+        </div>
+      </div>
+
+      <div className="set-card p-4">
+        <div className="text-sm font-medium text-white mb-2">Link a Slack workspace</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+          <input className="set-input" placeholder="Slack team/workspace ID (e.g. T0123ABCDEF)" value={platformId} onChange={(e) => setPlatformId(e.target.value)} />
+          <input className="set-input" placeholder="Display name (e.g. Acme HQ)" value={platformName} onChange={(e) => setPlatformName(e.target.value)} />
+        </div>
+        <DitherButton color="purple" variant="gradient" className="rounded-lg text-sm text-white px-3 py-2 border border-set-border" onClick={link} disabled={platformId.trim().length < 2}>
+          Link workspace
+        </DitherButton>
+        <p className="text-xs text-set-dim mt-2">
+          The team ID is in your Slack workspace URL/“About this workspace” — messages from that workspace will read and write <em>this</em> SET space, attributed to you as the linking owner.
+        </p>
+        {msg && <p className={`text-xs mt-2 ${msg.ok ? 'text-green-400' : 'text-red-400'}`}>{msg.text}</p>}
+      </div>
+
+      <div className="space-y-2">
+        {(data?.links ?? []).map((l: any) => (
+          <div key={l.id} className="set-card p-3 flex items-center gap-3">
+            <Radio size={15} className="text-violet-300" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm text-white">{l.platform_name || l.platform_id} <span className="text-xs text-set-dim uppercase">{l.platform}</span></div>
+              <div className="text-xs text-set-dim">linked {new Date(l.created_at).toLocaleDateString()} by {l.linked_by_name ?? '—'}</div>
+            </div>
+            <button
+              className="set-btn-ghost hover:text-red-400 text-xs flex items-center gap-1"
+              onClick={async () => {
+                if (confirm('Unlink this Slack workspace?')) {
+                  await api.del(`/spaces/${spaceId}/channels/${l.id}`);
+                  load();
+                }
+              }}
+            >
+              <Unlink size={12} /> Unlink
+            </button>
+          </div>
+        ))}
+        {data && data.links.length === 0 && <p className="text-sm text-set-dim">No Slack workspaces linked yet.</p>}
+      </div>
+    </div>
+  );
+}
 
 function MascotTab() {
   const { user } = useApp();
@@ -80,7 +172,7 @@ function MascotTab() {
     const shift = pick([150, 180, 210, -30, 30]);
     setCfg({
       name: pick(['Pixel', 'Maus', 'Bit', 'Nova', 'Gears', 'Sprout', 'Ziggy', 'Tinker', 'Ember', 'Waffle', 'Comet', 'Juno', 'Rune', 'Pip', 'Bolt', 'Fern', 'Echo', 'Mochi', 'Clank', 'Widget']),
-      species: pick(['bot', 'cat', 'blob', 'mouse', 'dog', 'fox', 'bird', 'dragon', 'ghost'] as const),
+      species: pick(['bot', 'cat', 'blob', 'mouse', 'dog', 'fox', 'bird', 'dragon', 'ghost', 'bloub'] as const),
       bodyColor: hsl(h, 0.65, 0.66),
       accentColor: hsl((h + shift + 360) % 360, 0.72, 0.58),
       eyes: pick(['normal', 'happy', 'sleepy', 'visor'] as const),
@@ -151,6 +243,7 @@ function MascotTab() {
               <option value="bird">Bird</option>
               <option value="dragon">Dragon</option>
               <option value="ghost">Ghost</option>
+              <option value="bloub">Bloub (morphing blob)</option>
             </select>
           </Row>
           <Row label="Body color">
@@ -336,7 +429,7 @@ function MembersTab({ spaceId }: { spaceId: string }) {
   const [members, setMembers] = useState<any[]>([]);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('editor');
-  const [msg, setMsg] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = async () => setMembers((await api.get(`/spaces/${spaceId}/members`)).members);
   useEffect(() => {
@@ -344,27 +437,31 @@ function MembersTab({ spaceId }: { spaceId: string }) {
   }, [spaceId]);
 
   const invite = async () => {
-    setMsg('');
+    setMsg(null);
     try {
-      await api.post(`/spaces/${spaceId}/invite`, { email, role });
+      const res = await api.post(`/spaces/${spaceId}/invite`, { email, role });
+      if (res.added) setMsg({ ok: true, text: `${email} was added to the workspace` });
+      else if (res.emailed) setMsg({ ok: true, text: `Invite email sent to ${email}` });
+      else setMsg({ ok: true, text: `Email isn't configured on this server — share this invite link: ${res.link}` });
       setEmail('');
       load();
     } catch (e: any) {
-      setMsg(e.message);
+      setMsg({ ok: false, text: e.message });
     }
   };
 
   return (
     <div>
-      <div className="set-card p-4 mb-4 flex gap-2">
-        <input className="set-input" placeholder="teammate@example.com (must have an account)" value={email} onChange={(e) => setEmail(e.target.value)} />
+      <div className="set-card p-4 mb-4 flex flex-wrap gap-2">
+        <input className="set-input flex-1 min-w-[220px]" placeholder="teammate@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
         <select className="set-input w-32" value={role} onChange={(e) => setRole(e.target.value)}>
           <option value="editor">Editor</option>
           <option value="viewer">Viewer</option>
         </select>
         <button className="set-btn-primary" onClick={invite}>Invite</button>
       </div>
-      {msg && <p className="text-xs text-red-400 mb-2">{msg}</p>}
+      <p className="text-xs text-set-dim mb-3 -mt-2 ml-1">Existing users are added instantly; anyone else gets an invite email with a sign-up link.</p>
+      {msg && <p className={`text-xs mb-3 break-all ${msg.ok ? 'text-green-400' : 'text-red-400'}`}>{msg.text}</p>}
       <div className="space-y-2">
         {members.map((m) => (
           <div key={m.id} className="set-card p-3 flex items-center gap-3">

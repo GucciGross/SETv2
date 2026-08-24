@@ -11,6 +11,12 @@ import { api } from './api';
 
 let driverObj: ReturnType<typeof driver> | null = null;
 
+// Sidebar-targeted steps need the sidebar visible: expanded rail on desktop,
+// open drawer on mobile. AppShell owns that state and listens for these events.
+const inSidebar = (el: Element | null | undefined) => !!el?.closest('[data-tour-sidebar]');
+const emitSidebar = (detail: { open?: boolean; restore?: boolean }) =>
+  window.dispatchEvent(new CustomEvent('set:tour-sidebar', { detail }));
+
 export const TOUR_STEPS: (DriveStep & { mobile?: boolean })[] = [
   {
     element: '[data-tour="space-switcher"]',
@@ -40,12 +46,13 @@ export const TOUR_STEPS: (DriveStep & { mobile?: boolean })[] = [
     },
   },
   {
-    element: '[data-tour="copilot"]',
+    // the floating copilot launcher (CopilotKit's popup toggle)
+    element: "[data-slot='chat-toggle-button']",
     popover: {
       title: 'The copilot',
-      description: 'An agent over your workspace: it searches, reads and writes pages, answers from notebook sources with citations, and makes study decks. Bring your own LLM key in Settings → AI Providers.',
-      side: 'left',
-      align: 'start',
+      description: 'Your on-screen guide and workspace agent in one — floating on every page. It explains what you are looking at, writes into your notes, runs the tour, and can search, create and study anything in the workspace. Bring your own LLM key in Settings → AI Providers.',
+      side: 'top',
+      align: 'end',
     },
   },
   {
@@ -64,21 +71,34 @@ export function startTour() {
     driverObj.destroy();
     driverObj = null;
   }
-  driverObj = driver({
-    showProgress: true,
-    progressText: '{current} / {total}',
-    nextBtnText: 'Next',
-    prevBtnText: 'Back',
-    doneBtnText: 'Done',
-    allowClose: true,
-    stagePadding: 8,
-    stageRadius: 12,
-    overlayColor: 'rgba(4, 6, 12, 0.72)',
-    popoverClass: 'set-tour-popover',
-    onDestroyed: () => {
-      void api.put('/users/onboarding', { tourDone: true }).catch(() => {});
-    },
-    steps: TOUR_STEPS.map(({ mobile, ...s }) => s).filter((s) => s.element && document.querySelector(s.element as string)),
-  });
-  if ((driverObj.getConfig().steps ?? []).length) driverObj.drive();
+  const steps = TOUR_STEPS.map(({ mobile, ...s }) => s).filter((s) => s.element && document.querySelector(s.element as string));
+  const begin = () => {
+    driverObj = driver({
+      showProgress: true,
+      progressText: '{current} / {total}',
+      nextBtnText: 'Next',
+      prevBtnText: 'Back',
+      doneBtnText: 'Done',
+      allowClose: true,
+      stagePadding: 8,
+      stageRadius: 12,
+      overlayColor: 'rgba(4, 6, 12, 0.72)',
+      popoverClass: 'set-tour-popover',
+      onHighlightStarted: (element) => emitSidebar({ open: inSidebar(element) }),
+      onDestroyed: () => {
+        emitSidebar({ restore: true });
+        void api.put('/users/onboarding', { tourDone: true }).catch(() => {});
+      },
+      steps,
+    });
+    if ((driverObj.getConfig().steps ?? []).length) driverObj.drive();
+  };
+  // if the tour opens on a sidebar step, let the sidebar slide open before the first highlight lands
+  const first = steps[0]?.element ? document.querySelector(steps[0].element as string) : null;
+  if (inSidebar(first)) {
+    emitSidebar({ open: true });
+    setTimeout(begin, 300);
+  } else {
+    begin();
+  }
 }
