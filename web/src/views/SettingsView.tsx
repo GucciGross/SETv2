@@ -73,6 +73,7 @@ function MascotTab() {
       accentColor: hue(),
       eyes: pick(['normal', 'happy', 'sleepy', 'visor'] as const),
       accessory: pick(['none', 'antenna', 'halo', 'headphones', 'hardhat', 'party'] as const),
+      enabled: cfg.enabled,
     });
   };
 
@@ -88,10 +89,27 @@ function MascotTab() {
       <p className="text-sm text-set-dim mb-4">
         Your copilot's desk pet — it reacts while the agent thinks, talks and celebrates. Yours everywhere, on every device you sign in from.
       </p>
+      <div className="set-card p-3.5 mb-4 flex items-center gap-3">
+        <button
+          onClick={() => setCfg({ ...cfg, enabled: cfg.enabled === false })}
+          className={`w-10 h-6 rounded-full relative transition-colors shrink-0 ${cfg.enabled === false ? 'bg-set-panel2 border border-set-border' : 'bg-set-accent'}`}
+          aria-label="Toggle mascot"
+        >
+          <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform duration-150 ${cfg.enabled === false ? 'translate-x-0' : 'translate-x-[16px]'}`} />
+        </button>
+        <div className="flex-1">
+          <div className="text-sm text-white">Show mascot</div>
+          <div className="text-xs text-set-dim">Turn off to hide the desk pet everywhere. The copilot itself keeps working.</div>
+        </div>
+        <button className="set-btn text-xs" onClick={async () => {
+          await api.put('/users/mascot', cfg);
+          useApp.setState({ user: { ...(user as any), mascot: cfg } });
+        }}>Apply now</button>
+      </div>
       <div className="set-card p-5 flex flex-col sm:flex-row gap-6 items-center sm:items-start">
         <div className="flex flex-col items-center gap-3 shrink-0">
           <div className="rounded-2xl bg-set-panel2 border border-set-border p-5">
-            <Mascot config={cfg} mood={mood} size={130} />
+            <Mascot config={cfg} mood={mood} size={130} preview />
           </div>
           <div className="text-sm font-medium">{cfg.name}</div>
           <div className="flex gap-1">

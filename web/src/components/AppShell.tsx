@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import {
-  FilePlus, CalendarDays, Network, Database, BookOpen, Boxes, Route, Settings, Search,
+  FilePlus, CalendarDays, Network, Database, BookOpen, Boxes, Route, Settings, Search, Plus,
   PanelRightClose, PanelRightOpen, LogOut, ChevronRight, ChevronDown, Trash2, Import, Sparkles, PenLine,
   Code2, SquareTerminal, LibraryBig, Database as DatabaseIcon, Menu, X, ListTodo, Activity as ActivityIcon,
   ChevronsLeft, ChevronsRight, FileText, LayoutDashboard,
 } from 'lucide-react';
 import { useApp, type PageMeta } from '../stores/app';
 import { api } from '../lib/api';
+import { startTour } from '../lib/tour';
+import WelcomeModal from './onboarding/WelcomeModal';
 import CopilotPanel from './CopilotPanel';
 import Notifications from './Notifications';
 import CommandPalette from './CommandPalette';
@@ -145,6 +147,10 @@ export default function AppShell() {
   const [mobileNav, setMobileNav] = useState(false);
   const [railMode, setRailMode] = useState(false);
   const [pagesOpen, setPagesOpen] = useState(true);
+  const [newSpaceOpen, setNewSpaceOpen] = useState(false);
+  const [newSpaceName, setNewSpaceName] = useState('');
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const onboarding = (user as any)?.onboarding;
 
   useEffect(() => {
     if (spaceId && spaceId !== currentSpaceId) setCurrentSpace(spaceId);
@@ -163,6 +169,26 @@ export default function AppShell() {
     api.get(`/spaces/${currentSpaceId}/databases`).then((r) => setDbs(r.databases)).catch(() => {});
     api.get(`/spaces/${currentSpaceId}/notebooks`).then((r) => setNbs(r.notebooks)).catch(() => {});
   }, [currentSpaceId, spaceId]);
+
+  // first run: welcome + persona + tour (once per user, re-openable from the checklist)
+  useEffect(() => {
+    if (user && currentSpaceId && onboarding && !onboarding.welcomed) setWelcomeOpen(true);
+  }, [user, currentSpaceId, onboarding]);
+  useEffect(() => {
+    const open = () => setWelcomeOpen(true);
+    window.addEventListener('set:open-welcome', open);
+    return () => window.removeEventListener('set:open-welcome', open);
+  }, []);
+
+  const createWorkspace = async () => {
+    if (!newSpaceName.trim()) return;
+    const { space } = await api.post('/spaces', { name: newSpaceName.trim() });
+    const { loadSpaces } = useApp.getState();
+    await loadSpaces();
+    setNewSpaceOpen(false);
+    setNewSpaceName('');
+    navigate(`/app/space/${space.id}`);
+  };
 
   const openTrash = async () => {
     if (!currentSpaceId) return;
@@ -187,16 +213,28 @@ export default function AppShell() {
       <aside
         className={`${railMode ? 'w-14' : 'w-64'} shrink-0 bg-set-panel border-r border-set-border flex flex-col transition-all max-md:w-64 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:transition-transform max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] ${mobileNav ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'}`}
       >
-        <div className="p-3 border-b border-set-border">
-          <select
-            className="set-input font-medium"
-            value={currentSpaceId ?? ''}
-            onChange={(e) => navigate(`/app/space/${e.target.value}`)}
-          >
-            {spaces.map((s) => (
-              <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
-            ))}
-          </select>
+        <div className="p-3 border-b border-set-border" data-tour="space-switcher">
+          <div className="flex gap-1.5">
+            <select
+              className="set-input font-medium flex-1 min-w-0"
+              value={currentSpaceId ?? ''}
+              onChange={(e) => navigate(`/app/space/${e.target.value}`)}
+            >
+              {spaces.map((s) => (
+                <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
+              ))}
+            </select>
+            {!railMode && (
+              <button
+                className="set-btn shrink-0 px-2.5"
+                title="Create a new workspace"
+                aria-label="Create a new workspace"
+                onClick={() => { setNewSpaceName(''); setNewSpaceOpen(true); }}
+              >
+                <Plus size={14} />
+              </button>
+            )}
+          </div>
           <button
             className="hidden md:flex w-full items-center gap-2 text-xs text-set-dim hover:text-set-text mt-2"
             onClick={() => setRailMode((r) => !r)}
@@ -216,7 +254,7 @@ export default function AppShell() {
           {!railMode && <SearchBox />}
 
           <div className="grid grid-cols-2 gap-1.5">
-            <button className="set-btn flex items-center gap-1.5 justify-center" title="New page"
+            <button className="set-btn flex items-center gap-1.5 justify-center" title="New page" data-tour="new-page"
               onClick={async () => {
                 const page = await createPage({ spaceId: currentSpaceId!, title: 'Untitled' });
                 navigate(`/app/space/${currentSpaceId}/page/${page.id}`);
@@ -234,7 +272,7 @@ export default function AppShell() {
           </div>
 
           <div className="text-[11px] uppercase tracking-wider text-set-dim font-semibold px-1">Workspace</div>
-          <nav className="space-y-0.5 text-sm">
+          <nav className="space-y-0.5 text-sm" data-tour="nav">
             {[
               { icon: <LayoutDashboard size={15} />, label: 'Dashboard', to: link(''), surface: null, exact: true },
               { icon: <ListTodo size={15} />, label: 'My Tasks', to: link('/tasks'), surface: null },
@@ -366,6 +404,8 @@ export default function AppShell() {
           <Notifications />
           <button
             className="set-btn-ghost flex items-center gap-1.5"
+            data-tour="copilot"
+            data-copilot-open
             onClick={() => setCopilotOpen(!copilotOpen)}
           >
             {copilotOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
@@ -380,6 +420,43 @@ export default function AppShell() {
       {/* Copilot */}
       <CommandPalette />
       {copilotOpen && <div className="max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:w-full"><CopilotPanel /></div>}
+
+      {/* New workspace modal */}
+      {newSpaceOpen && (
+        <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setNewSpaceOpen(false)}>
+          <div className="set-card bg-set-panel w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-white mb-1">New workspace</h3>
+            <p className="text-sm text-set-dim mb-4">
+              A separate space with its own pages, members and settings — one per team, client or project.
+            </p>
+            <input
+              className="set-input mb-4"
+              autoFocus
+              placeholder="Workspace name (e.g. Marketing, Research Lab)"
+              value={newSpaceName}
+              maxLength={120}
+              onChange={(e) => setNewSpaceName(e.target.value)}
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter' && newSpaceName.trim()) await createWorkspace();
+              }}
+            />
+            <div className="flex gap-2">
+              <button className="set-btn-primary text-sm" disabled={!newSpaceName.trim()} onClick={createWorkspace}>Create workspace</button>
+              <button className="set-btn-ghost text-sm" onClick={() => setNewSpaceOpen(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* First-run welcome */}
+      {welcomeOpen && (
+        <WelcomeModal
+          onDone={() => {
+            setWelcomeOpen(false);
+            setTimeout(() => startTour(), 350);
+          }}
+        />
+      )}
     </div>
   );
 }

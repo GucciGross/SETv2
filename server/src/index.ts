@@ -26,6 +26,7 @@ import { activityRoutes } from './team/activity.js';
 import { importZipRoutes } from './team/importZip.js';
 import { mcpRoutes } from './mcp/routes.js';
 import { skillsRoutes, seedSkills, getActiveSkillPrompt } from './skills/routes.js';
+import { onboardingRoutes } from './onboarding/routes.js';
 import { seed } from './seed.js';
 
 async function main() {
@@ -52,6 +53,7 @@ async function main() {
   await app.register(async (api) => {
     await authRoutes(api);
     await spaceRoutes(api);
+    await onboardingRoutes(api);
     await pageRoutes(api);
     await databaseRoutes(api);
     await pathRoutes(api);

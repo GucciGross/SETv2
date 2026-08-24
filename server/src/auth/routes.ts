@@ -65,8 +65,8 @@ export async function authRoutes(app: FastifyInstance) {
     const exists = await one(`SELECT id FROM users WHERE email = $1`, [email.toLowerCase()]);
     if (exists) return reply.code(409).send({ error: 'Email already registered' });
     const hash = await bcrypt.hash(password, 10);
-    const user = await one<{ id: string; email: string; name: string; mascot: any }>(
-      `INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id, email, name, mascot`,
+    const user = await one<{ id: string; email: string; name: string; mascot: any; onboarding: any }>(
+      `INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id, email, name, mascot, onboarding`,
       [email.toLowerCase(), name ?? email.split('@')[0], hash]
     );
     await createPersonalSpace(user!.id, user!.name);
@@ -78,15 +78,15 @@ export async function authRoutes(app: FastifyInstance) {
     const parsed = creds.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid credentials' });
     const { email, password } = parsed.data;
-    const user = await one<{ id: string; email: string; name: string; password_hash: string; mascot: any }>(
-      `SELECT id, email, name, password_hash, mascot FROM users WHERE email = $1`,
+    const user = await one<{ id: string; email: string; name: string; password_hash: string; mascot: any; onboarding: any }>(
+      `SELECT id, email, name, password_hash, mascot, onboarding FROM users WHERE email = $1`,
       [email.toLowerCase()]
     );
     if (!user || !(await bcrypt.compare(password, user.password_hash)))
       return reply.code(401).send({ error: 'Invalid email or password' });
     return {
       token: signToken({ id: user.id, email: user.email, name: user.name }),
-      user: { id: user.id, email: user.email, name: user.name, mascot: user.mascot ?? null },
+      user: { id: user.id, email: user.email, name: user.name, mascot: user.mascot ?? null, onboarding: user.onboarding ?? {} },
     };
   });
 
@@ -133,8 +133,8 @@ This link expires in 1 hour.`);
   app.get('/auth/me', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;
-    const full = await one<{ mascot: any }>(`SELECT mascot FROM users WHERE id = $1`, [user.id]);
-    return { user: { ...user, mascot: full?.mascot ?? null } };
+    const full = await one<{ mascot: any; onboarding: any }>(`SELECT mascot, onboarding FROM users WHERE id = $1`, [user.id]);
+    return { user: { ...user, mascot: full?.mascot ?? null, onboarding: full?.onboarding ?? {} } };
   });
 
   app.put('/users/mascot', async (req, reply) => {
@@ -148,6 +148,7 @@ This link expires in 1 hour.`);
         accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
         eyes: z.enum(['normal', 'happy', 'sleepy', 'visor']),
         accessory: z.enum(['none', 'antenna', 'halo', 'headphones', 'hardhat', 'party']),
+        enabled: z.boolean().optional(),
       })
       .parse(req.body);
     await q(`UPDATE users SET mascot = $2 WHERE id = $1`, [user.id, JSON.stringify(body)]);

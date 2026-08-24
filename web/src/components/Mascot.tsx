@@ -12,6 +12,8 @@ export interface MascotConfig {
   accentColor: string;
   eyes: 'normal' | 'happy' | 'sleepy' | 'visor';
   accessory: 'none' | 'antenna' | 'halo' | 'headphones' | 'hardhat' | 'party';
+  /** false hides the mascot app-wide (Settings -> Mascot). Absent = shown. */
+  enabled?: boolean;
 }
 
 export const DEFAULT_MASCOT: MascotConfig = {
@@ -29,6 +31,8 @@ interface MascotProps {
   config: MascotConfig;
   mood?: MascotMood;
   size?: number;
+  /** Settings preview renders even when the mascot is turned off. */
+  preview?: boolean;
 }
 
 const darken = (hex: string, f = 0.72) => {
@@ -44,7 +48,7 @@ const lighten = (hex: string, f = 0.45) => {
   return `rgb(${ch((n >> 16) & 255)},${ch((n >> 8) & 255)},${ch(n & 255)})`;
 };
 
-export default function Mascot({ config, mood = 'idle', size = 64 }: MascotProps) {
+export default function Mascot({ config, mood = 'idle', size = 64, preview = false }: MascotProps) {
   const [blink, setBlink] = useState(false);
   useEffect(() => {
     if (config.eyes === 'visor') return;
@@ -57,6 +61,9 @@ export default function Mascot({ config, mood = 'idle', size = 64 }: MascotProps
     );
     return () => clearInterval(t);
   }, [config.eyes]);
+
+  // hooks above stay unconditional; hiding is a pure render concern
+  if (!preview && config.enabled === false) return null;
 
   const c = config;
   const body = darken(c.bodyColor, 0.92);

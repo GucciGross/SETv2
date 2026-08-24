@@ -6,6 +6,7 @@ import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot'
 // @ts-nocheck
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from '../components/DitherChart';
 import ErrorBoundary from '../components/ErrorBoundary';
+import Checklist from '../components/onboarding/Checklist';
 import {
   FileText, BookOpen, Database, Users, Bell, ListTodo, ArrowRight, Sparkles, TrendingUp,
 } from 'lucide-react';
@@ -67,6 +68,13 @@ export default function DashboardView() {
 
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto pb-24">
+      <div data-tour="checklist">
+        <Checklist onRevealWelcome={() => {
+          useApp.setState({ user: { ...(user as any), onboarding: { ...(user as any)?.onboarding, welcomed: false } } });
+          window.dispatchEvent(new CustomEvent('set:open-welcome'));
+        }} />
+      </div>
+
       {/* Hero greeting */}
       <div className="flex items-center gap-4 mb-6">
         <Mascot config={mascot} mood={overdue.length > 0 ? 'thinking' : 'idle'} size={56} />

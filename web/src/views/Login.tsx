@@ -19,7 +19,7 @@ export default function Login() {
     try {
       const res = mode === 'login'
         ? await api.post('/auth/login', { email, password })
-        : await api.post('/auth/register', { email, name, password });
+        : await api.post('/auth/register', { email, name: name.trim() || undefined, password });
       setToken(res.token);
       useApp.setState({ user: res.user });
       navigate('/app');

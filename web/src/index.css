@@ -136,3 +136,64 @@ body {
 .set-chip {
   @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs border;
 }
+
+/* Spotlight tour (driver.js) themed to SET */
+.set-tour-popover {
+  background: var(--set-panel, #12141c);
+  border: 1px solid rgba(108, 140, 255, 0.35);
+  border-radius: 12px;
+  color: #e6e8f0;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  max-width: 320px;
+}
+.set-tour-popover .driver-popover-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #fff;
+  margin-bottom: 4px;
+}
+.set-tour-popover .driver-popover-description {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #9aa0b4;
+}
+.set-tour-popover .driver-popover-progress-text {
+  color: #6c8cff;
+  font-size: 11px;
+}
+.set-tour-popover .driver-popover-close-btn {
+  color: #9aa0b4;
+}
+.set-tour-popover .driver-popover-arrow-side-bottom {
+  border-bottom-color: #12141c;
+}
+.set-tour-popover .driver-popover-arrow-side-top {
+  border-top-color: #12141c;
+}
+.set-tour-popover .driver-popover-arrow-side-left {
+  border-left-color: #12141c;
+}
+.set-tour-popover .driver-popover-arrow-side-right {
+  border-right-color: #12141c;
+}
+.set-tour-popover button.driver-popover-next-btn {
+  background: rgba(108, 140, 255, 0.25);
+  color: #c7d2fe;
+  border: 1px solid rgba(108, 140, 255, 0.45);
+  border-radius: 8px;
+  text-shadow: none;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+.set-tour-popover button.driver-popover-prev-btn,
+.set-tour-popover button.driver-popover-close-btn {
+  color: #9aa0b4;
+  text-shadow: none;
+  font-size: 12px;
+}
+.safe-outer {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
