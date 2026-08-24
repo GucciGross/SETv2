@@ -29,6 +29,20 @@ export default function CopilotPanel() {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const onPanelTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    touchStart.current = { x: t.clientX, y: t.clientY };
+  };
+  const onPanelTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStart.current;
+    touchStart.current = null;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    const dy = start.y - t.clientY; // positive = swiped up
+    const dx = Math.abs(t.clientX - start.x);
+    if (dy > 70 && dx < 60) setCopilotOpen(false);
+  };
   const [celebrate, setCelebrate] = useState(false);
   const user = useApp((st) => st.user);
   const setCopilotOpen = useApp((st) => st.setCopilotOpen);
@@ -146,8 +160,13 @@ export default function CopilotPanel() {
   };
 
   return (
-    <aside className="w-full sm:w-[400px] h-full shrink-0 border-l border-set-border bg-set-panel flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+    <aside
+      className="w-full sm:w-[400px] h-full max-w-full shrink-0 border-l border-set-border bg-set-panel flex flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+      onTouchStart={onPanelTouchStart}
+      onTouchEnd={onPanelTouchEnd}
+    >
       <div className="h-12 px-3 border-b border-set-border flex items-center gap-2">
+        <span className="text-[9px] text-set-dim/70 hidden max-sm:inline select-none">swipe up to close</span>
         <Mascot config={mascot} mood={mood} size={30} />
         <div className="leading-tight">
           <div className="font-semibold text-sm">{mascot.name}</div>
@@ -166,7 +185,7 @@ export default function CopilotPanel() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-3 space-y-3">
         {items.length === 0 && (
           <div className="text-sm text-set-dim space-y-2 fadein">
             <p> Your workspace agent. It can:</p>
@@ -210,7 +229,7 @@ export default function CopilotPanel() {
                 {t.result && !rejected && (
                   <details className="mt-0.5">
                     <summary className="cursor-pointer text-set-dim">result</summary>
-                    <pre className="mt-1 whitespace-pre-wrap break-all text-[10px] text-set-dim">{JSON.stringify(t.result, null, 1).slice(0, 2000)}</pre>
+                    <pre className="mt-1 whitespace-pre-wrap break-words overflow-hidden text-[10px] text-set-dim">{JSON.stringify(t.result, null, 1).slice(0, 2000)}</pre>
                   </details>
                 )}
               </div>

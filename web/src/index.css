@@ -116,6 +116,7 @@ body {
 @keyframes mascot-wiggle { 0%, 100% { transform: rotate(0deg) } 50% { transform: rotate(14deg) } }
 @keyframes mascot-pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.35 } }
 @keyframes mascot-float { 0% { opacity: 0; transform: translateY(4px) } 40% { opacity: 1 } 100% { opacity: 0; transform: translateY(-6px) } }
+.mascot-tail { animation: mascot-wiggle 0.8s ease-in-out infinite; transform-origin: 74px 72px; }
 
 .set-card {
   @apply bg-set-panel border border-set-border rounded-xl;

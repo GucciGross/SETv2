@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import {
   BookOpen, Network, Database, Boxes, Terminal, Code2, Route as RouteIcon, PenLine, LibraryBig,
-  Sparkles, ShieldCheck, Server, ArrowRight, Github, FileText, Zap, Users, MessageSquare, Check, Cloud,
+  Sparkles, ShieldCheck, Server, ArrowRight, Github, FileText, Zap, Users, MessageSquare, Check, Cloud, Bot,
 } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '../lib/api';
@@ -94,6 +94,7 @@ export default function Landing() {
             Knowledge + Learning OS
           </span>
           <nav className="ml-auto flex items-center gap-1 sm:gap-2 text-sm">
+            <a href="/agents" className="set-btn-ghost flex items-center gap-1"><Bot size={14} /> Agents</a>
             <a href="/docs" className="set-btn-ghost">Docs</a>
             <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="set-btn-ghost flex items-center gap-1.5">
               <Github size={14} /> <span className="hidden sm:inline">GitHub</span>
@@ -125,6 +126,9 @@ export default function Landing() {
             </Link>
             <a href="/docs" className="set-btn px-6 py-2.5 text-base flex items-center gap-2">
               <BookOpen size={16} /> Read the docs
+            </a>
+            <a href="/agents" className="set-btn px-6 py-2.5 text-base flex items-center gap-2">
+              <Bot size={16} /> Agents &amp; MCP
             </a>
           </div>
 
@@ -160,6 +164,27 @@ export default function Landing() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Agent strip */}
+      <section className="border-t border-set-border/60">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
+          <a href="/agents" className="set-card p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-gradient-to-r from-set-panel to-[#161a2b] hover:border-set-accent/50 transition-colors group">
+            <div className="w-11 h-11 rounded-xl bg-set-accent/20 border border-set-accent/40 flex items-center justify-center text-blue-200 shrink-0">
+              <Bot size={20} />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-bold text-white">Built for agents, not just humans</h3>
+              <p className="text-sm text-set-dim mt-1">
+                SET speaks the Model Context Protocol natively — 26 tools, grounded citations, OAuth 2.1 consent.
+                Connect Claude, ChatGPT, Cursor or any MCP client in under a minute.
+              </p>
+            </div>
+            <span className="set-btn-primary shrink-0 flex items-center gap-2 group-hover:brightness-110">
+              Connect an agent <ArrowRight size={14} />
+            </span>
+          </a>
         </div>
       </section>
 
