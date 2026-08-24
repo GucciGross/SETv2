@@ -23,6 +23,7 @@ import DocsView from './views/DocsView';
 import Landing from './views/Landing';
 import Consent from './views/Consent';
 import AgentsLanding from './views/AgentsLanding';
+import DashboardView from './views/DashboardView';
 import Reset from './views/Reset';
 import ActivityView from './views/ActivityView';
 import MyTasksView from './views/MyTasksView';
@@ -43,7 +44,7 @@ const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { index: true, element: <Home /> },
-          { path: 'space/:spaceId', element: <Home /> },
+          { path: 'space/:spaceId', element: <DashboardView /> },
           { path: 'space/:spaceId/page/:pageId', element: <PageView /> },
           { path: 'space/:spaceId/graph', element: <GraphView /> },
           { path: 'space/:spaceId/db/:dbId', element: <DatabaseView /> },

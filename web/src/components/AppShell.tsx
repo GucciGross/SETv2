@@ -4,6 +4,7 @@ import {
   FilePlus, CalendarDays, Network, Database, BookOpen, Boxes, Route, Settings, Search,
   PanelRightClose, PanelRightOpen, LogOut, ChevronRight, ChevronDown, Trash2, Import, Sparkles, PenLine,
   Code2, SquareTerminal, LibraryBig, Database as DatabaseIcon, Menu, X, ListTodo, Activity as ActivityIcon,
+  ChevronsLeft, ChevronsRight, FileText,
 } from 'lucide-react';
 import { useApp, type PageMeta } from '../stores/app';
 import { api } from '../lib/api';
@@ -134,7 +135,7 @@ function SearchBox() {
 export default function AppShell() {
   const { spaceId } = useParams();
   const location = useLocation();
-  const { spaces, currentSpaceId, setCurrentSpace, user, presence, copilotOpen, setCopilotOpen, logout, createPage, surfaces, loadSurfaces } = useApp();
+  const { spaces, currentSpaceId, setCurrentSpace, user, presence, copilotOpen, setCopilotOpen, logout, createPage, surfaces, loadSurfaces, pages } = useApp();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dbs, setDbs] = useState<any[]>([]);
@@ -142,6 +143,8 @@ export default function AppShell() {
   const [trashOpen, setTrashOpen] = useState(false);
   const [trash, setTrash] = useState<any[]>([]);
   const [mobileNav, setMobileNav] = useState(false);
+  const [railMode, setRailMode] = useState(false);
+  const [pagesOpen, setPagesOpen] = useState(true);
 
   useEffect(() => {
     if (spaceId && spaceId !== currentSpaceId) setCurrentSpace(spaceId);
@@ -182,7 +185,7 @@ export default function AppShell() {
         <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setMobileNav(false)} />
       )}
       <aside
-        className={`w-64 shrink-0 bg-set-panel border-r border-set-border flex flex-col max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:transition-transform max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] ${mobileNav ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'}`}
+        className={`${railMode ? 'w-14' : 'w-64'} shrink-0 bg-set-panel border-r border-set-border flex flex-col transition-all max-md:w-64 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:transition-transform max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] ${mobileNav ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'}`}
       >
         <div className="p-3 border-b border-set-border">
           <select
@@ -194,6 +197,13 @@ export default function AppShell() {
               <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
             ))}
           </select>
+          <button
+            className="hidden md:flex w-full items-center gap-2 text-xs text-set-dim hover:text-set-text mt-2"
+            onClick={() => setRailMode((r) => !r)}
+          >
+            {railMode ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}
+            {!railMode && <span>Collapse</span>}
+          </button>
           {presence.length > 1 && (
             <div className="mt-2 flex items-center gap-1 text-xs text-set-dim">
               <span className="w-2 h-2 rounded-full bg-green-400 inline-block" />
@@ -202,8 +212,8 @@ export default function AppShell() {
           )}
         </div>
 
-        <div className="p-3 space-y-3 overflow-y-auto flex-1">
-          <SearchBox />
+        <div className={`${railMode ? 'px-1' : 'p-3'} space-y-3 overflow-y-auto flex-1`}>
+          {!railMode && <SearchBox />}
 
           <div className="grid grid-cols-2 gap-1.5">
             <button className="set-btn flex items-center gap-1.5 justify-center" title="New page"
@@ -211,7 +221,7 @@ export default function AppShell() {
                 const page = await createPage({ spaceId: currentSpaceId!, title: 'Untitled' });
                 navigate(`/app/space/${currentSpaceId}/page/${page.id}`);
               }}>
-              <FilePlus size={14} /> Page
+              <FilePlus size={14} /> {!railMode && 'Page'}
             </button>
             <button className="set-btn flex items-center gap-1.5 justify-center" title="Today's daily note"
               onClick={async () => {
@@ -219,7 +229,7 @@ export default function AppShell() {
                 useApp.getState().loadPages(currentSpaceId!);
                 navigate(`/app/space/${currentSpaceId}/page/${page.id}`);
               }}>
-              <CalendarDays size={14} /> Today
+              <CalendarDays size={14} /> {!railMode && 'Today'}
             </button>
           </div>
 
@@ -247,7 +257,7 @@ export default function AppShell() {
               ))}
           </nav>
 
-          {dbs.length > 0 && (
+          {dbs.length > 0 && !railMode && (
             <>
               <div className="text-[11px] uppercase tracking-wider text-set-dim font-semibold px-1">Databases</div>
               <nav className="space-y-0.5 text-sm">
@@ -261,7 +271,7 @@ export default function AppShell() {
             </>
           )}
 
-          {nbs.length > 0 && (
+          {nbs.length > 0 && !railMode && (
             <>
               <div className="text-[11px] uppercase tracking-wider text-set-dim font-semibold px-1">Notebooks</div>
               <nav className="space-y-0.5 text-sm">
@@ -275,24 +285,38 @@ export default function AppShell() {
             </>
           )}
 
-          <div className="text-[11px] uppercase tracking-wider text-set-dim font-semibold px-1">Pages</div>
-          <div onClick={() => mobileNav && setMobileNav(false)}>
-            <PageTree />
-          </div>
+          {!railMode && (
+            <button
+              className="flex w-full items-center gap-1 px-1 py-1 text-[11px] uppercase tracking-wider text-set-dim font-semibold hover:text-set-text"
+              onClick={() => setPagesOpen((o) => !o)}
+            >
+              {pagesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Pages ({pages.length})
+            </button>
+          )}
+          {railMode && (
+            <div className="flex justify-center py-2 text-set-dim" title={`Pages (${pages.length})`}>
+              <FileText size={15} />
+            </div>
+          )}
+          {pagesOpen && !railMode && (
+            <div onClick={() => mobileNav && setMobileNav(false)}>
+              <PageTree />
+            </div>
+          )}
 
           <div className="flex items-center gap-2 pt-2 text-xs text-set-dim">
             <button className="set-btn-ghost flex items-center gap-1" onClick={() => fileRef.current?.click()}>
-              <Import size={13} /> Import .md
+              <Import size={13} /> {!railMode && 'Import .md'}
             </button>
             <input ref={fileRef} type="file" accept=".md,.markdown" multiple hidden onChange={(e) => importMd(e.target.files)} />
             <button className="set-btn-ghost flex items-center gap-1" onClick={openTrash}>
-              <Trash2 size={13} /> Trash
+              <Trash2 size={13} /> {!railMode && 'Trash'}
             </button>
           </div>
         </div>
 
         <div className="p-3 border-t border-set-border flex items-center justify-between text-sm">
-          <span className="truncate text-set-dim">{user?.name}</span>
+          {!railMode && <span className="truncate text-set-dim">{user?.name}</span>}
           <div className="flex items-center gap-1">
             <button className="md:hidden set-btn-ghost" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={15} /></button>
             <button className="set-btn-ghost" title="Sign out" onClick={logout}><LogOut size={15} /></button>

@@ -66,7 +66,7 @@ export default function Notifications() {
         )}
       </button>
       {open && (
-        <div className="set-card p-2 max-h-96 overflow-auto fadein shadow-2xl max-md:fixed max-md:left-3 max-md:right-3 max-md:top-14 max-md:z-50 md:absolute md:right-0 md:top-9 md:z-50 md:w-80">
+        <div className="set-card p-2 max-h-96 overflow-auto fadein shadow-2xl max-md:fixed max-md:left-3 max-md:right-3 max-md:top-14 max-md:z-[70] md:absolute md:right-0 md:top-9 md:z-[70] md:w-80">
           <div className="flex items-center justify-between px-2 py-1">
             <span className="text-xs font-semibold uppercase text-set-dim">Notifications</span>
             {unread > 0 && (
