@@ -356,4 +356,19 @@ const shipCol = invFull.database.schema.find((c) => c.name === 'Shipped');
 check('csv type inference: number + checkbox', qtyCol?.type === 'number' && shipCol?.type === 'checkbox', `${qtyCol?.type}/${shipCol?.type}`);
 check('csv rows imported with values', invFull.rows.length === 2 && Number(invFull.rows[0].cells[qtyCol.id]) === 5 && invFull.rows[0].cells[shipCol.id] === true);
 
+
+// 28. copilot skills
+const skillsList = (await call('GET', `/spaces/${team.id}/skills`)).json.skills;
+check('built-in skills seeded', skillsList.length >= 4, skillsList.map((s) => s.name).slice(0, 5).join(','));
+check('skills have content', skillsList.every((s) => s.description && s.description.length > 5));
+const newSkill = await call('POST', `/spaces/${team.id}/skills`, { name: 'test-skill', description: 'A test skill', content: '# Test' + String.fromCharCode(10) + 'Do the thing.' });
+check('create custom skill', newSkill.status === 200);
+const toggle = await call('PATCH', `/skills/${newSkill.json.skill.id}`, { active: false });
+check('deactivate skill', toggle.status === 200);
+const afterToggle = (await call('GET', `/spaces/${team.id}/skills`)).json.skills;
+check('skill deactivated', afterToggle.find((s) => s.name === 'test-skill')?.active === false);
+await call('DELETE', `/skills/${newSkill.json.skill.id}`);
+const afterDel = (await call('GET', `/spaces/${team.id}/skills`)).json.skills;
+check('custom skill deleted', !afterDel.some((s) => s.name === 'test-skill'));
+
 console.log(process.exitCode ? 'SMOKE TEST FAILED' : 'ALL SMOKE TESTS PASSED');

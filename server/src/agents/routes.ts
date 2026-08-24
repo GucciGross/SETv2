@@ -22,7 +22,7 @@ function sse(reply: FastifyReply, type: string, payload: any) {
   reply.raw.write(`event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`);
 }
 
-const SYSTEM_PROMPT = `You are SET Copilot — an agent living inside the SET knowledge workspace (pages, graph, databases and research notebooks).
+const BASE_SYSTEM_PROMPT = `You are SET Copilot — an agent living inside the SET knowledge workspace (pages, graph, databases and research notebooks).
 You can read and write workspace pages, search research notebooks with citations, generate study material, and render rich UI components.
 Guidelines:
 - Prefer tools over guessing: search_workspace before writing about existing content, search_knowledge for research questions.
@@ -108,8 +108,14 @@ export async function agentRoutes(app: FastifyInstance) {
     try {
       const MAX_STEPS = 8;
       for (let step = 0; step < MAX_STEPS; step++) {
+        const { getActiveSkillPrompt } = await import('../skills/routes.js');
+        const skillPrompt = await getActiveSkillPrompt(body.spaceId);
+        const systemContent = skillPrompt ? `${BASE_SYSTEM_PROMPT}
+
+# Active Skills
+${skillPrompt}` : BASE_SYSTEM_PROMPT;
         const messages: ChatMessage[] = [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: systemContent },
           ...(contextBlock && step === 0 ? ([{ role: 'system', content: contextBlock }] as ChatMessage[]) : []),
           ...thread.slice(-16),
         ];

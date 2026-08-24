@@ -182,6 +182,9 @@ See also [[Safety Checklist]].`
     JSON.stringify(lpItems),
   ]);
 
+  const { seedSkills } = await import('./skills/routes.js');
+  await seedSkills(spaceId, user!.id);
+
   console.log('[seed] demo data created — login with demo@set.local / demo-demo');
 }
 

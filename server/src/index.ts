@@ -25,6 +25,7 @@ import { waitlistRoutes } from './waitlist.js';
 import { activityRoutes } from './team/activity.js';
 import { importZipRoutes } from './team/importZip.js';
 import { mcpRoutes } from './mcp/routes.js';
+import { skillsRoutes, seedSkills, getActiveSkillPrompt } from './skills/routes.js';
 import { seed } from './seed.js';
 
 async function main() {
@@ -73,6 +74,7 @@ async function main() {
     await activityRoutes(api);
     await importZipRoutes(api);
     await mcpRoutes(api);
+    await skillsRoutes(api);
   }, { prefix: '/api' });
 
   await migrate();

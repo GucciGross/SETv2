@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Plug, Activity, ScrollText, KeyRound, Ban, Copy, Check } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip } from './DitherChart';
 
 /** Settings → MCP: endpoint info, connected clients, tokens, analytics, logs. */
 export default function McpSettings() {
@@ -33,7 +34,6 @@ export default function McpSettings() {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const maxCalls = Math.max(1, ...(stats?.perTool ?? []).map((t: any) => t.calls));
 
   return (
     <div>
@@ -88,15 +88,32 @@ export default function McpSettings() {
       {tab === 'analytics' && (
         <div className="set-card p-4">
           {(stats?.perTool ?? []).length === 0 && <p className="text-sm text-set-dim">No tool calls in the last 7 days. Connect a client at <a className="text-set-accent" href="/agents" target="_blank">/agents</a> to begin.</p>}
+          {(stats?.perTool ?? []).length > 0 && (() => {
+            const data = (stats?.perTool ?? []).slice(0, 12).map((t: any) => ({
+              tool: t.tool.replace(/_/g, ' ').replace(/\w/g, (c: string) => c.toUpperCase()).slice(0, 14),
+              calls: t.calls,
+              ok: t.success_rate,
+            }));
+            const config = {
+              calls: { label: 'Calls', color: 'blue' },
+              ok: { label: 'Success %', color: 'green' },
+            };
+            return (
+              <div className="rounded-xl border border-set-border overflow-hidden">
+                <BarChart data={data} config={config as any} bloom="low">
+                  <XAxis dataKey="tool" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="calls" variant="gradient" />
+                  <Bar dataKey="ok" variant="dotted" />
+                </BarChart>
+              </div>
+            );
+          })()}
           {(stats?.perTool ?? []).map((t: any) => (
-            <div key={t.tool} className="mb-3">
-              <div className="flex items-center justify-between text-xs mb-1">
-                <span className="font-mono text-set-text">{t.tool}</span>
-                <span className="text-set-dim">{t.calls} calls · {t.success_rate}% ok · p95 {t.p95}ms</span>
-              </div>
-              <div className="h-1.5 bg-set-panel2 rounded-full overflow-hidden">
-                <div className="h-full bg-set-accent/70" style={{ width: `${(t.calls / maxCalls) * 100}%` }} />
-              </div>
+            <div key={t.tool} className="mt-1 flex items-center justify-between text-[11px] border-t border-set-border/30 pt-1">
+              <span className="font-mono text-set-dim">{t.tool}</span>
+              <span className="text-set-dim">{t.calls} calls · {t.success_rate}% ok · p50 {t.p50}ms · p95 {t.p95}ms</span>
             </div>
           ))}
           {(stats?.clients ?? []).length > 0 && (
