@@ -14,7 +14,7 @@ import {
 export default function DashboardView() {
   const { spaceId } = useParams();
   const navigate = useNavigate();
-  const { user, spaces } = useApp();
+  const { user, spaces, pages } = useApp();
   const [stats, setStats] = useState<any>(null);
   const [tasks, setTasks] = useState<any>(null);
   const [activity, setActivity] = useState<any[]>([]);
@@ -93,7 +93,7 @@ export default function DashboardView() {
       {/* Stat cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         {[
-          { icon: <FileText size={18} />, label: 'Pages', value: stats?.pages ?? '—', to: `/app/space/${spaceId}/page` },
+          { icon: <FileText size={18} />, label: 'Pages', value: stats?.pages ?? '—', to: pages[0] ? `/app/space/${spaceId}/page/${pages[0].id}` : `/app/space/${spaceId}` },
           { icon: <BookOpen size={18} />, label: 'Notebooks', value: stats?.notebooks ?? '—', to: `/app/space/${spaceId}/notebooks` },
           { icon: <Database size={18} />, label: 'Databases', value: stats?.databases ?? '—', to: `/app/space/${spaceId}` },
           { icon: <ListTodo size={18} />, label: 'My Tasks', value: openTasks, to: `/app/space/${spaceId}/tasks` },

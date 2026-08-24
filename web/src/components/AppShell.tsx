@@ -4,7 +4,7 @@ import {
   FilePlus, CalendarDays, Network, Database, BookOpen, Boxes, Route, Settings, Search,
   PanelRightClose, PanelRightOpen, LogOut, ChevronRight, ChevronDown, Trash2, Import, Sparkles, PenLine,
   Code2, SquareTerminal, LibraryBig, Database as DatabaseIcon, Menu, X, ListTodo, Activity as ActivityIcon,
-  ChevronsLeft, ChevronsRight, FileText,
+  ChevronsLeft, ChevronsRight, FileText, LayoutDashboard,
 } from 'lucide-react';
 import { useApp, type PageMeta } from '../stores/app';
 import { api } from '../lib/api';
@@ -236,6 +236,7 @@ export default function AppShell() {
           <div className="text-[11px] uppercase tracking-wider text-set-dim font-semibold px-1">Workspace</div>
           <nav className="space-y-0.5 text-sm">
             {[
+              { icon: <LayoutDashboard size={15} />, label: 'Dashboard', to: link(''), surface: null, exact: true },
               { icon: <ListTodo size={15} />, label: 'My Tasks', to: link('/tasks'), surface: null },
               { icon: <ActivityIcon size={15} />, label: 'Activity', to: link('/activity'), surface: null },
               { icon: <Network size={15} />, label: 'Graph', to: link('/graph'), surface: null },
@@ -250,11 +251,22 @@ export default function AppShell() {
               { icon: <Settings size={15} />, label: 'Settings', to: link('/settings'), surface: null },
             ]
               .filter((item) => !item.surface || surfaces[item.surface])
-              .map((item) => (
-                <Link key={item.label} to={item.to} onClick={() => setMobileNav(false)} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-set-panel2 text-set-text">
-                  <span className="text-set-dim">{item.icon}</span> {item.label}
-                </Link>
-              ))}
+              .map((item) => {
+                const active = item.exact
+                  ? location.pathname === item.to
+                  : location.pathname.startsWith(item.to);
+                return (
+                  <Link
+                    key={item.label}
+                    to={item.to}
+                    onClick={() => setMobileNav(false)}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-set-panel2 text-set-text ${active ? 'bg-set-panel2 text-white' : ''}`}
+                    title={railMode ? item.label : undefined}
+                  >
+                    <span className={active ? 'text-set-accent' : 'text-set-dim'}>{item.icon}</span> {item.label}
+                  </Link>
+                );
+              })}
           </nav>
 
           {dbs.length > 0 && !railMode && (
