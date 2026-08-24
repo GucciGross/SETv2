@@ -21,6 +21,8 @@ import CodingView from './views/CodingView';
 import TerminalView from './views/TerminalView';
 import DocsView from './views/DocsView';
 import Landing from './views/Landing';
+import Consent from './views/Consent';
+import AgentsLanding from './views/AgentsLanding';
 import Reset from './views/Reset';
 import ActivityView from './views/ActivityView';
 import MyTasksView from './views/MyTasksView';
@@ -29,6 +31,8 @@ const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
   { path: '/docs', element: <DocsView standalone /> },
   { path: '/reset', element: <Reset /> },
+  { path: '/oauth/consent', element: <Consent /> },
+  { path: '/agents', element: <AgentsLanding /> },
   { path: '/', element: <Landing /> },
   {
     path: '/',

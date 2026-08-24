@@ -24,6 +24,7 @@ import { myTasksRoutes, kitRoutes } from './team/mytasks.js';
 import { waitlistRoutes } from './waitlist.js';
 import { activityRoutes } from './team/activity.js';
 import { importZipRoutes } from './team/importZip.js';
+import { mcpRoutes } from './mcp/routes.js';
 import { seed } from './seed.js';
 
 async function main() {
@@ -71,6 +72,7 @@ async function main() {
     await waitlistRoutes(api);
     await activityRoutes(api);
     await importZipRoutes(api);
+    await mcpRoutes(api);
   }, { prefix: '/api' });
 
   await migrate();

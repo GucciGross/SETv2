@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus } from 'lucide-react';
+import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug } from 'lucide-react';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
+import McpSettings from '../components/McpSettings';
 
 export default function SettingsView() {
   const { spaceId } = useParams();
-  const [tab, setTab] = useState<'surfaces' | 'mascot' | 'providers' | 'members' | 'workspace'>('surfaces');
+  const [tab, setTab] = useState<'surfaces' | 'mcp' | 'mascot' | 'providers' | 'members' | 'workspace'>('surfaces');
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
@@ -15,6 +16,7 @@ export default function SettingsView() {
       <div className="flex flex-wrap gap-1 mb-4">
         {([
           ['surfaces', 'Work surfaces', <LayoutGrid key="z" size={14} />],
+          ['mcp', 'MCP', <Plug key="z" size={14} />],
           ['mascot', 'Mascot', <Cat key="m" size={14} />],
           ['providers', 'AI Providers', <Cpu key="a" size={14} />],
           ['members', 'Members', <Users key="b" size={14} />],
@@ -26,6 +28,7 @@ export default function SettingsView() {
         ))}
       </div>
       {tab === 'surfaces' && <SurfacesTab spaceId={spaceId!} />}
+      {tab === 'mcp' && <McpSettings />}
       {tab === 'mascot' && <MascotTab />}
       {tab === 'providers' && <ProvidersTab spaceId={spaceId!} />}
       {tab === 'members' && <MembersTab spaceId={spaceId!} />}

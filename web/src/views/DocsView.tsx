@@ -314,6 +314,61 @@ Set the env vars and bind a notebook to a RAGFlow dataset (\`PATCH /api/notebook
 `,
   },
   {
+    id: 'mcp',
+    title: 'MCP & Agents',
+    md: `
+## Connect AI clients over MCP
+
+SET speaks the **Model Context Protocol** (Streamable HTTP, OAuth 2.1 + PKCE). Point any MCP client — Claude Desktop, Claude.ai connectors, Cursor, Claude Code, custom agents — at your server URL and complete a one-time consent.
+
+**Endpoint:** \`https://your-set-server/api/mcp\` · Quickstart guides: the **/agents** page on any deployment.
+
+**Auth flow:** the client discovers our authorization server via RFC 9728 metadata, registers itself (RFC 7591), and opens the consent page where you pick the workspace and **Read-only** or **Read & write** scope. Tokens are revocable from Settings → MCP, where owners also see per-tool analytics and full call logs.
+
+### Tools (26)
+
+#### Read tools — scope \`mcp:read\`
+- **search_workspace** *(query: string, limit?: number)* — full-text search across pages, databases, notebooks. Always the first tool to call when looking for content. Returns \`{pages[], notebooks[], databases[]}\`.
+- **list_pages** *()* — every page with id, title, hierarchy and daily-note flag.
+- **read_page** *(ref: string)* — a page as Markdown by id or exact title. Wiki links preserved.
+- **read_page_backlinks** *(ref: string)* — pages linking in, pages linked out.
+- **list_databases** *()* — databases with row counts.
+- **query_database** *(databaseId: string, filter?: string)* — schema (columns + types) and rows; optional substring filter over row values.
+- **list_notebooks** *()* — research notebooks with source/chunk counts.
+- **list_sources** *(notebookId: string)* — indexed sources with ingestion status.
+- **search_knowledge** *(query: string, notebookId?: string, limit?: number)* — hybrid semantic+keyword retrieval over a notebook's sources; returns cited excerpts with source name, page label and scores. Use before answering questions about your documents.
+- **list_study_decks** *()* / **get_deck** *(deckId: string)* — generated flashcards, quizzes, guides, audio scripts.
+- **list_my_tasks** *()* — assigned paths (due dates, progress) + open checkbox tasks across pages.
+- **list_activity** *(limit?: number)* — the workspace activity feed.
+- **list_notifications** *()* — the user's assignments, due-soon, @mentions, comments.
+- **list_models_3d** *()* — 3D/CAD models (requires the 3D & CAD surface).
+
+#### Write tools — scope \`mcp:write\`
+- **create_page** *(title: string, markdown?: string, parentRef?: string)* — creates a page; \`[[wiki links]]\` resolve automatically.
+- **append_to_page** *(ref: string, markdown: string)* — appends Markdown to an existing page.
+- **update_page_properties** *(ref: string, title?: string, icon?: string)* — rename/re-icon.
+- **create_comment** *(ref: string, body: string)* — comments; @Name mentions notify members.
+- **create_database_row** *(databaseId: string, title?: string, cells?: object)* — adds a row (linked page created); cells keyed by column name.
+- **update_database_row** *(rowId: string, cells: object)* — updates cells by column name. Idempotent.
+- **create_notebook** *(title: string, description?: string)* — new research notebook.
+- **add_notebook_source** *(notebookId: string, name: string, text: string)* — text source, auto-indexed for grounded search.
+- **generate_study_material** *(notebookId: string, kind: 'flashcards'|'quiz'|'studyguide'|'audio', topic?: string, count?: number)* — LLM-generated study material from sources.
+- **import_from_dataset** *(datasetId: string, path: string, notebookId?: string)* — imports from public HuggingFace datasets (Library surface required).
+- **create_page_template** *(title: string, markdown?: string)* — reusable page template.
+
+All writes respect the user's role (viewers get an error result) and disabled work surfaces. Errors return as \`isError\` results with a message, never crash the session.
+
+### Resources & Prompts
+Resources: \`set://pages\`, \`set://pages/{id}\`, \`set://mytasks\`. Prompts: \`set/daily-brief\`, \`set/research-brief\`, \`set/page-outline\`.
+
+### Errors
+\`-32601\` unknown method · \`-32000\` auth failures (with \`WWW-Authenticate\` RFC 9728 challenge when unauthenticated) · \`-32002\` unknown resource/prompt · tool errors as \`isError: true\` results.
+
+### Machine-readable manifest
+\`GET /api/mcp/docs.json\` returns the full tool catalog for client integrations and store review materials.
+`,
+  },
+  {
     id: 'faq',
     title: 'FAQ',
     md: `

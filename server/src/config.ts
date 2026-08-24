@@ -27,6 +27,7 @@ const env = z
     HF_TOKEN: z.string().optional(),
     SEED_DEMO: z.string().optional(),
     REGISTRATION_OPEN: z.string().default('1'),
+    MCP_ENABLED: z.string().default('1'),
   })
   .passthrough()
   .parse(process.env);
@@ -52,6 +53,7 @@ export const config = {
   hfToken: env.HF_TOKEN,
   seedDemo: env.SEED_DEMO === '1',
   registrationOpen: env.REGISTRATION_OPEN !== '0',
+  mcpEnabled: env.MCP_ENABLED !== '0',
 };
 
 export const HASH_EMBED_DIM = 384;

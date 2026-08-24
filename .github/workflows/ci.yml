@@ -26,11 +26,12 @@ jobs:
         working-directory: server
       - run: DATABASE_URL=postgres://set:set@localhost:5432/set npm run migrate
         working-directory: server
-      - name: Smoke suite
+      - name: Smoke suites (API + MCP)
         run: |
           DATABASE_URL=postgres://set:set@localhost:5432/set SEED_DEMO=1 DATA_DIR=./data node dist/index.js &
           sleep 15
           node smoke.mjs
+          node mcp-smoke.mjs
         working-directory: server
   web:
     runs-on: ubuntu-latest
