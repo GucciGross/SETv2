@@ -11,8 +11,19 @@ body,
 #root {
   height: 100%;
 }
-#root {
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+/* No horizontal panning, ever — wide content scrolls inside its own container
+   (tables, code blocks). `clip` also forbids programmatic sideways scrolling;
+   older Safari falls back to `hidden`. */
+html,
+body,
+#root,
+.app-shell {
   overflow-x: hidden;
+  overflow-x: clip;
 }
 /* iOS dynamic viewport: avoids 100vh notch/home-indicator overflow */
 .app-shell {
@@ -27,9 +38,19 @@ body,
 body {
   @apply bg-set-bg text-set-text antialiased;
   /* kill phone rubber-band/scrollbars: the app shell manages its own scrolling */
-  overflow-x: hidden;
   overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
   font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* iOS auto-zooms into any focused input with font-size < 16px — that was the
+   "starts zoomed in" effect on login. Floor form controls at 16px on phones. */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 
 ::-webkit-scrollbar {
@@ -258,9 +279,6 @@ body {
   --input: rgba(150, 165, 200, 0.22);
   --ring: rgba(139, 92, 246, 0.65);
   --radius: 0.75rem;
-  /* fit the content instead of a giant default window */
-  --copilot-popup-height: 520px;
-  --copilot-popup-max-height: min(78vh, 660px);
   color-scheme: dark;
 
   /* the glass itself — violet washes + an ordered dot grid (SET's dither
@@ -355,31 +373,20 @@ body {
   border-radius: 4px;
 }
 
-/* Mobile: floating bottom sheet, never a fullscreen takeover. */
-@media (max-width: 768px) {
-  div[data-copilotkit] {
-    /* outer fixed wrapper — CopilotKit defaults to inset-0 on mobile */
-    inset: auto auto 5.5rem 0.75rem !important;
-    width: calc(100vw - 1.5rem) !important;
-    max-width: 400px !important;
-    max-height: min(72dvh, 620px) !important;
-    align-items: stretch !important;
-    z-index: 70 !important;
-    pointer-events: none;
-  }
-  div[data-copilotkit] > [data-copilot-popup] {
-    pointer-events: auto;
-    --copilot-popup-height: min(62dvh, 540px);
-    height: auto !important;
-    max-height: min(72dvh, 620px) !important;
-    min-height: 320px;
-  }
+/* CopilotKit's composer is absolutely positioned against the popup container —
+   height:auto detaches it (input floats outside the box). Keep their fixed-
+   height system, but force a compact window: the vars beat the inline defaults
+   via !important. */
+div[data-copilotkit] {
+  z-index: 70 !important;
 }
-
-/* Desktop: seat the window a little tighter above the launcher. */
-@media (min-width: 769px) {
-  div[data-copilotkit] {
-    z-index: 70 !important;
+[data-copilot-popup] {
+  --copilot-popup-height: 480px !important;
+  --copilot-popup-max-height: min(76vh, 640px) !important;
+}
+@media (max-width: 768px) {
+  [data-copilot-popup] {
+    --copilot-popup-height: min(60dvh, 520px) !important;
   }
 }
 
@@ -420,4 +427,15 @@ button[data-slot='chat-toggle-button']:hover {
 }
 button[data-slot='chat-toggle-button']:active {
   transform: scale(0.95);
+}
+
+/* Native feel on touch: no double-tap-zoom delay on any button, and rich-text
+   editors get the same 16px floor that keeps iOS from zooming on focus. */
+button {
+  touch-action: manipulation;
+}
+@media (max-width: 768px) {
+  [contenteditable] {
+    font-size: 16px !important;
+  }
 }

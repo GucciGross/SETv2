@@ -412,7 +412,7 @@ function AppShellInner() {
       {/* Trash modal */}
       {trashOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={() => setTrashOpen(false)}>
-          <div className="set-card p-5 w-[420px] max-h-[60vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="set-card p-5 w-[420px] max-w-[calc(100vw-2rem)] max-h-[60vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-semibold text-white mb-3"> Trash</h3>
             {trash.length === 0 && <p className="text-set-dim text-sm">Trash is empty.</p>}
             {trash.map((p) => (
