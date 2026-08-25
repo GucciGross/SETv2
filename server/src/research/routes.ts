@@ -76,9 +76,10 @@ export async function researchRoutes(app: FastifyInstance) {
         ? {
             base_url: provider.base_url,
             api_key: provider.api_key,
-            // research needs a tool-calling-capable chat model; a per-space
-            // override lets users keep a different default for the copilot
+            // mixed-model crews: a tool-calling model for reasoning/tools,
+            // a vision-tuned model reads unextractable pages by eye
             chat_model: researchCfg.chatModel || provider.chat_model,
+            ...(researchCfg.visionModel ? { vision_model: researchCfg.visionModel } : {}),
           }
         : {},
       // optional Firecrawl-compatible override; in-stack SearXNG+Playwright is the default

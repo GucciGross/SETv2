@@ -82,6 +82,16 @@ class ChromeTab:
                 return m.get("result", {})
 
     # ---- public ----------------------------------------------------------
+    def screenshot(self) -> str | None:
+        """JPEG (base64) of the current viewport."""
+        try:
+            if self._ws is None:
+                return None
+            r = self._cmd("Page.captureScreenshot", {"format": "jpeg", "quality": 70})
+            return r.get("data")
+        except Exception:
+            return None
+
     def render(self, url: str) -> str | None:
         """Navigate, wait for load + settle, return rendered outerHTML."""
         for attempt in (1, 2):

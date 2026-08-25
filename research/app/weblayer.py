@@ -37,9 +37,15 @@ class WebLayer:
     playwright_url: str = ""            # optional fallback renderer; not shipped by default
     firecrawl_url: str = ""             # optional Firecrawl-compatible endpoint (self-host or cloud)
     firecrawl_key: str | None = None
+    # vision transcription (OpenAI-compatible): reads JS/SPA pages as images
+    # when every text extractor fails — perfect job for a vision-tuned model
+    vision_config: dict | None = None   # {base_url, api_key, model}
     _tab: object = None
     _last_hit: dict = field(default_factory=dict)
     _robots_cache: dict = field(default_factory=dict)
+    _blocked: set = field(default_factory=set)   # URLs that already failed; don't re-fetch
+    _domain_fails: dict = field(default_factory=dict)  # domain -> failure count
+    _domain_blocked: set = field(default_factory=set)  # domains given up on (challenges etc.)
 
     # ---- primitives -----------------------------------------------------
     def _throttle(self, url: str) -> None:
@@ -124,6 +130,8 @@ class WebLayer:
     # ---- fetch -----------------------------------------------------------
     def fetch_markdown(self, url: str) -> tuple[str, str] | None:
         """(title, markdown) or None when blocked/unreachable."""
+        if url in self._blocked or self._domain_of(url) in self._domain_blocked:
+            return None
         self._throttle(url)
         if self.firecrawl_url:
             got = self._firecrawl_scrape(url)
@@ -152,6 +160,7 @@ class WebLayer:
 
     def _direct_fetch(self, url: str) -> tuple[str, str] | None:
         if not self._robots_allows(url):
+            self._blocked.add(url)
             return None
         html, final_url, ctype = self._http_get(url)
         if html is None:
@@ -172,7 +181,69 @@ class WebLayer:
                     crude = self._html_to_text(rendered)
                     if len(crude) >= MIN_EXTRACT_CHARS:
                         return (url, crude)
-        return extracted if extracted and extracted[1].strip() else None
+            # last resort: let the vision model read the rendered page
+            if self.vision_config:
+                seen = self._vision_read(url)
+                if seen and len(seen) >= MIN_EXTRACT_CHARS:
+                    return (url, seen)
+        got = extracted if extracted and extracted[1].strip() else None
+        if got is None:
+            self._register_failure(url)  # challenge pages, dead links — move on
+        else:
+            self._domain_fails.pop(self._domain_of(url), None)
+        return got
+
+    @staticmethod
+    def _domain_of(url: str) -> str:
+        return urlparse(url).netloc.lower()
+
+    def _register_failure(self, url: str) -> None:
+        """Block the URL immediately; after 3 failures, give up on the domain
+        for the rest of the run (anti-bot walls etc. — we never fight them)."""
+        self._blocked.add(url)
+        domain = self._domain_of(url)
+        self._domain_fails[domain] = self._domain_fails.get(domain, 0) + 1
+        if self._domain_fails[domain] >= 3:
+            self._domain_blocked.add(domain)
+
+    def _vision_read(self, url: str) -> str | None:
+        """Render the page, screenshot it, have the vision model transcribe it."""
+        if not self.chrome_url:
+            return None
+        try:
+            if self._tab is None:
+                self._tab = ChromeTab(self.chrome_url)
+            if self._tab.render(url) is None:
+                return None
+            shot = self._tab.screenshot()
+            if not shot:
+                return None
+            cfg = self.vision_config
+            r = httpx.post(
+                f"{cfg['base_url'].rstrip('/')}/chat/completions",
+                headers={"authorization": f"Bearer {cfg.get('api_key') or 'unset'}"},
+                timeout=90,
+                json={
+                    "model": cfg["model"],
+                    "max_tokens": 3000,
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text":
+                                "Transcribe the readable content of this web page screenshot into "
+                                "concise markdown (headings, facts, data). Ignore navigation and ads. "
+                                "If it is an error/empty page, reply exactly: EMPTY."},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{shot}"}},
+                        ],
+                    }],
+                },
+            )
+            if r.status_code != 200:
+                return None
+            text = r.json()["choices"][0]["message"]["content"]
+            return None if (not text or text.strip().upper().startswith("EMPTY")) else text
+        except Exception:
+            return None
 
     @staticmethod
     def _html_to_text(html: str) -> str:

@@ -86,7 +86,10 @@ class ResearchState(BaseModel):
     # when the Flow object is created, then merges kickoff(inputs=...) in
     run_id: str = ""
     question: str = ""
-    llm_config: dict[str, Any] = Field(default_factory=dict)  # {base_url, api_key, chat_model}
+    llm_config: dict[str, Any] = Field(default_factory=dict)
+    # {base_url, api_key, chat_model, vision_model} — crews can mix models per
+    # agent; we assign by capability: tool/reasoning roles → chat_model,
+    # page-reading-by-eye → vision_model (see weblayer._vision_read)
     subquestions: list[dict] = Field(default_factory=list)  # {id, question, queries, status, note}
     sources: list[dict] = Field(default_factory=list)       # {url, title, markdown}
     findings: list[dict] = Field(default_factory=list)      # {subquestion_id, text, citations:[url]}
@@ -152,13 +155,19 @@ class DeepResearchFlow(Flow[ResearchState]):
     """State carries the whole run; the service wrapper sets STATE/WEB, kicks
     off, and owns DB status transitions around it."""
 
-    def _llm(self) -> LLM:
+    def _llm(self, role: str = "reason") -> LLM:
+        """Per-agent model selection. Roles:
+        reason  — planning, analysis, synthesis (strong text model)
+        tools   — the field researcher (must be tool-calling capable)
+        vision  — n/a here; the vision model lives in weblayer's reader path
+        """
         cfg = self.state.llm_config
+        model = cfg.get("chat_model", "gpt-4o-mini")
         return LLM(
-            model=f"openai/{cfg.get('chat_model', 'gpt-4o-mini')}",
+            model=f"openai/{model}",
             base_url=cfg.get("base_url"),
             api_key=cfg.get("api_key") or "unset",
-            temperature=0.3,
+            temperature=0.2 if role == "tools" else 0.3,
         )
 
     # ---- step 1: plan -----------------------------------------------------
@@ -169,7 +178,6 @@ class DeepResearchFlow(Flow[ResearchState]):
         st = self.state
         db.set_status(st.run_id, "planning")
         db.log_event(st.run_id, "plan", "Planning research outline…")
-        llm = self._llm()
 
         strategist = Agent(
             role="Research Strategist",
@@ -179,13 +187,13 @@ class DeepResearchFlow(Flow[ResearchState]):
                 "briefings. You know the difference between a vague topic and an answerable "
                 "question, and you never miss an angle that matters."
             ),
-            llm=llm, allow_delegation=False, verbose=False,
+            llm=self._llm("reason"), allow_delegation=False, verbose=False,
         )
         reviewer = Agent(
             role="Plan Critic",
             goal="Reject vague or redundant sub-questions; force measurable, sourceable questions",
             backstory="A demanding editor who returns plans that would waste research budget.",
-            llm=llm, allow_delegation=False, verbose=False,
+            llm=self._llm("reason"), allow_delegation=False, verbose=False,
         )
         draft = Task(
             description=(
@@ -223,19 +231,27 @@ class DeepResearchFlow(Flow[ResearchState]):
         )
         return result
 
-    @router(plan)
-    def route_after_plan(self, _):
-        if not self.state.search_enabled:
-            db.log_event(self.state.run_id, "plan",
-                         "No search key configured — researching from known sources + direct fetches only.")
-        return "research" if budget_left(self.state) else "synthesize"
-
-    # ---- step 2: research rounds (looped via router) -----------------------
-    @listen("research")
-    def research_round(self, _):
+    # ---- step 2: research rounds — explicit deterministic loop ------------
+    @listen(plan)
+    def research_phase(self, _):
+        """Rounds run in-method: immune to router-label refires/re-entry."""
         st = self.state
-        if db.cancelled(st.run_id):
-            raise ResearchCancelled()
+        if not st.search_enabled:
+            db.log_event(st.run_id, "plan",
+                         "No search backend configured — researching from direct fetches of known sources only.")
+        while True:
+            if db.cancelled(st.run_id):
+                raise ResearchCancelled()
+            if not budget_left(st):
+                db.log_event(st.run_id, "research",
+                             "Budget reached — moving to synthesis with what we have.")
+                break
+            if self._one_round() == 0:
+                break
+        return len(open_subquestions(st))
+
+    def _one_round(self) -> int:
+        st = self.state
         st.round_no += 1
         db.set_status(st.run_id, "researching")
         open_sqs = open_subquestions(st)[:3]
@@ -253,7 +269,7 @@ class DeepResearchFlow(Flow[ResearchState]):
                 "when a question cannot be answered from the fetched material."
             ),
             tools=[WebSearchTool(), WebFetchTool()],
-            llm=llm, allow_delegation=False, verbose=False, max_iter=12,
+            llm=self._llm("tools"), allow_delegation=False, verbose=False, max_iter=12,
         )
         task = Task(
             description=self._round_brief(open_sqs),
@@ -294,19 +310,8 @@ class DeepResearchFlow(Flow[ResearchState]):
             "answered, report findings anyway with what you found and say so."
         )
 
-    @router(research_round)
-    def route_after_round(self, remaining):
-        st = self.state
-        if remaining == 0:
-            return "synthesize"
-        if not budget_left(st):
-            db.log_event(st.run_id, "research",
-                         "Budget reached — moving to synthesis with what we have.")
-            return "synthesize"
-        return "research"
-
     # ---- step 3: synthesize ------------------------------------------------
-    @listen("synthesize")
+    @listen(research_phase)
     def synthesize(self, _):
         st = self.state
         if db.cancelled(st.run_id):
@@ -325,7 +330,7 @@ class DeepResearchFlow(Flow[ResearchState]):
             role="Lead Analyst",
             goal="Weave all findings into one coherent, cited analytical report",
             backstory="A boutique-firm analyst famous for reports where every claim has a source.",
-            llm=llm, allow_delegation=False, verbose=False,
+            llm=self._llm("reason"), allow_delegation=False, verbose=False,
         )
         writer = Task(
             description=(
@@ -342,7 +347,7 @@ class DeepResearchFlow(Flow[ResearchState]):
             role="Citations Editor",
             goal="Every [S#] citation must map to a fetched source; fix or strip anything else",
             backstory="A fact-checker who has zero tolerance for unverifiable claims.",
-            llm=llm, allow_delegation=False, verbose=False,
+            llm=self._llm("reason"), allow_delegation=False, verbose=False,
         )
         check = Task(
             description=(

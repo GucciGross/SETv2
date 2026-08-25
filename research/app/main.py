@@ -58,12 +58,19 @@ def _execute(req: RunRequest) -> None:
     from . import flow as flow_mod
 
     import os
+    llm_cfg = dict(req.llm_config)
     layer = WebLayer(
         searxng_url=os.environ.get("SEARXNG_URL", ""),
         chrome_url=os.environ.get("CHROME_CDP_URL", ""),
         playwright_url=os.environ.get("PLAYWRIGHT_URL", ""),
         firecrawl_url=req.firecrawl_url or "",
         firecrawl_key=req.firecrawl_key,
+        # vision-tuned model reads unextractable pages by eye (mixed-model crews)
+        vision_config=(
+            {"base_url": llm_cfg.get("base_url"), "api_key": llm_cfg.get("api_key"),
+             "model": llm_cfg["vision_model"]}
+            if llm_cfg.get("base_url") and llm_cfg.get("vision_model") else None
+        ),
     )
     state = ResearchState(
         run_id=req.run_id,

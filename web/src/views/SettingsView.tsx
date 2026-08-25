@@ -610,13 +610,13 @@ function WorkspaceTab({ spaceId }: { spaceId: string }) {
 
 
 function ResearchTab({ spaceId }: { spaceId: string }) {
-  const [cfg, setCfg] = useState<{ firecrawlKey?: string; firecrawlUrl?: string; chatModel?: string; maxPages?: number; maxMinutes?: number }>({});
+  const [cfg, setCfg] = useState<{ chatModel?: string; visionModel?: string; firecrawlKey?: string; firecrawlUrl?: string; maxPages?: number; maxMinutes?: number }>({});
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     api.get(`/spaces/${spaceId}/settings`).then(({ settings }) => {
       const r = settings?.research ?? {};
-      setCfg({ firecrawlKey: r.firecrawlKey ?? '', firecrawlUrl: r.firecrawlUrl ?? '', chatModel: r.chatModel ?? '', maxPages: r.maxPages ?? 40, maxMinutes: r.maxMinutes ?? 15 });
+      setCfg({ chatModel: r.chatModel ?? '', visionModel: r.visionModel ?? '', firecrawlKey: r.firecrawlKey ?? '', firecrawlUrl: r.firecrawlUrl ?? '', maxPages: r.maxPages ?? 40, maxMinutes: r.maxMinutes ?? 15 });
     }).catch(() => {});
   }, [spaceId]);
 
@@ -637,6 +637,22 @@ function ResearchTab({ spaceId }: { spaceId: string }) {
       </p>
       <div className="set-card p-4 space-y-3">
         <label className="block">
+          <span className="text-xs text-set-dim uppercase tracking-wide">Research model (tool-calling capable)</span>
+          <input
+            className="set-input w-full mt-1" placeholder="space default"
+            value={cfg.chatModel ?? ''}
+            onChange={(e) => setCfg({ ...cfg, chatModel: e.target.value })}
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs text-set-dim uppercase tracking-wide">Vision model (reads unextractable pages by eye)</span>
+          <input
+            className="set-input w-full mt-1" placeholder="e.g. glm-5v-turbo"
+            value={cfg.visionModel ?? ''}
+            onChange={(e) => setCfg({ ...cfg, visionModel: e.target.value })}
+          />
+        </label>
+        <label className="block">
           <span className="text-xs text-set-dim uppercase tracking-wide">Firecrawl API key (optional override)</span>
           <input
             className="set-input w-full mt-1" type="password" placeholder="fc-…"
@@ -650,14 +666,6 @@ function ResearchTab({ spaceId }: { spaceId: string }) {
             className="set-input w-full mt-1" placeholder="https://api.firecrawl.dev"
             value={cfg.firecrawlUrl ?? ''}
             onChange={(e) => setCfg({ ...cfg, firecrawlUrl: e.target.value })}
-          />
-        </label>
-        <label className="block">
-          <span className="text-xs text-set-dim uppercase tracking-wide">Chat model override (tool-calling capable model recommended)</span>
-          <input
-            className="set-input w-full mt-1" placeholder="space default"
-            value={cfg.chatModel ?? ''}
-            onChange={(e) => setCfg({ ...cfg, chatModel: e.target.value })}
           />
         </label>
         <div className="flex gap-3">
