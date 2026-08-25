@@ -22,6 +22,12 @@ export function ResearchList() {
   const [notebookId, setNotebookId] = useState('');
   const [notebooks, setNotebooks] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
+  const [minutes, setMinutes] = useState(25);
+
+  const DURATIONS: [number, string][] = [
+    [5, '5 minutes'], [15, '15 minutes'], [25, '25 minutes (default)'], [60, '1 hour'],
+    [180, '3 hours'], [720, '12 hours'], [1440, '1 day'], [2880, '2 days'], [4320, '3 days'],
+  ];
 
   const load = () => api.get(`/spaces/${spaceId}/research`).then((r) => setRuns(r.runs)).catch(() => {});
   useEffect(() => {
@@ -37,6 +43,7 @@ export function ResearchList() {
     try {
       const { run } = await api.post(`/spaces/${spaceId}/research`, {
         question: question.trim(),
+        maxMinutes: minutes,
         ...(notebookId ? { notebookId } : {}),
       });
       navigate(`/app/space/${spaceId}/research/${run.id}`);
@@ -64,6 +71,15 @@ export function ResearchList() {
           onChange={(e) => setQuestion(e.target.value)}
         />
         <div className="flex flex-wrap items-center gap-2 mt-2">
+          <select
+            className="set-input text-xs w-[170px]"
+            value={minutes}
+            onChange={(e) => setMinutes(+e.target.value)}
+          >
+            {DURATIONS.map(([m, label]) => (
+              <option key={m} value={m}>⏱ {label}</option>
+            ))}
+          </select>
           <select
             className="set-input text-xs flex-1 min-w-[180px]"
             value={notebookId}
@@ -110,7 +126,20 @@ export function ResearchList() {
 export function ResearchRun() {
   const { spaceId, runId } = useParams();
   const [run, setRun] = useState<any>(null);
+  const [simplifying, setSimplifying] = useState(false);
   const active = ACTIVE.has(run?.status ?? 'pending');
+  const simplify = async () => {
+    setSimplifying(true);
+    try {
+      await api.post(`/research/${runId}/simplify`);
+      const { run } = await api.get(`/research/${runId}`);
+      setRun(run);
+    } catch (e: any) {
+      alert(e.message || 'rewrite failed');
+    } finally {
+      setSimplifying(false);
+    }
+  };
 
   useEffect(() => {
     let stop = false;
@@ -225,6 +254,12 @@ export function ResearchRun() {
             <Link to={`/app/space/${spaceId}/notebook/${run.notebook_id}`} className="set-btn text-xs flex items-center gap-1">
               Open notebook <ArrowRight size={11} />
             </Link>
+          )}
+          {run.report_page_id && (
+            <button className="set-btn text-xs flex items-center gap-1" disabled={simplifying} onClick={simplify}>
+              {simplifying ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+              {simplifying ? 'Rewriting…' : 'Plain-English rewrite'}
+            </button>
           )}
         </div>
       )}

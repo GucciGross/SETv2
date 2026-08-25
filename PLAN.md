@@ -97,6 +97,12 @@ Playwright in the primary path; optional Playwright/Firecrawl-compatible
 fallbacks via env/settings). Extraction: trafilatura with a crude-text
 last resort, including open shadow-root content.
 
+**Run limits:** time limit is user-set — 5 minute minimum, 25 minute default,
+up to 72 hours for deep multi-day runs (rounds scale with budget). Reports are
+written in Simplified Technical English (ASD-STE100 style: short active
+sentences, plain words, concrete facts, citations preserved); existing reports
+can be re-written on demand via the run view's "Plain-English rewrite" button.
+
 **Model requirement:** the crew loops on tool calls — use a tool-calling-capable
 chat model. Spaces can set a research-only model in Settings → Deep Research
 (`chatModel` override) without changing the copilot's default. Vision-tuned or

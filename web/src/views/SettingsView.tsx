@@ -616,7 +616,7 @@ function ResearchTab({ spaceId }: { spaceId: string }) {
   useEffect(() => {
     api.get(`/spaces/${spaceId}/settings`).then(({ settings }) => {
       const r = settings?.research ?? {};
-      setCfg({ chatModel: r.chatModel ?? '', visionModel: r.visionModel ?? '', firecrawlKey: r.firecrawlKey ?? '', firecrawlUrl: r.firecrawlUrl ?? '', maxPages: r.maxPages ?? 40, maxMinutes: r.maxMinutes ?? 15 });
+      setCfg({ chatModel: r.chatModel ?? '', visionModel: r.visionModel ?? '', firecrawlKey: r.firecrawlKey ?? '', firecrawlUrl: r.firecrawlUrl ?? '', maxPages: r.maxPages ?? 40, maxMinutes: r.maxMinutes ?? 25 });
     }).catch(() => {});
   }, [spaceId]);
 
@@ -678,10 +678,10 @@ function ResearchTab({ spaceId }: { spaceId: string }) {
             />
           </label>
           <label className="flex-1">
-            <span className="text-xs text-set-dim uppercase tracking-wide">Max minutes / run</span>
+            <span className="text-xs text-set-dim uppercase tracking-wide">Time limit / run (5 min – 72 h)</span>
             <input
-              className="set-input w-full mt-1" type="number" min={1} max={60}
-              value={cfg.maxMinutes ?? 15}
+              className="set-input w-full mt-1" type="number" min={5} max={4320}
+              value={cfg.maxMinutes ?? 25}
               onChange={(e) => setCfg({ ...cfg, maxMinutes: +e.target.value })}
             />
           </label>

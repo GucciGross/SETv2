@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { one, q } from '../db.js';
 import { requireSpace } from '../lib/http.js';
-import { getProvider } from '../llm/router.js';
+import { getProvider, chatCompletion } from '../llm/router.js';
 import { ingestSource } from '../rag/search.js';
 import { mdToDoc } from '../lib/markdown.js';
 import { syncLinks } from '../pages/routes.js';
@@ -38,7 +38,7 @@ export async function researchRoutes(app: FastifyInstance) {
         question: z.string().min(8).max(2000),
         notebookId: z.string().uuid().optional(),
         maxPages: z.number().int().min(1).max(120).optional(),
-        maxMinutes: z.number().int().min(1).max(60).optional(),
+        maxMinutes: z.number().int().min(5).max(4320).optional(), // 5 min … 72 h
       })
       .parse(req.body);
 
@@ -71,7 +71,7 @@ export async function researchRoutes(app: FastifyInstance) {
       question: body.question,
       notebook_id: notebookId,
       max_pages: body.maxPages ?? researchCfg.maxPages ?? 40,
-      max_minutes: body.maxMinutes ?? researchCfg.maxMinutes ?? 15,
+      max_minutes: body.maxMinutes ?? researchCfg.maxMinutes ?? 25,
       llm_config: provider
         ? {
             base_url: provider.base_url,
@@ -118,6 +118,55 @@ export async function researchRoutes(app: FastifyInstance) {
       [id]
     );
     return { run: row };
+  });
+
+  /**
+   * Rewrite an existing report in Simplified Technical English (short active
+   * sentences, plain words, concrete facts; citations preserved). Plain,
+   * direct writing also reads like a competent human wrote it — not like
+   * generic AI filler.
+   */
+  app.post('/research/:id/simplify', async (req, reply) => {
+    const id = (req.params as any).id;
+    if (!(await runSpace(req, reply, id))) return;
+    const run = await one<any>(`SELECT * FROM research_runs WHERE id = $1`, [id]);
+    if (!run?.report_md) return reply.code(400).send({ error: 'No report to simplify' });
+    const provider = await getProvider(run.space_id);
+    if (!provider) return reply.code(400).send({ error: 'No LLM provider configured' });
+
+    const STE_RULES = `Rewrite the report in Simplified Technical English (ASD-STE100 style):
+- Short sentences. One idea per sentence. Aim for 15 words or fewer.
+- Active voice only. Subject, verb, object.
+- Use everyday words. No jargon unless you define it on first use.
+- Delete all filler and marketing language ("cutting-edge", "it is worth noting that", "in today's world").
+- Keep every concrete fact: numbers, names, dates, comparisons.
+- Keep every [S#] citation attached to the fact it supports. Add nothing the sources do not say.
+- Keep the markdown structure: same headings order, TL;DR first, "Gaps & open questions" last.
+Output only the rewritten markdown.`;
+
+    const result = await chatCompletion(provider, null, {
+      messages: [
+        { role: 'system', content: STE_RULES },
+        { role: 'user', content: run.report_md.slice(0, 60000) },
+      ],
+      temperature: 0.2,
+    });
+    const next = (result.content ?? '').trim();
+    if (!next || next.length < 200) return reply.code(502).send({ error: 'Rewrite came back empty' });
+
+    await q(`UPDATE research_runs SET report_md = $2 WHERE id = $1`, [id, next]);
+    if (run.report_page_id) {
+      const title = (next.match(/^#\s+(.+)$/m)?.[1] ?? run.question).slice(0, 120);
+      await q(`UPDATE pages SET title = $2, markdown = $3, content = $4, updated_at = now() WHERE id = $1`, [
+        run.report_page_id, title, next, JSON.stringify(mdToDoc(next)),
+      ]);
+      await syncLinks(run.report_page_id, run.space_id, next);
+    }
+    await q(
+      `UPDATE research_runs SET log = log || $2::jsonb WHERE id = $1`,
+      [id, JSON.stringify([{ t: new Date().toISOString(), type: 'simplify', message: 'Report rewritten in Simplified Technical English' }])]
+    );
+    return { ok: true };
   });
 
   app.post('/research/:id/cancel', async (req, reply) => {

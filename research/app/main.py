@@ -29,7 +29,7 @@ class RunRequest(BaseModel):
     question: str
     notebook_id: str | None = None
     max_pages: int = 40
-    max_minutes: int = 15
+    max_minutes: int = 25  # 5 min … 72 h; long runs are legitimate
     llm_config: dict = {}          # {base_url, api_key, chat_model}
     # optional Firecrawl-compatible override (self-hosted or cloud); the
     # in-stack SearXNG + Playwright services are the default, no keys needed
@@ -77,7 +77,7 @@ def _execute(req: RunRequest) -> None:
         question=req.question,
         llm_config=req.llm_config,
         pages_budget=max(1, min(req.max_pages, 120)),
-        deadline=__import__("time").time() + max(1, min(req.max_minutes, 60)) * 60,
+        deadline=__import__("time").time() + max(5, min(req.max_minutes, 4320)) * 60,
         search_enabled=layer.has_search,
     )
     flow_mod.WEB = layer

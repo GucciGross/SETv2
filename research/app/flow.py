@@ -95,7 +95,7 @@ class ResearchState(BaseModel):
     findings: list[dict] = Field(default_factory=list)      # {subquestion_id, text, citations:[url]}
     pages_budget: int = 40
     pages_visited: int = 0
-    max_rounds: int = 6
+    max_rounds: int = 6  # scaled up from max_minutes at kickoff
     round_no: int = 0
     deadline: float = 0.0
     report_md: str = ""
