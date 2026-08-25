@@ -42,6 +42,7 @@ export function buildCopilotKitHandler() {
     basePath: COPILOTKIT_BASE_PATH,
     hooks: {
       onRequest: async ({ request }) => {
+        console.log(`[copilotkit] ${request.method} ${new URL(request.url).pathname}`);
         if (!userFromRequest(request)) {
           throw new Response('Unauthorized', { status: 401 });
         }

@@ -44,7 +44,8 @@ class Browser:
         proc = subprocess.Popen([exe, f"--remote-debugging-port={port}", f"--user-data-dir={profile}",
                                  "--no-first-run", "--no-default-browser-check", "--headless=new",
                                  "--window-size=1300,900", "--disable-gpu", url],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                start_new_session=True)  # own process group — close() kills the whole tree
         for _ in range(50):
             time.sleep(0.3)
             try:
@@ -63,8 +64,12 @@ class Browser:
     def close(self):
         try: self.ws.close()
         except Exception: pass
-        try: self.proc.terminate(); self.proc.wait(timeout=5)
-        except Exception: self.proc.kill()
+        import signal, os
+        try:
+            os.killpg(os.getpgid(self.proc.pid), signal.SIGKILL)  # chrome forks; kill the group or it orphans
+        except Exception:
+            try: self.proc.kill()
+            except Exception: pass
 
     # ---------- CDP core ----------
     def cmd(self, method: str, params: dict | None = None, timeout: float = 30):

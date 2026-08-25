@@ -73,6 +73,7 @@ export interface RunAgentLoopOptions {
 
 export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {
   const { spaceId, userId, message, emit, signal } = opts;
+  console.log(`[engine] runAgentLoop space=${spaceId} source=${opts.source ?? 'api'} msg="${message.slice(0, 60)}"`);
   const historyMode = opts.history ?? 'db';
   await ensureBootstrapProvider(spaceId);
   const { telemetry } = await import('../telemetry/index.js');

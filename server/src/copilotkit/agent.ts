@@ -61,6 +61,7 @@ export class SetAgent extends AbstractAgent {
     const user = this.user;
     const guide = this.guide;
     const abort = new AbortController();
+    console.log(`[set-agent] run() agentId=${this.agentId} guide=${guide} threadId=${input.threadId} msgs=${input.messages?.length ?? 0} fwdProps=${JSON.stringify(input.forwardedProps ?? {}).slice(0, 200)}`);
 
     return new Observable<BaseEvent>((subscriber) => {
       void (async () => {
