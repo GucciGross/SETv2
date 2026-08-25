@@ -4,7 +4,7 @@ import {
   FilePlus, CalendarDays, Network, Database, BookOpen, Boxes, Route, Settings, Search, Plus,
   LogOut, ChevronRight, ChevronDown, Trash2, Import, PenLine,
   Code2, SquareTerminal, LibraryBig, Database as DatabaseIcon, Menu, X, ListTodo, Activity as ActivityIcon,
-  ChevronsLeft, ChevronsRight, FileText, LayoutDashboard,
+  ChevronsLeft, ChevronsRight, FileText, LayoutDashboard, Telescope,
 } from 'lucide-react';
 import { useApp, type PageMeta } from '../stores/app';
 import { api } from '../lib/api';
@@ -314,6 +314,7 @@ function AppShellInner() {
               { icon: <ActivityIcon size={15} />, label: 'Activity', to: link('/activity'), surface: null },
               { icon: <Network size={15} />, label: 'Graph', to: link('/graph'), surface: null },
               { icon: <BookOpen size={15} />, label: 'Notebooks', to: link('/notebooks'), surface: null },
+              { icon: <Telescope size={15} />, label: 'Deep Research', to: link('/research'), surface: null },
               { icon: <Code2 size={15} />, label: 'Coding', to: link('/coding'), surface: 'coding' },
               { icon: <SquareTerminal size={15} />, label: 'Terminal', to: link('/terminal'), surface: 'terminal' },
               { icon: <Route size={15} />, label: 'Learning Paths', to: link('/paths'), surface: 'paths' },

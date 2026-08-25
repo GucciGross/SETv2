@@ -1,0 +1,19 @@
+[project]
+name = "set-research"
+version = "0.1.0"
+description = "SET deep-research worker — CrewAI Flows over the SET knowledge base"
+requires-python = ">=3.12"
+dependencies = [
+    "crewai[tools]>=0.108,<0.130",
+    "crewai-tools>=0.45",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "psycopg[binary]>=3.2",
+    "httpx>=0.27",
+    "trafilatura>=1.12",
+    "websocket-client>=1.8",
+    "pydantic>=2.9",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.7"]

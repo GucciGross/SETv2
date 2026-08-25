@@ -50,6 +50,8 @@ const VIEW_NAMES: [RegExp, string][] = [
   [/\/notebook\/[^/]+\/deck\//, 'Study deck'],
   [/\/notebook\//, 'Research notebook'],
   [/\/notebooks/, 'Notebooks list'],
+  [/\/research\/[^/]+/, 'Research run'],
+  [/\/research/, 'Deep research'],
   [/\/models/, '3D models library'],
   [/\/model\//, '3D model viewer'],
   [/\/paths/, 'Learning paths'],

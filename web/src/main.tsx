@@ -51,6 +51,7 @@ import Join from './views/Join';
 import ActivityView from './views/ActivityView';
 import MyTasksView from './views/MyTasksView';
 import { PagesList, DatabasesList } from './views/ListsView';
+import { ResearchList, ResearchRun } from './views/ResearchView';
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -76,6 +77,8 @@ const router = createBrowserRouter([
           { path: 'space/:spaceId/graph', element: <GraphView /> },
           { path: 'space/:spaceId/db/:dbId', element: <DatabaseView /> },
           { path: 'space/:spaceId/notebooks', element: <NotebookList /> },
+          { path: 'space/:spaceId/research', element: <ResearchList /> },
+          { path: 'space/:spaceId/research/:runId', element: <ResearchRun /> },
           { path: 'space/:spaceId/notebook/:nbId', element: <NotebookView /> },
           { path: 'space/:spaceId/notebook/:nbId/deck/:deckId', element: <StudyView /> },
           { path: 'space/:spaceId/models', element: <ModelsView /> },

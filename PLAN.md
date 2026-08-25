@@ -91,21 +91,39 @@ via SSE/WebSocket (same pattern as presence). UI: progress timeline
 - "Deep research" action in NotebookView + dashboard
 - ResearchRunView: live outline, sources streaming in, final report
 
+**Self-hosted fetch stack (no cloud keys):** SearXNG (search) + real Chrome
+over raw CDP (`chromedp/headless-shell`, the browser-harness pattern — no
+Playwright in the primary path; optional Playwright/Firecrawl-compatible
+fallbacks via env/settings). Extraction: trafilatura with a crude-text
+last resort, including open shadow-root content.
+
+**Model requirement:** the crew loops on tool calls — use a tool-calling-capable
+chat model. Spaces can set a research-only model in Settings → Deep Research
+(`chatModel` override) without changing the copilot's default. Vision-tuned or
+weak-function-calling models produce malformed tool args and stall runs.
+
 **Guardrails:** per-domain rate limit (default 1 req/2s), robots.txt respected,
 max pages per run (default 40, configurable), full run log kept for transparency.
 
-## Phase 2 — Show-me browser extension companion
+## Phase 2 — Show-me teaching companion (browser-harness + cua)
 
-Teach by demonstrating **in the user's own browser**, live.
+Teach by demonstrating **in the user's own browser/desktop**, live. The
+companion stack (user-installed, always-visible, revocable):
 
-- Chrome/Brave/Firefox extension (Manifest V3), installed deliberately
-- Pairs with the user's SET instance via revocable pairing token (settings UI)
-- Copilot gains `browser_show` tools: open page, scroll, point/highlight,
-  walk-through steps — **foreground only, visible indicator, user can stop**
-- Uses CDP/extension APIs locally; nothing runs server-side on the user's box
-- Session recording optional (stored as a study artifact: "re-watch the demo")
+- **browser-harness** (github.com/browser-use/browser-harness) — attaches the
+  SET copilot to the user's real browser over a single CDP websocket: real
+  logins, real profile, self-healing helpers the agent writes itself
+- **cua-driver** (github.com/trycua/cua) — native-app teaching beyond the
+  browser via OS accessibility (macOS AX / Linux AT-SPI / Windows UIA);
+  the same driver we already use for SET's own GUI QA
+- Platform harnesses as they mature: windows-harness, macos-harness,
+  browser-harness-tui (operator view), and video-use (agents that can watch
+  and reason over video — lecture capture as a source)
+- Pairing: deliberate install + revocable token against the user's own
+  instance; foreground only, visible indicator, hard stop; never silent
 
-**Done when:** "show me how to use regex101" demonstrates on regex101, live.
+**Done when:** "show me how to use regex101" demonstrates on regex101, live,
+on the user's machine, with them watching.
 
 ## Phase 3 — Desktop teaching companion (only after Phase 2 earns it)
 

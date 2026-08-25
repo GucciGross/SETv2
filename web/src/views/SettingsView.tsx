@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink } from 'lucide-react';
+import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope } from 'lucide-react';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 import McpSettings from '../components/McpSettings';
@@ -10,7 +10,7 @@ import { DitherButton } from '../components/dither-kit';
 
 export default function SettingsView() {
   const { spaceId } = useParams();
-  const [tab, setTab] = useState<'surfaces' | 'skills' | 'mcp' | 'channels' | 'mascot' | 'providers' | 'members' | 'workspace'>('surfaces');
+  const [tab, setTab] = useState<'surfaces' | 'skills' | 'mcp' | 'channels' | 'mascot' | 'providers' | 'members' | 'workspace' | 'research'>('surfaces');
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
@@ -25,6 +25,7 @@ export default function SettingsView() {
           ['providers', 'AI Providers', <Cpu key="a" size={14} />],
           ['members', 'Members', <Users key="b" size={14} />],
           ['workspace', 'Workspace', <ShieldCheck key="c" size={14} />],
+          ['research', 'Deep Research', <Telescope key="r" size={14} />],
         ] as const).map(([id, label, icon]) => (
           <button key={id} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm ${tab === id ? 'bg-set-accent/20 text-blue-200' : 'text-set-dim hover:text-set-text'}`} onClick={() => setTab(id)}>
             {icon} {label}
@@ -39,6 +40,7 @@ export default function SettingsView() {
       {tab === 'providers' && <ProvidersTab spaceId={spaceId!} />}
       {tab === 'members' && <MembersTab spaceId={spaceId!} />}
       {tab === 'workspace' && <WorkspaceTab spaceId={spaceId!} />}
+      {tab === 'research' && <ResearchTab spaceId={spaceId!} />}
     </div>
   );
 }
@@ -602,6 +604,86 @@ function WorkspaceTab({ spaceId }: { spaceId: string }) {
         <a className="set-btn inline-flex items-center gap-1 text-xs" href={`/api/spaces/${spaceId}/export.md`} download> Export all pages (Markdown)</a>
         <button className="set-btn-ghost ml-2 text-xs" onClick={logout}>Sign out ({user?.name})</button>
       </div>
+    </div>
+  );
+}
+
+
+function ResearchTab({ spaceId }: { spaceId: string }) {
+  const [cfg, setCfg] = useState<{ firecrawlKey?: string; firecrawlUrl?: string; chatModel?: string; maxPages?: number; maxMinutes?: number }>({});
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.get(`/spaces/${spaceId}/settings`).then(({ settings }) => {
+      const r = settings?.research ?? {};
+      setCfg({ firecrawlKey: r.firecrawlKey ?? '', firecrawlUrl: r.firecrawlUrl ?? '', chatModel: r.chatModel ?? '', maxPages: r.maxPages ?? 40, maxMinutes: r.maxMinutes ?? 15 });
+    }).catch(() => {});
+  }, [spaceId]);
+
+  const save = async () => {
+    await api.patch(`/spaces/${spaceId}/settings`, { settings: { research: cfg } });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  return (
+    <div>
+      <p className="text-sm text-set-dim mb-4">
+        Deep research runs a CrewAI crew that plans, reads the live web and writes a cited
+        report into a notebook. Search and page rendering are self-hosted in your stack
+        (SearXNG + Playwright) — it works out of the box, no keys needed. The fields below
+        optionally route scraping through a Firecrawl-compatible endpoint instead
+        (self-hosted or cloud).
+      </p>
+      <div className="set-card p-4 space-y-3">
+        <label className="block">
+          <span className="text-xs text-set-dim uppercase tracking-wide">Firecrawl API key (optional override)</span>
+          <input
+            className="set-input w-full mt-1" type="password" placeholder="fc-…"
+            value={cfg.firecrawlKey ?? ''}
+            onChange={(e) => setCfg({ ...cfg, firecrawlKey: e.target.value })}
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs text-set-dim uppercase tracking-wide">Firecrawl URL (optional — e.g. http://firecrawl:3002)</span>
+          <input
+            className="set-input w-full mt-1" placeholder="https://api.firecrawl.dev"
+            value={cfg.firecrawlUrl ?? ''}
+            onChange={(e) => setCfg({ ...cfg, firecrawlUrl: e.target.value })}
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs text-set-dim uppercase tracking-wide">Chat model override (tool-calling capable model recommended)</span>
+          <input
+            className="set-input w-full mt-1" placeholder="space default"
+            value={cfg.chatModel ?? ''}
+            onChange={(e) => setCfg({ ...cfg, chatModel: e.target.value })}
+          />
+        </label>
+        <div className="flex gap-3">
+          <label className="flex-1">
+            <span className="text-xs text-set-dim uppercase tracking-wide">Max pages / run</span>
+            <input
+              className="set-input w-full mt-1" type="number" min={1} max={120}
+              value={cfg.maxPages ?? 40}
+              onChange={(e) => setCfg({ ...cfg, maxPages: +e.target.value })}
+            />
+          </label>
+          <label className="flex-1">
+            <span className="text-xs text-set-dim uppercase tracking-wide">Max minutes / run</span>
+            <input
+              className="set-input w-full mt-1" type="number" min={1} max={60}
+              value={cfg.maxMinutes ?? 15}
+              onChange={(e) => setCfg({ ...cfg, maxMinutes: +e.target.value })}
+            />
+          </label>
+        </div>
+        <button className="set-btn-primary text-sm" onClick={save}>{saved ? 'Saved ✓' : 'Save research settings'}</button>
+      </div>
+      <p className="text-[11px] text-set-dim mt-3">
+        Polite-by-default: per-domain rate limits, robots.txt respected on direct fetches,
+        hard page/time budgets. No detection evasion, ever (PLAN.md).
+      </p>
     </div>
   );
 }

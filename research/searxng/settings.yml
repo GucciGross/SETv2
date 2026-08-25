@@ -1,0 +1,9 @@
+# SearXNG for SET deep research — JSON API enabled for the worker, UI still available.
+use_default_settings: true
+server:
+  secret_key: "set-searxng-change-me"   # intranet-only; not exposed outside the compose network
+  limiter: false                        # internal service; our worker applies its own politeness
+search:
+  formats:
+    - html
+    - json

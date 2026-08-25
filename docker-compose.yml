@@ -60,6 +60,41 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # ---- Deep research (PLAN.md Phase 1) — fully self-hosted, no cloud keys ----
+  # Enable with COMPOSE_PROFILES=research (see .env) or
+  #   docker compose --profile research up -d
+  # The future installer lets users pick whether this group runs at all.
+
+  research:
+    build: ./research
+    profiles: ["research"]
+    environment:
+      DATABASE_URL: postgres://set:${POSTGRES_PASSWORD:-set}@db:5432/set
+      SEARXNG_URL: http://searxng:8080
+      CHROME_CDP_URL: http://chrome:9222
+      # optional Playwright-fallback renderer (not shipped; set to enable):
+      # PLAYWRIGHT_URL: http://playwright-service:3000
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Metasearch (JSON API) — the research crew's search engine
+  searxng:
+    image: searxng/searxng:latest
+    profiles: ["research"]
+    volumes:
+      - ./research/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    restart: unless-stopped
+
+  # Real Chrome for JS-page rendering — driven over raw CDP by the research
+  # worker (same pattern as browser-harness/cua; no Playwright in the main path).
+  chrome:
+    image: chromedp/headless-shell:latest
+    profiles: ["research"]
+    shm_size: 1g
+    restart: unless-stopped
+
   web:
     build: ./web
     ports:

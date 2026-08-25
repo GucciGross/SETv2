@@ -11,7 +11,7 @@ import { useApp } from '../../stores/app';
 const KNOWN_ROUTES = [
   /^\/app\/?$/,
   /^\/app\/space\/[^/]+\/?$/,
-  /^\/app\/space\/[^/]+\/(pages|databases|notebooks|graph|models|paths|library|coding|terminal|docs|tasks|activity|canvas|settings)$/,
+  /^\/app\/space\/[^/]+\/(pages|databases|notebooks|research|graph|models|paths|library|coding|terminal|docs|tasks|activity|canvas|settings)$/,
   /^\/app\/space\/[^/]+\/(page|db|notebook|model)\/[^/]+$/,
   /^\/app\/space\/[^/]+\/notebook\/[^/]+\/deck\/[^/]+$/,
 ];
@@ -23,7 +23,7 @@ function resolveRoute(path: string, spaceId?: string | null): { to?: string; err
   if (!path.startsWith('/app')) return { error: 'path must start with /app' };
   let to = path.replace(/\/+$/, '') || '/app';
   // shorthand without the space segment: /app/notebooks → /app/space/<id>/notebooks
-  const short = to.match(/^\/app\/(pages|databases|notebooks|graph|models|paths|library|coding|terminal|docs|tasks|activity|canvas|settings)$/);
+  const short = to.match(/^\/app\/(pages|databases|notebooks|research|graph|models|paths|library|coding|terminal|docs|tasks|activity|canvas|settings)$/);
   if (short) {
     if (!spaceId) return { error: 'no current workspace to resolve the route against' };
     to = `/app/space/${spaceId}/${short[1]}`;

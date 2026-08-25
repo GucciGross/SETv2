@@ -44,6 +44,8 @@ const env = z
     TELEMETRY_ENABLED: z.string().default('1'),
     TELEMETRY_URL: z.string().optional(),
     TELEMETRY_FLUSH_MINUTES: z.coerce.number().default(360), // 6h
+    // Deep-research worker (docker compose service "research"; see PLAN.md)
+    RESEARCH_SERVICE_URL: z.string().default('http://research:8000'),
   })
   .passthrough()
   .parse(process.env);
@@ -77,6 +79,7 @@ export const config = {
   seedDemo: env.SEED_DEMO === '1',
   registrationOpen: env.REGISTRATION_OPEN !== '0',
   mcpEnabled: env.MCP_ENABLED !== '0',
+  researchServiceUrl: env.RESEARCH_SERVICE_URL,
   transcribe: {
     baseUrl: env.TRANSCRIBE_BASE_URL || env.LLM_BASE_URL,
     apiKey: env.TRANSCRIBE_API_KEY || env.LLM_API_KEY,

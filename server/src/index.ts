@@ -11,6 +11,7 @@ import { spaceRoutes } from './spaces/routes.js';
 import { pageRoutes } from './pages/routes.js';
 import { databaseRoutes, pathRoutes } from './databases/routes.js';
 import { ragRoutes } from './rag/routes.js';
+import { researchRoutes } from './research/routes.js';
 import { llmRoutes } from './llm/routes.js';
 import { agentRoutes } from './agents/routes.js';
 import { studyRoutes } from './study/routes.js';
@@ -60,6 +61,7 @@ async function main() {
     await databaseRoutes(api);
     await pathRoutes(api);
     await ragRoutes(api);
+    await researchRoutes(api);
     await llmRoutes(api);
     await agentRoutes(api);
     await studyRoutes(api);
