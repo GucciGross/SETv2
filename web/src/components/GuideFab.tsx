@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Compass, MessageSquarePlus, X } from 'lucide-react';
 import { CopilotPopup, useAgent, useConfigureSuggestions } from '@copilotkit/react-core/v2';
 import { useApp } from '../stores/app';
 import { GuideTools } from './copilot/GuideTools';
@@ -6,6 +7,7 @@ import { SetToolRenderers } from './copilot/ToolRenderers';
 import { ApprovalWatcher } from './copilot/ApprovalWatcher';
 import { askAgent, GUIDE_AGENT } from '../lib/copilot';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from './Mascot';
+import { uuid } from '../lib/utils';
 
 /**
  * THE SET copilot — one floating overlay on every view (CopilotKit's built-in
@@ -21,6 +23,15 @@ const SUGGESTIONS = [
   { title: 'Help me write', message: 'Help me fill out the note I have open. Ask me what it should cover, then insert it into the note.' },
   { title: 'Set up my workspace', message: "I'm new here — help me get this workspace ready: first page, links, and the right work surfaces." },
 ];
+
+/** Launcher icons for the built-in toggle (props-object slot: keeps the
+ * vendor's click handler while giving the button SET's identity). */
+function CopilotOpenIcon() {
+  return <Compass size={16} aria-hidden className="text-violet-300" />;
+}
+function CopilotCloseIcon() {
+  return <X size={16} aria-hidden className="text-violet-200" />;
+}
 
 /** Welcome screen: the user's own mascot introduces the copilot. */
 function SetWelcomeScreen({ input, suggestionView }: { input?: React.ReactNode; suggestionView?: React.ReactNode }) {
@@ -45,6 +56,42 @@ export default function GuideFab() {
   const user = useApp((s) => s.user);
   const mascotEnabled = (user as any)?.mascot?.enabled !== false;
   const { agent } = useAgent({ agentId: GUIDE_AGENT });
+
+  // Persistent conversation: the thread id survives open/close (stored), so
+  // the chat picks up where it left off. "New chat" rotates the id.
+  const [threadId, setThreadId] = useState(() => localStorage.getItem('set_copilot_thread') ?? uuid());
+  const [hasHistory, setHasHistory] = useState(() => !!localStorage.getItem('set_copilot_thread'));
+  useEffect(() => {
+    localStorage.setItem('set_copilot_thread', threadId);
+  }, [threadId]);
+  // once the thread has messages, bind it explicitly (keeps history across
+  // open/close); a fresh thread stays unbound so the welcome screen shows
+  useEffect(() => {
+    if (!hasHistory && agent?.messages?.length) setHasHistory(true);
+  }, [agent?.messages?.length, hasHistory]);
+  const startNewChat = () => {
+    const id = uuid();
+    setHasHistory(false);
+    setThreadId(id);
+  };
+
+  // chat header: default title/close + a "new chat" action
+  const header = {
+    children: ({ titleContent, closeButton }: any) => (
+      <div className="flex w-full items-center gap-1">
+        {titleContent}
+        <button
+          className="ml-auto p-1.5 rounded-md text-set-dim hover:text-set-text hover:bg-set-panel2 text-xs flex items-center gap-1"
+          title="Start a new chat"
+          onClick={startNewChat}
+        >
+          <MessageSquarePlus size={14} />
+          <span className="hidden sm:inline">New chat</span>
+        </button>
+        {closeButton}
+      </div>
+    ),
+  };
 
   // onboarding suggestion pills in the welcome screen
   useConfigureSuggestions({
@@ -91,6 +138,7 @@ export default function GuideFab() {
         agentId={GUIDE_AGENT}
         // CopilotPopup's defaultOpen defaults to TRUE — must start closed.
         defaultOpen={false}
+        threadId={hasHistory ? threadId : undefined}
         labels={{
           modalHeaderTitle: 'SET Copilot',
           welcomeMessageText: 'Your on-screen guide — ask anything, or pick a starter:',
@@ -101,7 +149,9 @@ export default function GuideFab() {
         }}
         width={400}
         className="copilotkit-set-guide"
+        header={header}
         welcomeScreen={SetWelcomeScreen}
+        toggleButton={{ openIcon: CopilotOpenIcon, closeIcon: CopilotCloseIcon }}
       />
     </>
   );

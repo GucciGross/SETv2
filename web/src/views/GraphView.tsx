@@ -24,7 +24,9 @@ export default function GraphView() {
   const simRef = useRef<Simulation<GNode, GEdge> | null>(null);
   const [data, setData] = useState<{ nodes: GNode[]; edges: GEdge[] } | null>(null);
   const [filter, setFilter] = useState('');
-  const [hover, setHover] = useState<GNode | null>(null);
+  // hover is display-only; kept in a ref so hovering doesn't rebuild the
+  // simulation (that re-centered the graph on every mouse move and broke panning)
+  const hoverRef = useRef<GNode | null>(null);
   const viewRef = useRef({ x: 0, y: 0, k: 1 });
   const dragRef = useRef<{ node?: GNode; panning?: boolean; lastX: number; lastY: number }>({ lastX: 0, lastY: 0 });
 
@@ -94,7 +96,7 @@ export default function GraphView() {
       for (const e of edges) {
         const s = e.source as GNode;
         const t = e.target as GNode;
-        const hl = hover && (hover.id === s.id || hover.id === t.id);
+        const hl = hoverRef.current && (hoverRef.current.id === s.id || hoverRef.current.id === t.id);
         ctx.strokeStyle = hl ? 'rgba(140,130,255,0.9)' : 'rgba(120,130,170,0.22)';
         ctx.lineWidth = hl ? 1.6 : 0.8;
         ctx.beginPath();
@@ -104,7 +106,7 @@ export default function GraphView() {
       }
       for (const n of nodes) {
         const r = radius(n);
-        const hl = hover?.id === n.id;
+        const hl = hoverRef.current?.id === n.id;
         ctx.beginPath();
         ctx.arc(n.x!, n.y!, r, 0, Math.PI * 2);
         ctx.fillStyle = n.is_daily ? '#f0c060' : hl ? '#a5b8ff' : (n.deg ?? 0) > 0 ? '#6c8cff' : '#8b93a5';
@@ -135,7 +137,8 @@ export default function GraphView() {
       return null;
     };
 
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: PointerEvent) => {
+      canvas.setPointerCapture(e.pointerId);
       const node = pick(e.clientX, e.clientY);
       dragRef.current = { node: node ?? undefined, panning: !node, lastX: e.clientX, lastY: e.clientY };
       if (node) {
@@ -144,7 +147,7 @@ export default function GraphView() {
         node.vy = 0;
       }
     };
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: PointerEvent) => {
       if (dragRef.current.node) {
         const w = toWorld(e.clientX, e.clientY);
         const n = dragRef.current.node;
@@ -157,8 +160,8 @@ export default function GraphView() {
         dragRef.current.lastY = e.clientY;
         draw();
       } else {
-        const node = pick(e.clientX, e.clientY);
-        setHover(node);
+        hoverRef.current = pick(e.clientX, e.clientY);
+        draw();
       }
     };
     const onUp = () => {
@@ -176,22 +179,24 @@ export default function GraphView() {
       if (node && spaceId) navigate(`/app/space/${spaceId}/page/${node.id}`);
     };
 
-    canvas.addEventListener('mousedown', onDown);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointercancel', onUp);
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('dblclick', onDblClick);
 
     return () => {
       sim.stop();
       window.removeEventListener('resize', resize);
-      canvas.removeEventListener('mousedown', onDown);
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('pointercancel', onUp);
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('dblclick', onDblClick);
     };
-  }, [filtered, hover, spaceId, navigate]);
+  }, [filtered, spaceId, navigate]);
 
   if (!filtered) return <div className="p-8 text-set-dim">Loading graph…</div>;
 
@@ -203,7 +208,7 @@ export default function GraphView() {
           {filtered.nodes.length} pages · {filtered.edges.length} links · drag nodes, scroll to zoom, double-click to open
         </span>
       </div>
-      <canvas ref={canvasRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+      <canvas ref={canvasRef} className="w-full h-full cursor-grab active:cursor-grabbing" style={{ touchAction: 'none' }} />
     </div>
   );
 }

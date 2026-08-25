@@ -3,6 +3,7 @@ import { useLocation, useParams } from 'react-router-dom';
 import { CopilotKit } from '@copilotkit/react-core/v2';
 import { useAgentContext } from '@copilotkit/react-core/v2';
 import { getToken } from './api';
+import { uuid } from './utils';
 import { useApp } from '../stores/app';
 
 /**
@@ -42,6 +43,8 @@ export function SetCopilotProvider({ children }: { children: React.ReactNode }) 
 
 const VIEW_NAMES: [RegExp, string][] = [
   [/\/page\//, 'Page editor'],
+  [/\/pages/, 'Pages list'],
+  [/\/databases/, 'Databases list'],
   [/\/graph/, 'Graph view'],
   [/\/db\//, 'Database'],
   [/\/notebook\/[^/]+\/deck\//, 'Study deck'],
@@ -89,6 +92,6 @@ export function useSetScreenContext() {
 export async function askAgent(agent: any, text: string) {
   if (!agent) return;
   await agent.runAgent({
-    messages: [...agent.messages, { id: crypto.randomUUID(), role: 'user', content: text }],
+    messages: [...agent.messages, { id: uuid(), role: 'user', content: text }],
   });
 }

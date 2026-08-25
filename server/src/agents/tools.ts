@@ -100,6 +100,31 @@ export const TOOLS: ToolDef2[] = [
     },
   },
   {
+    name: 'create_notebook',
+    description:
+      'Create a new research notebook. Notebooks are containers for indexed sources (documents) that can be searched with citations and turned into study material. Use this when the user asks for a new notebook.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Notebook title' },
+        description: { type: 'string', description: 'Optional short description of what the notebook collects' },
+      },
+      required: ['title'],
+    },
+    write: true,
+    async run(args, ctx) {
+      const nb = await one<any>(
+        `INSERT INTO notebooks (space_id, title, description) VALUES ($1, $2, $3) RETURNING id, title`,
+        [ctx.spaceId, args.title, args.description ?? '']
+      );
+      return {
+        ok: true,
+        result: { notebookId: nb!.id, title: nb!.title },
+        a2ui: [{ type: 'card', props: { title: nb!.title, icon: '📓', notebookId: nb!.id, body: args.description ?? 'New research notebook', action: 'open_notebook' } }],
+      };
+    },
+  },
+  {
     name: 'append_to_page',
     description: 'Append markdown content to an existing page (found by id or title).',
     parameters: {

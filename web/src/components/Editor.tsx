@@ -18,6 +18,7 @@ import ImageExt from '@tiptap/extension-image';
 import Youtube from '@tiptap/extension-youtube';
 import { Youtube as YoutubeIcon } from 'lucide-react';
 import { mdToDoc, docToMd } from '../lib/markdown';
+import { uuid } from '../lib/utils';
 import { api, getToken } from '../lib/api';
 import {
   Bold, Italic, Code, Heading1, Heading2, Heading3, List, ListOrdered, ListTodo,
@@ -480,7 +481,7 @@ export default function Editor({ markdown, onSave, onWikiClick, onReady, debounc
     }
     let blockId = target.attrs.blockId;
     if (!blockId) {
-      blockId = crypto.randomUUID();
+      blockId = uuid();
       editor.chain().focus().updateAttributes(target.type.name, { blockId }).setTextSelection({ from, to }).run();
       onSave(docToMd(editor.getJSON() as any));
     }

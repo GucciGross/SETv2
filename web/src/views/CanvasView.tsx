@@ -58,7 +58,9 @@ export default function CanvasView() {
   }, [spaceId]);
 
   const onPointerDown = (e: React.PointerEvent, node?: CNode) => {
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    // capture on the container: capture on e.target could grab a child card
+    // or text node and route moves away from the pan handlers
+    e.currentTarget.setPointerCapture(e.pointerId);
     dragRef.current = { node, panning: !node, lastX: e.clientX, lastY: e.clientY };
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -82,17 +84,26 @@ export default function CanvasView() {
     dragRef.current = { lastX: 0, lastY: 0 };
   };
 
+  // non-passive wheel so the page's scroll container can't swallow zoom gestures
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setView((v) => ({ ...v, k: Math.min(2.5, Math.max(0.3, v.k * (e.deltaY < 0 ? 1.08 : 0.93))) }));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
   return (
     <div
       ref={containerRef}
-      className="h-full relative overflow-hidden bg-[radial-gradient(circle_at_1px_1px,#1c2130_1px,transparent_0)] [background-size:24px_24px] cursor-grab active:cursor-grabbing"
+      className="h-full relative overflow-hidden bg-[radial-gradient(circle_at_1px_1px,#1c2130_1px,transparent_0)] [background-size:24px_24px] cursor-grab active:cursor-grabbing touch-none"
       style={{ backgroundPosition: `${view.x}px ${view.y}px` }}
       onPointerDown={(e) => onPointerDown(e)}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onWheel={(e) => {
-        setView((v) => ({ ...v, k: Math.min(2.5, Math.max(0.3, v.k * (e.deltaY < 0 ? 1.08 : 0.93))) }));
-      }}
     >
       <div className="absolute inset-0" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`, transformOrigin: '0 0' }}>
         <svg className="absolute inset-0 overflow-visible pointer-events-none" width="100%" height="100%">

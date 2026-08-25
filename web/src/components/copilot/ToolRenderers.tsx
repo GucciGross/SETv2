@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { ArrowRight, BookOpen, FileText, Search, Sparkles, Wrench } from 'lucide-react';
@@ -83,6 +84,33 @@ export function SetToolRenderers() {
     },
   });
 
+  // create_notebook → success card with an open action
+  useRenderTool({
+    name: 'create_notebook',
+    parameters: z.object({ title: z.string(), description: z.string().optional() }),
+    render: ({ parameters, result }) => {
+      const res = parseResult(result);
+      return (
+        <RunState result={result}>
+          <div className="p-2.5 flex items-center gap-2 text-sm">
+            <BookOpen size={14} className="text-green-400 shrink-0" />
+            <span className="truncate flex-1">
+              Created notebook <span className="font-medium">{parameters?.title}</span>
+            </span>
+            {res?.notebookId && (
+              <button
+                className="set-btn-ghost text-xs flex items-center gap-1 shrink-0"
+                onClick={() => spaceId && navigate(`/app/space/${spaceId}/notebook/${res.notebookId}`)}
+              >
+                open <ArrowRight size={11} />
+              </button>
+            )}
+          </div>
+        </RunState>
+      );
+    },
+  });
+
   // search_workspace → results list
   useRenderTool({
     name: 'search_workspace',
@@ -155,7 +183,7 @@ export function SetToolRenderers() {
           {res?.deckId && res?.notebookId && (
             <button
               className="set-btn-ghost text-xs flex items-center gap-1 shrink-0"
-              onClick={() => navigate(`/app/notebook/${res.notebookId}/deck/${res.deckId}`)}
+              onClick={() => spaceId && navigate(`/app/space/${spaceId}/notebook/${res.notebookId}/deck/${res.deckId}`)}
             >
               study <ArrowRight size={11} />
             </button>
@@ -166,16 +194,63 @@ export function SetToolRenderers() {
     },
   });
 
-  // everything else → compact status line
+  // everything else → transparent activity line: what the agent ran, with
+  // what inputs, and what came back (details expandable)
   useDefaultRenderTool({
-    render: ({ name, result }) => (
-      <div className={`fadein my-1 flex items-center gap-1.5 text-[11px] border rounded-md px-2 py-1.5 ${result ? 'border-set-border/60 bg-set-panel2/40 text-set-dim' : 'border-set-border bg-set-panel2/60 text-violet-200'}`}>
-        <Wrench size={10} />
-        <span className="font-mono">{name}</span>
-        <span>{result ? 'done' : 'running…'}</span>
-      </div>
-    ),
+    render: ({ name, parameters, result, status }) => {
+      const args = summarizeArgs(parameters);
+      const res = parseResult(result);
+      return (
+        <ToolActivity name={name} args={args} result={res} busy={status !== 'complete' && result === undefined} />
+      );
+    },
   });
 
   return null;
+}
+
+/** One-line "title — value" summary of tool arguments, e.g. `ref: Green Bay`. */
+function summarizeArgs(parameters: unknown): string {
+  if (!parameters || typeof parameters !== 'object') return '';
+  const entries = Object.entries(parameters as Record<string, unknown>)
+    .filter(([, v]) => typeof v === 'string' || typeof v === 'number')
+    .filter(([k, v]) => String(v).length > 0 && k !== 'notebookId' && k !== 'parentId' && k !== 'pageId')
+    .slice(0, 3)
+    .map(([k, v]) => `${k}: ${String(v).length > 60 ? String(v).slice(0, 57) + '…' : String(v)}`);
+  return entries.join(' · ');
+}
+
+/**
+ * Generic tool activity card — keeps the agent transparent: shows the tool
+ * name, its inputs, and (expandable) the raw result so users can see HOW
+ * something was done, not just that it happened.
+ */
+function ToolActivity({ name, args, result, busy }: { name: string; args: string; result: any; busy: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`fadein my-1 border rounded-md text-[11px] ${busy ? 'border-set-border bg-set-panel2/60' : 'border-set-border/60 bg-set-panel2/40'}`}>
+      <div className="flex items-center gap-1.5 px-2 py-1.5">
+        <Wrench size={10} className="text-set-dim shrink-0" />
+        <span className="font-mono text-set-text/90">{name}</span>
+        {args && <span className="text-set-dim truncate flex-1">{args}</span>}
+        {busy ? (
+          <span className="text-violet-200 shrink-0 ml-auto flex items-center gap-1.5">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-violet-300 animate-pulse" /> running…
+          </span>
+        ) : (
+          <button
+            className="text-set-dim hover:text-set-text ml-auto shrink-0 underline underline-offset-2"
+            onClick={() => setOpen((o) => !o)}
+          >
+            {open ? 'hide result' : 'result'}
+          </button>
+        )}
+      </div>
+      {open && result !== undefined && (
+        <pre className="max-h-40 overflow-auto border-t border-set-border/60 px-2 py-1.5 text-[10px] text-set-dim whitespace-pre-wrap break-all">
+          {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
 }

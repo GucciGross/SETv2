@@ -8,6 +8,18 @@ import './index.css';
 // @ts-expect-error virtual module provided by copilotkitRawStyles() plugin
 import cpkStyles from 'virtual:copilotkit-v2-styles';
 
+// iPhones in Safari's "Request Desktop Website" mode render at ~980px layout
+// width — fixed overlays anchored right (copilot launcher + popup) end up
+// off-screen and the page pans sideways. Force the mobile overlay layout in
+// that case. Standalone PWA launches get the real viewport and are unaffected.
+function syncForceMobile() {
+  const iOS = /iPhone|iPod|iPad/.test(navigator.userAgent);
+  const standalone = window.matchMedia('(display-mode: standalone)').matches;
+  document.documentElement.classList.toggle('set-force-mobile', iOS && !standalone && window.innerWidth >= 768);
+}
+syncForceMobile();
+window.addEventListener('resize', syncForceMobile);
+
 const cpkStyleEl = document.createElement('style');
 cpkStyleEl.dataset.copilotkit = 'v2-styles';
 cpkStyleEl.textContent = cpkStyles;
@@ -38,6 +50,7 @@ import Reset from './views/Reset';
 import Join from './views/Join';
 import ActivityView from './views/ActivityView';
 import MyTasksView from './views/MyTasksView';
+import { PagesList, DatabasesList } from './views/ListsView';
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -57,6 +70,8 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Home /> },
           { path: 'space/:spaceId', element: <DashboardView /> },
+          { path: 'space/:spaceId/pages', element: <PagesList /> },
+          { path: 'space/:spaceId/databases', element: <DatabasesList /> },
           { path: 'space/:spaceId/page/:pageId', element: <PageView /> },
           { path: 'space/:spaceId/graph', element: <GraphView /> },
           { path: 'space/:spaceId/db/:dbId', element: <DatabaseView /> },
@@ -76,9 +91,25 @@ const router = createBrowserRouter([
           { path: 'space/:spaceId/settings', element: <SettingsView /> },
         ],
       },
+      // catch-all: unmatched URLs (including agent-driven navigations) render
+      // this instead of the router's raw "Unexpected Application Error! 404"
+      { path: '*', element: <NotFound /> },
     ],
   },
 ]);
+
+function NotFound() {
+  return (
+    <div className="h-screen flex flex-col items-center justify-center gap-3 text-center p-6">
+      <div className="text-4xl">🧭</div>
+      <h1 className="text-lg font-bold text-white">That page doesn't exist</h1>
+      <p className="text-sm text-set-dim max-w-xs">
+        The link or navigation went somewhere unknown. Nothing is broken — head back and keep going.
+      </p>
+      <a href="/app" className="set-btn-primary text-sm mt-1">Back to workspace</a>
+    </div>
+  );
+}
 
 function Home() {
   return (
