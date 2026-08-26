@@ -125,6 +125,100 @@ class Tab:
         return str(r.get("result", {}).get("value", "unknown")) + narration
 
 
+
+
+# ---------------- native desktop demos (Phase 3, cua-driver) ----------------
+# Visible actions only: launch the app, point the animated agent cursor at the
+# element, show a desktop-notification caption. No clicks, no edits.
+
+def cua(*args: str) -> dict:
+    import subprocess as sp
+    r = sp.run(["cua-driver", *args], capture_output=True, text=True, timeout=90)
+    try:
+        return json.loads(r.stdout) if r.stdout.strip() else {"error": r.stderr[:300]}
+    except Exception:
+        return {"error": (r.stdout + r.stderr)[:300]}
+
+
+def native_demo(app: str, element: str, message: str | None) -> str:
+    import time as _t
+    st = cua("status")
+    if "running" not in str(st).lower():
+        return "error: cua-driver daemon is not running (start it with `cua-driver serve`)"
+
+    before = {w.get("window_id") for w in cua("list_windows", "{}").get("windows", [])}
+    launched = cua("launch_app", json.dumps({"name": app}))
+    pid = launched.get("pid")
+    if not pid and not launched.get("running"):
+        return f"error: could not launch {app} ({launched.get('error') or launched})"
+    # X11 window lists often report pid=None and launch responses lag; the
+    # reliable signal is a NEW top-level window appearing after launch
+    win = None
+    for _ in range(12):
+        _t.sleep(1.0)
+        wins = [w for w in cua("list_windows", "{}").get("windows", []) if w.get("window_id") not in before]
+        if wins:
+            win = wins[0]
+            break
+    if not win:
+        return f"error: launched {app} (pid {pid}) but no new window appeared"
+    log(f"launched {app} (pid {pid}, window {win['window_id']}: {win.get('title')})")
+    _t.sleep(2.0)  # AT-SPI tree starts settling — the user watches it open
+    state_pid = win.get("pid") or pid or 0
+    state = cua("get_window_state", json.dumps({"pid": state_pid, "window_id": win["window_id"], "include_screenshot": False}))
+    if state.get("degraded"):
+        return "error: accessibility tree unavailable (AT-SPI not exposed for this app)"
+
+    # element match: "role:name" (either side optional) against role+label;
+    # GTK populates AT-SPI lazily, so retry the walk a few times
+    want_role, _, want_name = element.partition(":")
+    want_role = want_role.strip().lower()
+    want_name = want_name.strip().lower()
+    hit = None
+    for _attempt in range(4):
+        for el in state.get("elements", []):
+            role = str(el.get("role") or "").lower()
+            label = str(el.get("label") or "").lower()
+            f = el.get("frame") or {}
+            try:
+                ok_frame = f and isinstance(f.get("x"), (int, float)) and f.get("w", 0) > 0
+            except Exception:
+                ok_frame = False
+            if not ok_frame:
+                continue
+            if want_role and want_name:
+                if want_role in role and want_name in label:
+                    hit = el; break
+            elif want_role:
+                if want_role in role:
+                    hit = el; break
+            elif want_name and want_name in label:
+                hit = el; break
+        if hit:
+            break
+        _t.sleep(1.5)
+        state = cua("get_window_state", json.dumps({"pid": state_pid, "window_id": win["window_id"], "include_screenshot": False}))
+    if not hit:
+        roles = sorted({str(e.get("role")) for e in state.get("elements", []) if e.get("role")})[:12]
+        return f"error: element '{element}' not found; roles seen: {', '.join(roles)}"
+
+    f = hit["frame"]
+    cx = int(f["x"] + f.get("w", 0) / 2)
+    cy = int(f["y"] + f.get("h", 0) / 2)
+    cua("start_session", json.dumps({"session": "set-teach"}))
+    cua("move_cursor", json.dumps({"x": cx, "y": cy, "session": "set-teach"}))
+    if message:
+        try:
+            import subprocess as sp
+            sp.run(["notify-send", "-t", "20000", "SET demo", message or hit.get("label") or element], timeout=10)
+        except Exception:
+            pass  # caption is best-effort; the pointer is the demo
+    log(f"pointing at {hit.get('role')} '{hit.get('label')}' @({cx},{cy})")
+    _t.sleep(6.0)  # the user watches the pointer pulse on the element
+    cua("end_session", json.dumps({"session": "set-teach"}))
+    return f"pointed at {hit.get('role')} '{hit.get('label') or element}'"
+
+
 def main() -> int:
     if not TOKEN:
         print(__doc__)
@@ -145,17 +239,22 @@ def main() -> int:
             task = (r.json() if r.status_code == 200 else {}).get("task")
             if task:
                 log(f"teach task: {task['title']}")
-                if not tab.ensure():
-                    status, result = "error", "companion cannot attach to the browser (remote debugging off?)"
-                else:
-                    url = task.get("url") or "/"
-                    if url.startswith("/"):
-                        url = SET_URL + url
-                    try:
+                try:
+                    if task.get("kind") == "native":
+                        outcome = native_demo(task.get("app") or "", task.get("element") or "window",
+                                              task.get("message") or task["title"])
+                        status = "error" if outcome.startswith("error") else "done"
+                        result = outcome
+                    else:
+                        if not tab.ensure():
+                            raise RuntimeError("companion cannot attach to the browser (remote debugging off?)")
+                        url = task.get("url") or "/"
+                        if url.startswith("/"):
+                            url = SET_URL + url
                         outcome = tab.demo(url, task.get("selector"), task.get("message") or task["title"])
                         status, result = "done", outcome
-                    except Exception as e:
-                        status, result = "error", str(e)[:300]
+                except Exception as e:
+                    status, result = "error", str(e)[:300]
                 httpx.post(
                     f"{SET_URL}/api/companion/tasks/{task['id']}/result",
                     headers={"authorization": f"Bearer {TOKEN}"},

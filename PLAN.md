@@ -141,9 +141,14 @@ queue, `demo_on_screen` copilot tool, and the local companion agent
 navigate + highlight + caption only, no clicks/edits/background). Verified
 E2E. **Next:** external-site demos, narration audio, cua-driver for native apps.
 
-## Phase 3 — Desktop teaching companion (only after Phase 2 earns it)
+## Phase 3 — Desktop teaching companion · *v1 live (Linux)*
 
-cua-driver-style native automation for teaching desktop apps.
+cua-driver native automation for teaching desktop apps — same companion, new
+task kind: launch a native app, find the element in the OS accessibility tree,
+glide the visible agent cursor onto it, caption via desktop notification.
+Copilot tool: `demo_native_app`. Visible actions only — never clicks or edits.
+**Verified E2E** on Nemo (GTK/AT-SPI); requires the user to run `cua-driver
+serve` on their machine. Original scope notes:
 
 - Per-OS installer, OS accessibility permissions (macOS AX, Linux AT-SPI, Windows UIA)
 - Explicit per-session consent (like screen sharing), always-visible action,

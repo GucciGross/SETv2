@@ -78,12 +78,16 @@ export async function companionRoutes(app: FastifyInstance) {
         url: z.string().max(500).optional(),
         selector: z.string().max(300).optional(),
         message: z.string().max(1000).optional(),
+        kind: z.enum(['browser', 'native']).optional(),
+        app: z.string().max(200).optional(),      // native: app name / command
+        element: z.string().max(200).optional(),  // native: "role:name" substring to point at
       })
       .parse(req.body);
     const task = await one<any>(
-      `INSERT INTO teach_tasks (space_id, user_id, title, url, selector, message)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [spaceId, req.user!.id, body.title, body.url ?? null, body.selector ?? null, body.message ?? null]
+      `INSERT INTO teach_tasks (space_id, user_id, title, url, selector, message, kind, app, element)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [spaceId, req.user!.id, body.title, body.url ?? null, body.selector ?? null, body.message ?? null,
+       body.kind ?? 'browser', body.app ?? null, body.element ?? null]
     );
     return { task };
   });

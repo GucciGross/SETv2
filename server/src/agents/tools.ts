@@ -298,6 +298,32 @@ export const TOOLS: ToolDef2[] = [
     },
   },
   {
+    name: 'demo_native_app',
+    description:
+      'Queue a live, on-screen demonstration in a NATIVE desktop app on the user\'s machine: the teaching companion launches the app and points at an element with a visible animated cursor plus a caption. Use when the user asks to be shown a desktop application (calculator, editor, file manager…). Visible actions only — never clicks or edits.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short demo title' },
+        app: { type: 'string', description: 'App to launch: name or command, e.g. "calculator", "xed", "nemo"' },
+        element: { type: 'string', description: 'What to point at, e.g. "push button:7" or "text:Location" — role and/or visible name substring' },
+        message: { type: 'string', description: 'One-sentence caption shown as a desktop notification' },
+      },
+      required: ['title', 'app', 'element'],
+    },
+    write: true,
+    async run(args, ctx) {
+      const task = await one<any>(
+        `INSERT INTO teach_tasks (space_id, user_id, title, kind, app, element, message) VALUES ($1, $2, $3, 'native', $4, $5, $6) RETURNING id`,
+        [ctx.spaceId, ctx.userId, args.title, args.app, args.element, args.message ?? null]
+      );
+      return {
+        ok: true,
+        result: { queued: true, taskId: task!.id, note: 'Requires the user\'s companion with cua-driver connected.' },
+      };
+    },
+  },
+  {
     name: 'render_ui',
     description: 'Render a rich UI component for the user: card, table or form. Use for structured answers instead of plain text.',
     parameters: {

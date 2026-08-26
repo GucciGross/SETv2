@@ -786,7 +786,10 @@ function CompanionTab({ spaceId }: { spaceId: string }) {
           <li>On your machine, inside the SET checkout:
             <code className="block mt-1 bg-set-panel2 rounded px-2 py-1">cd companion &amp;&amp; SET_URL={location.origin} COMPANION_TOKEN=… uv run companion.py</code>
           </li>
-          <li>Ask the copilot to <em>show</em> you something — e.g. "show me the knowledge graph".</li>
+          <li>Ask the copilot to <em>show</em> you something — e.g. "show me the knowledge graph".
+            For <strong className="text-set-text">native desktop app demos</strong>, also install cua-driver
+            (<code>curl -LsSf https://cua.driver/cli | sh</code>) and run <code>cua-driver serve</code> — the companion
+            then points at real app elements (Linux AT-SPI today; macOS/Windows next).</li>
         </ol>
       </div>
 
