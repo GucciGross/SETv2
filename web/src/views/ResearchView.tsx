@@ -294,9 +294,15 @@ export function ResearchRun() {
               {simplifying ? 'Rewriting…' : 'Plain-English rewrite'}
             </button>
           )}
-          <button className="set-btn text-xs flex items-center gap-1" disabled={simplifying} onClick={() => makeDeck('flashcards')}>
-            <BookOpen size={12} /> Study deck
-          </button>
+          {run.progress?.auto_deck_id ? (
+            <Link to={`/app/space/${spaceId}/notebook/${run.notebook_id}/deck/${run.progress.auto_deck_id}`} className="set-btn-primary text-xs flex items-center gap-1">
+              <BookOpen size={12} /> Open study deck ✨
+            </Link>
+          ) : (
+            <button className="set-btn text-xs flex items-center gap-1" disabled={simplifying} onClick={() => makeDeck('flashcards')}>
+              <BookOpen size={12} /> Study deck
+            </button>
+          )}
           <button className="set-btn text-xs flex items-center gap-1" disabled={simplifying} onClick={() => makeDeck('quiz')}>
             <BookOpen size={12} /> Quiz me
           </button>

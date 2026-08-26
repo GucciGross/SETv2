@@ -249,6 +249,27 @@ function dispatch(payload: any, runId: string) {
     });
 }
 
+/** Fire-and-forget: flashcards deck from the run's ingested sources. Progress
+ * and the timeline record the deck id once it lands; failures never hurt the run. */
+async function autoDeck(run: any) {
+  try {
+    const provider = await getProvider(run.space_id);
+    if (!provider) throw new Error('no LLM provider configured');
+    const result = await generateDeck(run.space_id, run.notebook_id, 'flashcards', run.question.slice(0, 120), 12);
+    const deck = await createDeckRecord(run.space_id, run.notebook_id, 'flashcards', `flashcards — ${run.question.slice(0, 60)}`, result);
+    await q(`UPDATE research_runs SET progress = progress || $2 WHERE id = $1`, [run.id, JSON.stringify({ auto_deck_id: deck.id })]);
+    await q(
+      `UPDATE research_runs SET log = log || $2::jsonb WHERE id = $1`,
+      [run.id, JSON.stringify([{ t: new Date().toISOString(), type: 'deck', message: 'Auto-generated flashcards deck from research sources' }])]
+    );
+  } catch (e: any) {
+    await q(
+      `UPDATE research_runs SET log = log || $2::jsonb WHERE id = $1`,
+      [run.id, JSON.stringify([{ t: new Date().toISOString(), type: 'deck', message: `Auto deck failed: ${String(e?.message ?? e).slice(0, 160)}` }])]
+    );
+  }
+}
+
 /**
  * Worker done (status 'synthesized') → ingest sources, create the cited report
  * page, mark finished. The status-guarded UPDATE makes it idempotent even with
@@ -284,6 +305,8 @@ async function advance(runId: string) {
       await q(`UPDATE research_runs SET report_page_id=$2 WHERE id=$1`, [runId, page!.id]);
     }
     await q(`UPDATE research_runs SET status='finished', finished_at=now() WHERE id=$1`, [runId]);
+    // study-style runs auto-generate their flashcard deck (PLAN Phase 1)
+    if (run.style === 'study' && run.notebook_id) void autoDeck(run);
   } catch (e: any) {
     await q(`UPDATE research_runs SET status='error', error=$2, finished_at=now() WHERE id=$1`, [runId, String(e?.message ?? e).slice(0, 800)]);
   }
