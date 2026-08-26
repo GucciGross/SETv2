@@ -23,6 +23,7 @@ export function ResearchList() {
   const [notebooks, setNotebooks] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [minutes, setMinutes] = useState(25);
+  const [style, setStyle] = useState<'ste' | 'professional' | 'executive' | 'study'>('ste');
 
   const DURATIONS: [number, string][] = [
     [5, '5 minutes'], [15, '15 minutes'], [25, '25 minutes (default)'], [60, '1 hour'],
@@ -44,6 +45,7 @@ export function ResearchList() {
       const { run } = await api.post(`/spaces/${spaceId}/research`, {
         question: question.trim(),
         maxMinutes: minutes,
+        style,
         ...(notebookId ? { notebookId } : {}),
       });
       navigate(`/app/space/${spaceId}/research/${run.id}`);
@@ -72,7 +74,17 @@ export function ResearchList() {
         />
         <div className="flex flex-wrap items-center gap-2 mt-2">
           <select
-            className="set-input text-xs w-[170px]"
+            className="set-input text-xs w-[190px]"
+            value={style}
+            onChange={(e) => setStyle(e.target.value as any)}
+          >
+            <option value="ste">📝 Simplified Technical English (default)</option>
+            <option value="professional">📊 Professional analysis</option>
+            <option value="executive">⚡ Executive brief</option>
+            <option value="study">🎓 Study notes</option>
+          </select>
+          <select
+            className="set-input text-xs w-[150px]"
             value={minutes}
             onChange={(e) => setMinutes(+e.target.value)}
           >

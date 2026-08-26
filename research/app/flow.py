@@ -74,6 +74,10 @@ class WebFetchTool(BaseTool):
         title, markdown = got
         if st is not None:
             add_source(st, url, title, markdown)
+            for img in (WEB.last_images or [])[:2]:
+                img["source_url"] = url
+                img["source_title"] = title
+                st.images.append(img)
             db.log_event(st.run_id, "fetch", f"Fetched: {title[:120]}", url=url,
                          pages=st.pages_visited, budget=st.pages_budget)
             db.set_progress(st.run_id, pages_visited=st.pages_visited, pages_budget=st.pages_budget)
@@ -92,6 +96,7 @@ class ResearchState(BaseModel):
     # page-reading-by-eye → vision_model (see weblayer._vision_read)
     subquestions: list[dict] = Field(default_factory=list)  # {id, question, queries, status, note}
     sources: list[dict] = Field(default_factory=list)       # {url, title, markdown}
+    images: list[dict] = Field(default_factory=list)        # {url, source_url, source_title}
     findings: list[dict] = Field(default_factory=list)      # {subquestion_id, text, citations:[url]}
     pages_budget: int = 40
     pages_visited: int = 0
@@ -100,6 +105,7 @@ class ResearchState(BaseModel):
     deadline: float = 0.0
     report_md: str = ""
     search_enabled: bool = False
+    style: str = "ste"  # ste | professional | executive | study
 
 # CrewAI wraps the state model (StateWithId), so keep it plain data and use
 # module-level helpers instead of methods.
@@ -326,6 +332,29 @@ class DeepResearchFlow(Flow[ResearchState]):
             for f in st.findings
         ) or "(no structured findings — synthesize from fetched sources below)"
 
+        style_rules = {
+            "ste": (
+                "STYLE: Simplified Technical English (ASD-STE100). Short sentences "
+                "(aim 15 words or fewer, one idea each). Active voice only. Everyday words; "
+                "define jargon on first use. No filler or marketing language. Concrete facts: "
+                "numbers, names, dates, comparisons."
+            ),
+            "professional": (
+                "STYLE: professional analytical report. Clear topic sentences, measured tone, "
+                "precise terminology with definitions where needed, no marketing language."
+            ),
+            "executive": (
+                "STYLE: executive brief, at most ~600 words. Lead with the decision-relevant "
+                "answer. Bullet-point key facts with figures. Note risks and unknowns in one "
+                "short section. No background padding."
+            ),
+            "study": (
+                "STYLE: study notes for a learner. Short sections per concept, key-term "
+                "definitions, comparison tables where useful, a 'Check yourself' list of 5-8 "
+                "questions with answers at the end."
+            ),
+        }.get(st.style, "STYLE: Simplified Technical English (ASD-STE100).")
+
         analyst = Agent(
             role="Lead Analyst",
             goal="Weave all findings into one coherent, cited analytical report",
@@ -379,6 +408,19 @@ class DeepResearchFlow(Flow[ResearchState]):
             for s in st.sources:
                 db.insert_source(str(notebook_id), s["url"], s["title"], s["markdown"], st.run_id)
                 saved += 1
+        # visuals: render ```set:chart fences to PNGs + build a picture gallery
+        import os
+        base_url = os.environ.get("ASSET_BASE_URL", "http://server:4000").rstrip("/")
+        data_dir = os.environ.get("DATA_DIR", "/app/data")
+        try:
+            from . import visuals
+            report = visuals.render_fences(st.report_md, data_dir, st.run_id, base_url)
+            gallery = visuals.build_gallery(st.images, data_dir, st.run_id, base_url)
+            if gallery:
+                report = report.rstrip() + "\n" + gallery
+            st.report_md = report
+        except Exception as e:  # visuals must never fail the run
+            db.log_event(st.run_id, "persist", f"Visuals skipped: {str(e)[:120]}")
         db.save_report(st.run_id, st.report_md)
         db.log_event(st.run_id, "persist",
                      f"Saved {saved} sources + report — handing to ingestion",

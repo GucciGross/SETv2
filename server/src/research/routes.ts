@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { createReadStream } from 'node:fs';
+import { join, normalize } from 'node:path';
 import { one, q } from '../db.js';
 import { requireSpace } from '../lib/http.js';
 import { getProvider, chatCompletion } from '../llm/router.js';
@@ -39,6 +41,7 @@ export async function researchRoutes(app: FastifyInstance) {
         notebookId: z.string().uuid().optional(),
         maxPages: z.number().int().min(1).max(120).optional(),
         maxMinutes: z.number().int().min(5).max(4320).optional(), // 5 min … 72 h
+        style: z.enum(['ste', 'professional', 'executive', 'study']).optional(),
       })
       .parse(req.body);
 
@@ -69,6 +72,7 @@ export async function researchRoutes(app: FastifyInstance) {
     const payload = {
       run_id: run!.id,
       question: body.question,
+      style: run!.style,
       notebook_id: notebookId,
       max_pages: body.maxPages ?? researchCfg.maxPages ?? 40,
       max_minutes: body.maxMinutes ?? researchCfg.maxMinutes ?? 25,
@@ -167,6 +171,21 @@ Output only the rewritten markdown.`;
       [id, JSON.stringify([{ t: new Date().toISOString(), type: 'simplify', message: 'Report rewritten in Simplified Technical English' }])]
     );
     return { ok: true };
+  });
+
+  // report visuals (charts/pictures) written by the worker under
+  // DATA_DIR/research-assets/<runId>/ — filenames are worker-generated and
+  // unguessable; <img> tags cannot send auth headers.
+  app.get('/research/:id/assets/:file', async (req, reply) => {
+    const id = (req.params as any).id as string;
+    const file = (req.params as any).file as string;
+    if (!/^[\w.-]+$/.test(file) || !/^[0-9a-f-]{36}$/.test(id)) return reply.code(400).send({ error: 'bad path' });
+    const path = normalize(join(config.dataDir, 'research-assets', id, file));
+    if (!path.startsWith(join(config.dataDir, 'research-assets'))) return reply.code(400).send({ error: 'bad path' });
+    const stream = createReadStream(path);
+    stream.on('error', () => reply.code(404).send({ error: 'not found' }));
+    reply.header('content-type', file.endsWith('.png') ? 'image/png' : file.endsWith('.jpg') || file.endsWith('.jpeg') ? 'image/jpeg' : 'application/octet-stream');
+    return stream;
   });
 
   app.post('/research/:id/cancel', async (req, reply) => {

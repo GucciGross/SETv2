@@ -128,8 +128,12 @@ class WebLayer:
             return []
 
     # ---- fetch -----------------------------------------------------------
+    last_images: list = None  # images from the most recent fetch
+
     def fetch_markdown(self, url: str) -> tuple[str, str] | None:
-        """(title, markdown) or None when blocked/unreachable."""
+        """(title, markdown) or None when blocked/unreachable. Images found on
+        the page are exposed via self.last_images for the flow to collect."""
+        self.last_images = []
         if url in self._blocked or self._domain_of(url) in self._domain_blocked:
             return None
         self._throttle(url)
@@ -137,6 +141,9 @@ class WebLayer:
             got = self._firecrawl_scrape(url)
             if got is not None:
                 return got
+        html, _, _ = self._http_get(url)
+        if html:
+            self.last_images = self._page_images(html, url)
         return self._direct_fetch(url)
 
     def _firecrawl_scrape(self, url: str) -> tuple[str, str] | None:
@@ -284,6 +291,26 @@ class WebLayer:
             except Exception:
                 pass
             self._tab = None
+
+    @staticmethod
+    def _page_images(html: str, page_url: str) -> list[dict]:
+        """og:image + first content <img>s, absolutized against the page URL."""
+        import re
+        from urllib.parse import urljoin
+
+        out: list[str] = []
+        og = re.search(r'(?is)<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)', html) or re.search(
+            r'(?is)<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html)
+        if og:
+            out.append(og.group(1))
+        for m in re.finditer(r'(?is)<img[^>]+src=["\']([^"\']+)["\']', html):
+            src = m.group(1)
+            if any(src.lower().endswith(e) for e in (".png", ".jpg", ".jpeg", ".webp")) and "logo" not in src.lower() and "icon" not in src.lower():
+                out.append(src)
+            if len(out) >= 3:
+                break
+        urls = [urljoin(page_url, u) for u in out]
+        return [{"url": u} for u in urls if u.startswith("http")]
 
     def _http_get(self, url: str) -> tuple[str | None, str, str]:
         try:
