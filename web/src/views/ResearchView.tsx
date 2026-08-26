@@ -325,6 +325,11 @@ export function ResearchRun() {
               {simplifying ? 'Rewriting…' : 'Plain-English rewrite'}
             </button>
           )}
+          {run.report_md && (
+            <Link to={`/app/space/${spaceId}/research/${runId}/paper`} className="set-btn-primary text-xs flex items-center gap-1">
+              <BookOpen size={12} /> Read as paper
+            </Link>
+          )}
           {run.progress?.auto_deck_id ? (
             <Link to={`/app/space/${spaceId}/notebook/${run.notebook_id}/deck/${run.progress.auto_deck_id}`} className="set-btn-primary text-xs flex items-center gap-1">
               <Sparkles size={12} /> Open study deck

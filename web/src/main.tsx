@@ -52,6 +52,7 @@ import ActivityView from './views/ActivityView';
 import MyTasksView from './views/MyTasksView';
 import { PagesList, DatabasesList } from './views/ListsView';
 import { ResearchList, ResearchRun } from './views/ResearchView';
+import PaperView from './views/PaperView';
 import { Compass } from 'lucide-react';
 
 const router = createBrowserRouter([
@@ -80,6 +81,7 @@ const router = createBrowserRouter([
           { path: 'space/:spaceId/notebooks', element: <NotebookList /> },
           { path: 'space/:spaceId/research', element: <ResearchList /> },
           { path: 'space/:spaceId/research/:runId', element: <ResearchRun /> },
+          { path: 'space/:spaceId/research/:runId/paper', element: <PaperView /> },
           { path: 'space/:spaceId/notebook/:nbId', element: <NotebookView /> },
           { path: 'space/:spaceId/notebook/:nbId/deck/:deckId', element: <StudyView /> },
           { path: 'space/:spaceId/models', element: <ModelsView /> },
