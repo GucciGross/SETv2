@@ -99,13 +99,30 @@ class Tab:
     def demo(self, url: str | None, selector: str | None, message: str | None) -> str:
         if url:
             self._cmd("Page.navigate", {"url": url})
-            time.sleep(2.5)  # let the SPA settle — the user watches it load
+            time.sleep(2.0)  # the user watches the page load
+        # wait for the target element (SPAs render late) before highlighting
+        sel = selector or "body"
+        for _ in range(10):
+            r = self._cmd("Runtime.evaluate", {"expression": f"!!document.querySelector({json.dumps(sel)})"})
+            if r.get("result", {}).get("value"):
+                break
+            time.sleep(0.8)
+        # optional spoken narration — browser-local speech, no cloud calls
+        narration = ""
+        if message:
+            try:
+                self._cmd("Runtime.evaluate", {
+                    "expression": f"try{{const u=new SpeechSynthesisUtterance({json.dumps(message)});u.rate=1.02;speechSynthesis.speak(u);'spoken'}}catch(e){{'no-speech'}}"
+                })
+                narration = " +narrated"
+            except Exception:
+                pass
         js = (
-            HIGHLIGHT_JS.replace("%SELECTOR%", json.dumps(selector or "body"))
+            HIGHLIGHT_JS.replace("%SELECTOR%", json.dumps(sel))
             .replace("%MESSAGE%", json.dumps(message or ""))
         )
         r = self._cmd("Runtime.evaluate", {"expression": js})
-        return r.get("result", {}).get("value", "unknown")
+        return str(r.get("result", {}).get("value", "unknown")) + narration
 
 
 def main() -> int:

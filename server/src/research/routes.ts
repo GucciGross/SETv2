@@ -46,6 +46,8 @@ export async function researchRoutes(app: FastifyInstance) {
       })
       .parse(req.body);
 
+    const spaceRow = await one<{ name: string }>(`SELECT name FROM spaces WHERE id = $1`, [spaceId]);
+
     // target notebook: existing, or a fresh one per run
     let notebookId = body.notebookId ?? null;
     if (!notebookId) {
@@ -78,7 +80,11 @@ export async function researchRoutes(app: FastifyInstance) {
       run_id: run!.id,
       question: body.question,
       style: run!.style,
-      style_instructions: tpl?.instructions ?? null,
+      // template placeholders resolved at queue time
+      style_instructions: (tpl?.instructions ?? '')
+        .replaceAll('{{date}}', new Date().toISOString().slice(0, 10))
+        .replaceAll('{{workspace}}', String(spaceRow?.name ?? ''))
+        .replaceAll('{{question}}', body.question.slice(0, 300)) || null,
       notebook_id: notebookId,
       max_pages: body.maxPages ?? researchCfg.maxPages ?? 40,
       max_minutes: body.maxMinutes ?? researchCfg.maxMinutes ?? 25,
