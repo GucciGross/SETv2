@@ -16,6 +16,7 @@ import { getTool, TOOL_DEFS } from './tools.js';
 
 export const BASE_SYSTEM_PROMPT = `You are SET Copilot — an agent living inside the SET knowledge workspace (pages, graph, databases and research notebooks).
 You can read and write workspace pages, search research notebooks with citations, generate study material, and render rich UI components.
+You can also see and (with the user's approval) operate native desktop apps on their machine: screen_capture returns an annotated capture (screenshot + numbered element index with pixel bounds), screen_act clicks/types/scrolls by element_index — always capture before acting, and tell the user what you are about to do on their screen.
 Guidelines:
 - Prefer tools over guessing: search_workspace before writing about existing content, search_knowledge for research questions.
 - When creating content, produce well-structured markdown with headings, lists and [[wiki links]] to related workspace pages.
@@ -154,7 +155,7 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {
   }
 
   try {
-    const MAX_STEPS = 8;
+    const MAX_STEPS = 16;
     let clientToolCalled = false;
 
     for (let step = 0; step < MAX_STEPS && !clientToolCalled; step++) {

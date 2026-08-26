@@ -78,7 +78,7 @@ export async function companionRoutes(app: FastifyInstance) {
         url: z.string().max(500).optional(),
         selector: z.string().max(300).optional(),
         message: z.string().max(1000).optional(),
-        kind: z.enum(['browser', 'native']).optional(),
+        kind: z.enum(['browser', 'native', 'cua']).optional(),
         app: z.string().max(200).optional(),      // native: app name / command
         element: z.string().max(200).optional(),  // native: "role:name" substring to point at
       })
@@ -121,13 +121,18 @@ export async function companionRoutes(app: FastifyInstance) {
     if (!spaceId) return;
     const id = (req.params as any).id;
     const body = z
-      .object({ status: z.enum(['done', 'error']), result: z.string().max(2000).optional() })
+      .object({
+        status: z.enum(['done', 'error']),
+        result: z.string().max(2000).optional(),
+        // kind='cua' structured payload (annotated element summary, screenshot)
+        result_data: z.any().optional(),
+      })
       .parse(req.body);
     const row = await one<{ space_id: string }>(`SELECT space_id FROM teach_tasks WHERE id = $1`, [id]);
     if (!row || row.space_id !== spaceId) return reply.code(404).send({ error: 'Task not found' });
     await q(
-      `UPDATE teach_tasks SET status = $2, result = $3, finished_at = now() WHERE id = $1`,
-      [id, body.status, body.result ?? null]
+      `UPDATE teach_tasks SET status = $2, result = $3, result_data = $4, finished_at = now() WHERE id = $1`,
+      [id, body.status, body.result ?? null, body.result_data ?? null]
     );
     return { ok: true };
   });

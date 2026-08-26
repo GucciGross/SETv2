@@ -6,7 +6,7 @@ import { api } from '../lib/api';
 /** A2UI-style declarative generative UI — agents emit component descriptors, this registry renders them. */
 
 export interface A2UIComponent {
-  type: 'card' | 'kv' | 'table' | 'quiz' | 'flashcards' | 'viewer3d' | 'form' | 'list';
+  type: 'card' | 'kv' | 'table' | 'quiz' | 'flashcards' | 'viewer3d' | 'form' | 'list' | 'image';
   props: Record<string, any>;
 }
 
@@ -84,6 +84,14 @@ export function A2UIRenderer({ component, onFormSubmit }: { component: A2UICompo
             ))}
           </div>
         </div>
+      );
+    case 'image':
+      return (
+        <figure className="set-card p-3 fadein">
+          {p.title && <h4 className="font-semibold text-white text-sm mb-2">{p.title}</h4>}
+          <img src={p.src} alt={p.alt ?? 'capture'} className="rounded-lg border border-set-border max-h-96 w-auto" />
+          {p.caption && <figcaption className="text-xs text-set-dim mt-1.5">{p.caption}</figcaption>}
+        </figure>
       );
     case 'form':
       return <A2Form props={p} onSubmit={onFormSubmit} />;

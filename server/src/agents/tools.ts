@@ -5,6 +5,7 @@ import { hybridSearch } from '../rag/search.js';
 import { generateDeck, createDeckRecord } from '../study/generate.js';
 import type { Provider } from '../llm/router.js';
 import type { ToolDef } from '../llm/router.js';
+import { providerAcceptsScreenshots, MAX_INLINE_SCREENSHOT_BYTES } from './visionRouting.js';
 
 export interface ToolContext {
   spaceId: string;
@@ -19,7 +20,7 @@ export interface ToolResult {
 }
 
 export interface A2UIComponent {
-  type: 'card' | 'kv' | 'table' | 'quiz' | 'flashcards' | 'viewer3d' | 'form' | 'list';
+  type: 'card' | 'kv' | 'table' | 'quiz' | 'flashcards' | 'viewer3d' | 'form' | 'list' | 'image';
   props: Record<string, any>;
 }
 
@@ -40,6 +41,55 @@ async function findPageByTitleOrId(ctx: ToolContext, ref: string): Promise<{ id:
   );
   return byTitle ?? null;
 }
+
+/**
+ * Agent computer use (Phase 4) — queues kind='cua' teach tasks that the
+ * user's companion executes against cua-driver, then polls for the result.
+ * Capture format (numbered element index + bounds + spill file) adapted from
+ * hermes-agent's tools/computer_use/tool.py (MIT, Nous Research).
+ */
+async function runCuaOp(ctx: ToolContext, op: Record<string, any>, timeoutMs = 120_000): Promise<ToolResult> {
+  const task = await one<any>(
+    `INSERT INTO teach_tasks (space_id, user_id, title, kind, op) VALUES ($1, $2, $3, 'cua', $4) RETURNING id`,
+    [ctx.spaceId, ctx.userId, `cua:${op.action}`, JSON.stringify(op)]
+  );
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const row = await one<any>(`SELECT status, result, result_data FROM teach_tasks WHERE id = $1`, [task!.id]);
+    if (row?.status === 'done' || row?.status === 'error') {
+      const data = row.result_data ?? {};
+      if (row.status === 'error') return { ok: false, result: { error: data.error ?? row.result ?? 'companion error' } };
+      // The human always sees the capture in chat (a2ui image); the model
+      // additionally gets the inline screenshot only when vision routing
+      // says the active provider can consume it.
+      const png: string | undefined = data.png_b64;
+      const a2ui = png
+        ? [{ type: 'image' as const, props: { src: `data:image/png;base64,${png}`, title: op.action === 'capture' ? 'Screen capture' : `After ${op.action}`, alt: data.summary?.slice(0, 120) ?? 'capture' } }]
+        : undefined;
+      if (png && providerAcceptsScreenshots(ctx.provider) && png.length * 0.75 < MAX_INLINE_SCREENSHOT_BYTES) {
+        const visionSummary = data.summary ?? (data.after ? `ok\n${data.after.summary}` : undefined) ?? row.result;
+        return {
+          ok: true,
+          result: { summary: visionSummary, screenshot: `data:image/png;base64,${png}`, windowId: data.window_id },
+          a2ui,
+        };
+      }
+      const summary = data.summary
+        ?? (data.after ? `ok\n${data.after.summary}` : undefined)
+        ?? JSON.stringify(data).slice(0, 4000);
+      const note = png && !providerAcceptsScreenshots(ctx.provider) ? '\n(screenshot omitted — active model is not vision-capable; ground on the element index)' : '';
+      return { ok: true, result: { summary: summary + note, windowId: data.window_id }, a2ui };
+    }
+  }
+  return { ok: false, result: { error: 'companion did not answer in time — is it connected? (Settings → Companion)' } };
+}
+
+const CUA_TARGET_PROPS = {
+  app: { type: 'string', description: 'Target app name/title substring (optional; defaults to the newest window)' },
+  window_id: { type: 'string', description: 'Exact window id from a previous capture (most precise)' },
+  pid: { type: 'number', description: 'Target process id (optional)' },
+};
 
 export const TOOLS: ToolDef2[] = [
   {
@@ -321,6 +371,53 @@ export const TOOLS: ToolDef2[] = [
         ok: true,
         result: { queued: true, taskId: task!.id, note: 'Requires the user\'s companion with cua-driver connected.' },
       };
+    },
+  },
+  {
+    name: 'screen_capture',
+    description:
+      'See a native desktop app on the user\'s machine: returns an annotated capture — a screenshot (when the model supports vision) plus a numbered element index like `[7] push button "Open" (120,44 80x32)` with pixel bounds. Target apps with app/window_id after launch_app. Address elements in screen_act by their element_index or x,y.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['capture', 'launch_app', 'list_windows', 'list_apps'], description: 'What to do; default capture' },
+        app: { type: 'string', description: 'capture: window title/app substring to target; launch_app: app name or command, e.g. "calculator"' },
+        window_id: CUA_TARGET_PROPS.window_id,
+        pid: CUA_TARGET_PROPS.pid,
+      },
+    },
+    write: false,
+    async run(args, ctx) {
+      const action = args.action ?? 'capture';
+      return runCuaOp(ctx, { action, ...args });
+    },
+  },
+  {
+    name: 'screen_act',
+    description:
+      'Act on a native desktop app on the user\'s machine: click, type, press keys, or scroll. ALWAYS screen_capture first and address elements by element_index (or pixel x,y). Every action returns a fresh capture of the result. Requires the user\'s companion to run with SET_ALLOW_INPUT=1 and may ask the user for approval.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['click', 'type', 'key', 'scroll', 'set_value'] },
+        element_index: { type: 'number', description: 'Element from the last capture (preferred)' },
+        x: { type: 'number', description: 'Pixel x (alternative to element_index)' },
+        y: { type: 'number', description: 'Pixel y' },
+        button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'click only' },
+        count: { type: 'number', description: 'click count (2 = double-click)' },
+        text: { type: 'string', description: 'type: text to enter' },
+        keys: { type: 'string', description: 'key: combo like "ctrl+s"' },
+        direction: { type: 'string', enum: ['up', 'down'], description: 'scroll only' },
+        amount: { type: 'number', description: 'scroll steps' },
+        value: { type: 'string', description: 'set_value: new value for the element' },
+        app: CUA_TARGET_PROPS.app,
+        window_id: CUA_TARGET_PROPS.window_id,
+      },
+      required: ['action'],
+    },
+    write: true,
+    async run(args, ctx) {
+      return runCuaOp(ctx, args);
     },
   },
   {
