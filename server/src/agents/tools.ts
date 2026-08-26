@@ -68,7 +68,7 @@ async function runCuaOp(ctx: ToolContext, op: Record<string, any>, timeoutMs = 1
         ? [{ type: 'image' as const, props: { src: `data:image/png;base64,${png}`, title: op.action === 'capture' ? 'Screen capture' : `After ${op.action}`, alt: data.summary?.slice(0, 120) ?? 'capture' } }]
         : undefined;
       if (png && providerAcceptsScreenshots(ctx.provider) && png.length * 0.75 < MAX_INLINE_SCREENSHOT_BYTES) {
-        const visionSummary = data.summary ?? (data.after ? `ok\n${data.after.summary}` : undefined) ?? row.result;
+        const visionSummary = data.summary ?? (data.after ? `${data.action_result ?? 'ok'}\n${data.after.summary}` : undefined) ?? row.result;
         return {
           ok: true,
           result: { summary: visionSummary, screenshot: `data:image/png;base64,${png}`, windowId: data.window_id },
@@ -76,7 +76,7 @@ async function runCuaOp(ctx: ToolContext, op: Record<string, any>, timeoutMs = 1
         };
       }
       const summary = data.summary
-        ?? (data.after ? `ok\n${data.after.summary}` : undefined)
+        ?? (data.after ? `${data.action_result ?? 'ok'}\n${data.after.summary}` : undefined)
         ?? JSON.stringify(data).slice(0, 4000);
       const note = png && !providerAcceptsScreenshots(ctx.provider) ? '\n(screenshot omitted — active model is not vision-capable; ground on the element index)' : '';
       return { ok: true, result: { summary: summary + note, windowId: data.window_id }, a2ui };
@@ -381,6 +381,7 @@ export const TOOLS: ToolDef2[] = [
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['capture', 'launch_app', 'list_windows', 'list_apps'], description: 'What to do; default capture' },
+        detail: { type: 'boolean', description: 'capture: return the full element index instead of the first 120 addressable lines' },
         app: { type: 'string', description: 'capture: window title/app substring to target; launch_app: app name or command, e.g. "calculator"' },
         window_id: CUA_TARGET_PROPS.window_id,
         pid: CUA_TARGET_PROPS.pid,

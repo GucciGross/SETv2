@@ -7,3 +7,6 @@ data/
 server/data/
 web/dist/
 *.tsbuildinfo
+
+# python
+__pycache__/

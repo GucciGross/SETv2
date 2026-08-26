@@ -294,14 +294,15 @@ def cua_capture(op: dict) -> dict:
     if state.get("error"):
         return {"error": f"cua-driver: {state['error']}"}
     elements = state.get("elements") or []
-    lines = [f"capture {win.get('title') or win.get('app') or 'window'} "
-             f"(window_id={win['window_id']}) — {len(elements)} interactable element(s):"]
+    title = win.get("title") or win.get("app") or "window"
+    lines = [f"capture {title} (window_id={win['window_id']}) — {len(elements)} interactable element(s):"]
+    max_lines = 500 if op.get("detail") else CAPTURE_MAX_LINES
     shown = 0
     for el in elements:
         f = el.get("frame") or {}
         if not (isinstance(f.get("x"), (int, float)) and (f.get("w") or 0) > 0):
             continue  # unaddressable elements only confuse the model
-        if shown >= CAPTURE_MAX_LINES:
+        if shown >= max_lines:
             continue
         shown += 1
         label = str(el.get("label") or "")[:60]
@@ -321,8 +322,8 @@ def cua_capture(op: dict) -> dict:
         spill = pathlib.Path(tempfile.gettempdir()) / f"set-cua-elements-{int(time.time())}.json"
         spill.write_text(json.dumps(state, indent=1)[:2_000_000])
         out["elements_file"] = str(spill)
-        out["summary"] += (f"\n  (showing {shown} of {framed} addressable, {total} total; "
-                           f"full tree at {spill})")
+        out["summary"] += (f"\n  (showing {shown} of {framed} addressable, {total} total — "
+                           f"screen_capture again with detail=true for the full index)")
     shot = cua("zoom", json.dumps({"window_id": win["window_id"],
                                    "x1": 0, "y1": 0,
                                    "x2": win.get("width") or 9999, "y2": win.get("height") or 9999}))
@@ -394,7 +395,10 @@ def cua_action(op: dict) -> dict:
             **(ax_kwargs if has_index else _px()), **fg,
             **({"element_index": op["element_index"]} if has_index else {}),
             "text": str(op.get("text") or "")})),
-        "key": lambda: cua("hotkey", json.dumps({"keys": str(op.get("keys") or "")})),
+        "key": lambda: cua("hotkey", json.dumps({
+            **({"pid": win["pid"], "window_id": win["window_id"]} if win.get("pid") else {}),
+            "keys": [k.strip() for k in str(op.get("keys") or "").split("+") if k.strip()],
+            "delivery_mode": "foreground"})),
         "scroll": lambda: cua("scroll", json.dumps({
             **({"pid": win["pid"]} if win.get("pid") else {}),
             "direction": op.get("direction", "down"), "amount": int(op.get("amount") or 3)})),
@@ -412,7 +416,13 @@ def cua_action(op: dict) -> dict:
         return {"error": str(res["error"])[:400]}
     # every input op ends with a fresh capture so the model sees the result
     follow = cua_capture(op)
-    return {"action_result": "ok", "after": {k: v for k, v in follow.items() if k != "png_b64"},
+    # some targets silently drop synthetic input (GTK4 keys); pass the
+    # driver's own effect verdict through so the model re-grounds
+    effect = (res.get("effect") or "delivered") if isinstance(res, dict) else "delivered"
+    note = (" — driver could not verify the effect; compare the capture and "
+            "retry differently if nothing changed" if effect == "unverifiable" else "")
+    return {"action_result": f"ok{note}", "effect": effect,
+            "after": {k: v for k, v in follow.items() if k != "png_b64"},
             "png_b64": follow.get("png_b64"), "width": follow.get("width"), "height": follow.get("height")}
 
 
