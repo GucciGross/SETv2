@@ -122,7 +122,7 @@ export default function DashboardView() {
           >
             <div className="text-set-dim mb-2">{card.icon}</div>
             <div className="text-2xl font-bold text-white">{card.value}</div>
-            <div className="text-[11px] text-set-dim uppercase tracking-wide">{card.label}</div>
+            <div className="set-mono set-mono-dim">{card.label}</div>
           </button>
         ))}
       </div>
@@ -134,7 +134,7 @@ export default function DashboardView() {
         <div className="set-card p-4">
           <div className="flex items-center gap-2 mb-3">
             <TrendingUp size={15} className="text-blue-300" />
-            <h3 className="text-sm font-semibold text-white">Activity — last 7 days</h3>
+            <h3 className="set-mono set-mono-dim">Activity — last 7 days</h3>
           </div>
           {chartData.some((d) => d.events > 0) ? (
             <ErrorBoundary>
@@ -158,7 +158,7 @@ export default function DashboardView() {
         <div className="set-card p-4">
           <div className="flex items-center gap-2 mb-3">
             <Sparkles size={15} className="text-violet-300" />
-            <h3 className="text-sm font-semibold text-white">Agent tool usage</h3>
+            <h3 className="set-mono set-mono-dim">Agent tool usage</h3>
           </div>
           {mcpData.length > 0 && chartData.some((d) => d.events > 0) ? (
             <ErrorBoundary>
@@ -190,7 +190,7 @@ export default function DashboardView() {
         <div className="set-card p-4">
           <div className="flex items-center gap-2 mb-3">
             <ListTodo size={15} className="text-green-300" />
-            <h3 className="text-sm font-semibold text-white">My assignments</h3>
+            <h3 className="set-mono set-mono-dim">My assignments</h3>
           </div>
           {(tasks?.paths ?? []).length === 0 && <p className="text-sm text-set-dim">No assignments.</p>}
           {(tasks?.paths ?? []).slice(0, 4).map((p: any) => {
@@ -223,7 +223,7 @@ export default function DashboardView() {
         <div className="set-card p-4">
           <div className="flex items-center gap-2 mb-3">
             <Users size={15} className="text-amber-300" />
-            <h3 className="text-sm font-semibold text-white">Recent activity</h3>
+            <h3 className="set-mono set-mono-dim">Recent activity</h3>
           </div>
           {activity.length === 0 && <p className="text-sm text-set-dim">Nothing yet.</p>}
           {activity.slice(0, 6).map((a, i) => (

@@ -707,7 +707,7 @@ function ResearchTab({ spaceId }: { spaceId: string }) {
       </div>
 
       <div className="set-card p-4 mt-4">
-        <h3 className="text-sm font-semibold text-white mb-2">Report templates</h3>
+        <h3 className="set-mono set-mono-dim mb-2">Report templates</h3>
         <p className="text-xs text-set-dim mb-3">
           Custom writing styles for this workspace — the instructions replace the built-in style
           when selected at launch. Keep them concrete: sentence length, voice, tone, structure.
@@ -776,7 +776,7 @@ function CompanionTab({ spaceId }: { spaceId: string }) {
       </p>
 
       <div className="set-card p-4 mb-4">
-        <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-1.5"><Terminal size={13} /> Setup</h3>
+        <h3 className="set-mono set-mono-dim mb-2 flex items-center gap-1.5"><Terminal size={13} /> Setup</h3>
         <ol className="text-xs text-set-dim space-y-2 list-decimal pl-4">
           <li>Relaunch your browser with remote debugging:
             <code className="block mt-1 bg-set-panel2 rounded px-2 py-1">chrome --remote-debugging-port=9222</code>

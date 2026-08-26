@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import {
-  BookOpen, FileText, Loader2, Search, Telescope, XCircle, CheckCircle2, AlertTriangle, ArrowRight, Sparkles, Package,
+  BookOpen, FileText, Loader2, Search, Telescope, XCircle, CheckCircle2, AlertTriangle, ArrowRight, Sparkles, Package, Link2,
 } from 'lucide-react';
 
 /** Deep research (PLAN.md Phase 1): launch CrewAI research runs, watch progress,
@@ -17,13 +17,14 @@ const ACTIVE = new Set(['pending', 'planning', 'researching', 'synthesizing', 's
 export function ResearchList() {
   const { spaceId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [runs, setRuns] = useState<any[]>([]);
-  const [question, setQuestion] = useState('');
+  const [question, setQuestion] = useState(() => searchParams.get('q') ?? '');
   const [notebookId, setNotebookId] = useState('');
   const [notebooks, setNotebooks] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
-  const [minutes, setMinutes] = useState(25);
-  const [style, setStyle] = useState<string>('ste');
+  const [minutes, setMinutes] = useState(() => +(searchParams.get('minutes') ?? 25));
+  const [style, setStyle] = useState<string>(() => searchParams.get('style') ?? 'ste');
   const [templates, setTemplates] = useState<any[]>([]);
   useEffect(() => {
     api.get(`/spaces/${spaceId}/settings`).then(({ settings }) => {
@@ -44,12 +45,12 @@ export function ResearchList() {
     return () => clearInterval(t);
   }, [spaceId]);
 
-  const launch = async () => {
-    if (question.trim().length < 8) return;
+  const launch = async (q = question) => {
+    if (q.trim().length < 8) return;
     setBusy(true);
     try {
       const { run } = await api.post(`/spaces/${spaceId}/research`, {
-        question: question.trim(),
+        question: q.trim(),
         maxMinutes: minutes,
         style,
         ...(notebookId ? { notebookId } : {}),
@@ -58,6 +59,21 @@ export function ResearchList() {
     } finally {
       setBusy(false);
     }
+  };
+
+  // shared research link: /research?q=…&style=…&minutes=…&go=1
+  const sharedQ = searchParams.get('q');
+  useEffect(() => {
+    if (searchParams.get('go') === '1' && sharedQ && sharedQ.trim().length >= 8) {
+      void launch(sharedQ);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharedQ]);
+
+  const shareLink = () => {
+    const u = new URL(window.location.href);
+    u.search = `?q=${encodeURIComponent(question)}&style=${style}&minutes=${minutes}&go=1`;
+    navigator.clipboard?.writeText(u.toString());
   };
 
   return (
@@ -111,9 +127,12 @@ export function ResearchList() {
               <option key={n.id} value={n.id}>add to “{n.title}”</option>
             ))}
           </select>
-          <button className="set-btn-primary text-sm flex items-center gap-1.5" disabled={busy || question.trim().length < 8} onClick={launch}>
+          <button className="set-btn-primary text-sm flex items-center gap-1.5" disabled={busy || question.trim().length < 8} onClick={() => launch()}>
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
             {busy ? 'Starting…' : 'Start research'}
+          </button>
+          <button className="set-btn text-xs flex items-center gap-1" disabled={question.trim().length < 8} onClick={shareLink} title="Copy a link that reproduces this research setup">
+            <Link2 size={12} /> Share setup
           </button>
         </div>
       </div>
@@ -243,7 +262,7 @@ export function ResearchRun() {
       <div className="grid md:grid-cols-2 gap-4">
         {/* outline */}
         <div className="set-card p-4">
-          <h3 className="text-sm font-semibold text-white mb-2">Research outline</h3>
+          <h3 className="set-mono set-mono-dim mb-2">Research outline</h3>
           {outline.length === 0 && <p className="text-xs text-set-dim">Planning…</p>}
           <div className="space-y-1.5">
             {outline.map((sq: any) => (
@@ -259,7 +278,7 @@ export function ResearchRun() {
 
         {/* sources */}
         <div className="set-card p-4">
-          <h3 className="text-sm font-semibold text-white mb-2">Sources ({sources.length})</h3>
+          <h3 className="set-mono set-mono-dim mb-2">Sources ({sources.length})</h3>
           {sources.length === 0 && <p className="text-xs text-set-set-dim">None yet.</p>}
           <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
             {sources.map((s: any) => (
@@ -277,7 +296,7 @@ export function ResearchRun() {
 
       {/* timeline */}
       <div className="set-card p-4 mt-4">
-        <h3 className="text-sm font-semibold text-white mb-2">Activity</h3>
+        <h3 className="set-mono set-mono-dim mb-2">Activity</h3>
         <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
           {log.length === 0 && <p className="text-xs text-set-dim">Waiting for the worker…</p>}
           {log.map((e: any, i: number) => (

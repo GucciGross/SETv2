@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '../lib/api';
+import ShaderBackground from '../components/ShaderBackground';
 
 /**
  * Public landing page — what SET is, how to self-host it in one command,
@@ -104,9 +105,9 @@ export default function Landing() {
         </div>
       </header>
 
-      {/* Hero */}
+      {/* Hero — animated WebGL nebula + starfield (MetalForge-style) */}
       <section className="relative">
-        <div className="absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_0%,rgba(108,140,255,0.14),transparent)]" />
+        <ShaderBackground />
         <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-16 pb-14 sm:pt-24 sm:pb-20 text-center">
           <div className="set-chip border-set-accent/40 bg-set-accent/10 text-blue-200 mb-5">
             Open source · AGPL-3.0 · Self-host in one command

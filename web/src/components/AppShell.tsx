@@ -20,7 +20,7 @@ function NavList({ title, defaultOpen, children }: { title: string; defaultOpen?
   return (
     <div>
       <button
-        className="flex w-full items-center gap-1 px-1 pt-2 pb-1 text-[10px] uppercase tracking-wider text-set-dim/80 font-semibold hover:text-set-text"
+        className="set-mono set-mono-dim flex w-full items-center gap-1 px-1 pt-2 pb-1 hover:text-set-text"
         onClick={() => setOpen((o) => !o)}
       >
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />} {title}
@@ -361,7 +361,7 @@ function AppShellInner() {
                 <div key={group.label ?? 'main'}>
                   {group.label && !railMode && (
                     <button
-                      className="flex w-full items-center gap-1 px-1 pt-2 pb-1 text-[10px] uppercase tracking-wider text-set-dim/80 font-semibold hover:text-set-text"
+                      className="set-mono set-mono-dim flex w-full items-center gap-1 px-1 pt-2 pb-1 hover:text-set-text"
                       onClick={toggleGroup}
                     >
                       {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />} {group.label}
@@ -412,7 +412,7 @@ function AppShellInner() {
 
           {!railMode && (
             <button
-              className="flex w-full items-center gap-1 px-1 py-1 text-[11px] uppercase tracking-wider text-set-dim font-semibold hover:text-set-text"
+              className="set-mono set-mono-dim flex w-full items-center gap-1 px-1 py-1 hover:text-set-text"
               onClick={() => setPagesOpen((o) => !o)}
             >
               {pagesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Pages ({pages.length})
