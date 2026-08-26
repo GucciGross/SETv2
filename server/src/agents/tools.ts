@@ -272,6 +272,32 @@ export const TOOLS: ToolDef2[] = [
     },
   },
   {
+    name: 'demo_on_screen',
+    description:
+      'Queue a live, on-screen demonstration for the user: their local teaching companion opens the page in their own browser and highlights the element while showing a caption. Use when the user asks to be SHOWN something ("show me how…", "where is…"). Only visible actions — never clicks or edits.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short demo title' },
+        url: { type: 'string', description: 'SET path to open, e.g. "/app/space/<id>/graph" (omit for current page)' },
+        selector: { type: 'string', description: 'Optional CSS selector or [data-tour=name] to highlight' },
+        message: { type: 'string', description: 'One-sentence caption shown next to the highlight' },
+      },
+      required: ['title'],
+    },
+    write: true,
+    async run(args, ctx) {
+      const task = await one<any>(
+        `INSERT INTO teach_tasks (space_id, user_id, title, url, selector, message) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, title`,
+        [ctx.spaceId, ctx.userId, args.title, args.url ?? null, args.selector ?? null, args.message ?? null]
+      );
+      return {
+        ok: true,
+        result: { queued: true, taskId: task!.id, note: 'The demo will appear on the user\'s screen when their companion is connected.' },
+      };
+    },
+  },
+  {
     name: 'render_ui',
     description: 'Render a rich UI component for the user: card, table or form. Use for structured answers instead of plain text.',
     parameters: {

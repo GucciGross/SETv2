@@ -1,0 +1,12 @@
+[project]
+name = "set-companion"
+version = "0.1.0"
+description = "SET teaching companion — runs on YOUR machine, attaches to YOUR browser, and shows you around SET live (visible actions only)"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "websocket-client>=1.8",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.7"]

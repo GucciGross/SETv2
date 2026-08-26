@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate } from 'lucide-react';
+import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal } from 'lucide-react';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 import McpSettings from '../components/McpSettings';
@@ -10,7 +10,7 @@ import { DitherButton } from '../components/dither-kit';
 
 export default function SettingsView() {
   const { spaceId } = useParams();
-  const [tab, setTab] = useState<'surfaces' | 'skills' | 'mcp' | 'channels' | 'mascot' | 'providers' | 'members' | 'workspace' | 'research'>('surfaces');
+  const [tab, setTab] = useState<'surfaces' | 'skills' | 'mcp' | 'channels' | 'mascot' | 'providers' | 'members' | 'workspace' | 'research' | 'companion'>('surfaces');
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
@@ -26,6 +26,7 @@ export default function SettingsView() {
           ['members', 'Members', <Users key="b" size={14} />],
           ['workspace', 'Workspace', <ShieldCheck key="c" size={14} />],
           ['research', 'Deep Research', <Telescope key="r" size={14} />],
+          ['companion', 'Companion', <MonitorSmartphone key="cp" size={14} />],
         ] as const).map(([id, label, icon]) => (
           <button key={id} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm ${tab === id ? 'bg-set-accent/20 text-blue-200' : 'text-set-dim hover:text-set-text'}`} onClick={() => setTab(id)}>
             {icon} {label}
@@ -41,6 +42,7 @@ export default function SettingsView() {
       {tab === 'members' && <MembersTab spaceId={spaceId!} />}
       {tab === 'workspace' && <WorkspaceTab spaceId={spaceId!} />}
       {tab === 'research' && <ResearchTab spaceId={spaceId!} />}
+      {tab === 'companion' && <CompanionTab spaceId={spaceId!} />}
     </div>
   );
 }
@@ -747,6 +749,77 @@ function ResearchTab({ spaceId }: { spaceId: string }) {
         Polite-by-default: per-domain rate limits, robots.txt respected on direct fetches,
         hard page/time budgets. No detection evasion, ever (PLAN.md).
       </p>
+    </div>
+  );
+}
+
+
+function CompanionTab({ spaceId }: { spaceId: string }) {
+  const [tokens, setTokens] = useState<any[]>([]);
+  const [fresh, setFresh] = useState<string | null>(null);
+
+  const load = () => api.get(`/spaces/${spaceId}/companion/tokens`).then((r) => setTokens(r.tokens)).catch(() => {});
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [spaceId]);
+
+  const create = async () => {
+    const { token } = await api.post(`/spaces/${spaceId}/companion/tokens`, { name: `companion-${new Date().toISOString().slice(0, 10)}` });
+    setFresh(token.token);
+    load();
+  };
+
+  return (
+    <div>
+      <p className="text-sm text-set-dim mb-4">
+        The teaching companion runs <strong className="text-set-text">on your own machine</strong> and demonstrates SET
+        live in your real browser — it opens pages, highlights elements and shows captions. Visible actions only:
+        it never clicks, edits, or runs in the background, and you can stop it (Ctrl-C) or revoke its token at any time.
+      </p>
+
+      <div className="set-card p-4 mb-4">
+        <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-1.5"><Terminal size={13} /> Setup</h3>
+        <ol className="text-xs text-set-dim space-y-2 list-decimal pl-4">
+          <li>Relaunch your browser with remote debugging:
+            <code className="block mt-1 bg-set-panel2 rounded px-2 py-1">chrome --remote-debugging-port=9222</code>
+            (or <code>brave --remote-debugging-port=9222</code>)
+          </li>
+          <li>Create a pairing token below.</li>
+          <li>On your machine, inside the SET checkout:
+            <code className="block mt-1 bg-set-panel2 rounded px-2 py-1">cd companion &amp;&amp; SET_URL={location.origin} COMPANION_TOKEN=… uv run companion.py</code>
+          </li>
+          <li>Ask the copilot to <em>show</em> you something — e.g. "show me the knowledge graph".</li>
+        </ol>
+      </div>
+
+      {fresh && (
+        <div className="set-card p-3 mb-4 border-set-accent/40 flex items-center gap-2">
+          <code className="text-xs flex-1 truncate">{fresh}</code>
+          <button className="set-btn text-xs flex items-center gap-1" onClick={() => { navigator.clipboard?.writeText(fresh); }}>
+            <Copy size={12} /> Copy
+          </button>
+        </div>
+      )}
+
+      <div className="set-card p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold text-white">Pairing tokens</h3>
+          <button className="set-btn-primary text-xs" onClick={create}>Create token</button>
+        </div>
+        <div className="space-y-1.5">
+          {tokens.map((t) => (
+            <div key={t.id} className="flex items-center gap-2 text-xs border border-set-border rounded-lg px-3 py-2">
+              <span className="text-set-text font-medium">{t.name}</span>
+              <span className="text-set-dim font-mono">{t.token_prefix}…</span>
+              <span className="text-set-dim flex-1">
+                {t.revoked_at ? 'revoked' : t.last_used_at ? `last used ${new Date(t.last_used_at).toLocaleDateString()}` : 'never used'}
+              </span>
+              {!t.revoked_at && (
+                <button className="set-btn-ghost text-xs" onClick={async () => { await api.del(`/companion/tokens/${t.id}`); load(); }}>Revoke</button>
+              )}
+            </div>
+          ))}
+          {tokens.length === 0 && <p className="text-xs text-set-dim">No tokens yet.</p>}
+        </div>
+      </div>
     </div>
   );
 }

@@ -118,7 +118,7 @@ weak-function-calling models produce malformed tool args and stall runs.
 **Guardrails:** per-domain rate limit (default 1 req/2s), robots.txt respected,
 max pages per run (default 40, configurable), full run log kept for transparency.
 
-## Phase 2 — Show-me teaching companion (browser-harness + cua)
+## Phase 2 — Show-me teaching companion (browser-harness + cua) · *v1 slice live*
 
 Teach by demonstrating **in the user's own browser/desktop**, live. The
 companion stack (user-installed, always-visible, revocable):
@@ -135,8 +135,11 @@ companion stack (user-installed, always-visible, revocable):
 - Pairing: deliberate install + revocable token against the user's own
   instance; foreground only, visible indicator, hard stop; never silent
 
-**Done when:** "show me how to use regex101" demonstrates on regex101, live,
-on the user's machine, with them watching.
+**Shipped (v1):** pairing tokens (Settings → Companion, revocable), teach-task
+queue, `demo_on_screen` copilot tool, and the local companion agent
+(`companion/` — uv, attaches to the user's real Chrome over CDP; visible
+navigate + highlight + caption only, no clicks/edits/background). Verified
+E2E. **Next:** external-site demos, narration audio, cua-driver for native apps.
 
 ## Phase 3 — Desktop teaching companion (only after Phase 2 earns it)
 
