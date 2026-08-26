@@ -116,8 +116,19 @@ class Browser:
 
     # ---------- input (trusted CDP events — pierce shadow DOM) ----------
     def click(self, x: int, y: int):
-        self.cmd("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
-        self.cmd("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
+        """Click at viewport coords. Tries real CDP input first; on hosts where
+        the Input domain is dead (chrome/env drift), falls back to a DOM click
+        on the interactive element at that point — React handlers fire the same."""
+        try:
+            self.cmd("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
+            self.cmd("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
+        except Exception:
+            pass
+        self.eval(
+            f"(function(){{var el=document.elementFromPoint({x},{y});"
+            f"var t=el&&(el.closest('button,a,[role=button],input,textarea,label')||el);"
+            f"if(t&&t.click){{t.click();return 1}}return 0}})()"
+        )
 
     def key(self, name: str, code: str | None = None, keycode: int = 0):
         common = {"type": "keyDown", "key": name, "code": code or name, "windowsVirtualKeyCode": keycode or (13 if name == "Enter" else 0)}

@@ -5,6 +5,7 @@ import { join, normalize } from 'node:path';
 import { one, q } from '../db.js';
 import { requireSpace } from '../lib/http.js';
 import { getProvider, chatCompletion } from '../llm/router.js';
+import { generateDeck, createDeckRecord } from '../study/generate.js';
 import { ingestSource } from '../rag/search.js';
 import { mdToDoc } from '../lib/markdown.js';
 import { syncLinks } from '../pages/routes.js';
@@ -41,7 +42,7 @@ export async function researchRoutes(app: FastifyInstance) {
         notebookId: z.string().uuid().optional(),
         maxPages: z.number().int().min(1).max(120).optional(),
         maxMinutes: z.number().int().min(5).max(4320).optional(), // 5 min … 72 h
-        style: z.enum(['ste', 'professional', 'executive', 'study']).optional(),
+        style: z.string().max(120).optional(), // enum or 'tpl:<templateId>'
       })
       .parse(req.body);
 
@@ -59,7 +60,11 @@ export async function researchRoutes(app: FastifyInstance) {
     }
 
     const settings = await one<{ data: any }>(`SELECT data FROM settings WHERE space_id = $1`, [spaceId]);
-    const researchCfg = settings?.data?.research ?? {};
+    const researchCfg = settings?.data?.research ?? {}
+    // resolve workspace report templates (Settings → Deep Research → Templates)
+    const templates: any[] = researchCfg.templates ?? [];
+    const tpl = body.style?.startsWith('tpl:') ? templates.find((t) => `tpl:${t.id}` === body.style) : undefined;
+    const styleValue = tpl ? `tpl:${tpl.id}` : (body.style && ['ste', 'professional', 'executive', 'study'].includes(body.style) ? body.style : (researchCfg.style ?? 'ste'));;
 
     const run = await one<any>(
       `INSERT INTO research_runs (space_id, user_id, notebook_id, question, progress)
@@ -73,6 +78,7 @@ export async function researchRoutes(app: FastifyInstance) {
       run_id: run!.id,
       question: body.question,
       style: run!.style,
+      style_instructions: tpl?.instructions ?? null,
       notebook_id: notebookId,
       max_pages: body.maxPages ?? researchCfg.maxPages ?? 40,
       max_minutes: body.maxMinutes ?? researchCfg.maxMinutes ?? 25,
@@ -186,6 +192,28 @@ Output only the rewritten markdown.`;
     stream.on('error', () => reply.code(404).send({ error: 'not found' }));
     reply.header('content-type', file.endsWith('.png') ? 'image/png' : file.endsWith('.jpg') || file.endsWith('.jpeg') ? 'image/jpeg' : 'application/octet-stream');
     return stream;
+  });
+
+  /** One-click study deck from a finished run's ingested notebook sources. */
+  app.post('/research/:id/deck', async (req, reply) => {
+    const id = (req.params as any).id;
+    if (!(await runSpace(req, reply, id))) return;
+    const body = z.object({ kind: z.enum(['flashcards', 'quiz', 'studyguide']).default('flashcards') }).parse(req.body ?? {});
+    const run = await one<any>(`SELECT * FROM research_runs WHERE id = $1`, [id]);
+    if (!run?.notebook_id) return reply.code(400).send({ error: 'Run has no notebook' });
+    const provider = await getProvider(run.space_id);
+    if (!provider) return reply.code(400).send({ error: 'No LLM provider configured' });
+    try {
+      const result = await generateDeck(run.space_id, run.notebook_id, body.kind, run.question.slice(0, 120), 12);
+      const deck = await createDeckRecord(run.space_id, run.notebook_id, body.kind, `${body.kind} — ${run.question.slice(0, 60)}`, result);
+      await q(
+        `UPDATE research_runs SET log = log || $2::jsonb WHERE id = $1`,
+        [id, JSON.stringify([{ t: new Date().toISOString(), type: 'deck', message: `Generated ${body.kind} deck from research sources` }])]
+      );
+      return { deckId: deck.id, notebookId: run.notebook_id, kind: body.kind };
+    } catch (e: any) {
+      return reply.code(500).send({ error: `Deck generation failed: ${e?.message ?? e}` });
+    }
   });
 
   app.post('/research/:id/cancel', async (req, reply) => {

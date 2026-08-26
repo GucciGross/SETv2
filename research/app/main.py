@@ -31,6 +31,7 @@ class RunRequest(BaseModel):
     max_pages: int = 40
     max_minutes: int = 25  # 5 min … 72 h; long runs are legitimate
     llm_config: dict = {}          # {base_url, api_key, chat_model}
+    style_instructions: str | None = None  # workspace-defined report template (overrides style enum)
     # optional Firecrawl-compatible override (self-hosted or cloud); the
     # in-stack SearXNG + Playwright services are the default, no keys needed
     firecrawl_key: str | None = None
@@ -76,6 +77,8 @@ def _execute(req: RunRequest) -> None:
         run_id=req.run_id,
         question=req.question,
         llm_config=req.llm_config,
+        style_instructions=req.style_instructions or "",
+        style=req.style or "ste",
         pages_budget=max(1, min(req.max_pages, 120)),
         deadline=__import__("time").time() + max(5, min(req.max_minutes, 4320)) * 60,
         search_enabled=layer.has_search,

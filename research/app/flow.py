@@ -105,7 +105,8 @@ class ResearchState(BaseModel):
     deadline: float = 0.0
     report_md: str = ""
     search_enabled: bool = False
-    style: str = "ste"  # ste | professional | executive | study
+    style: str = "ste"  # ste | professional | executive | study | template:<name>
+    style_instructions: str = ""  # workspace template text; overrides the enum styles
 
 # CrewAI wraps the state model (StateWithId), so keep it plain data and use
 # module-level helpers instead of methods.
@@ -354,6 +355,8 @@ class DeepResearchFlow(Flow[ResearchState]):
                 "questions with answers at the end."
             ),
         }.get(st.style, "STYLE: Simplified Technical English (ASD-STE100).")
+        if st.style_instructions.strip():
+            style_rules = "STYLE (workspace template): " + st.style_instructions.strip()
 
         analyst = Agent(
             role="Lead Analyst",

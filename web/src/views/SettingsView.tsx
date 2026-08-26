@@ -610,18 +610,21 @@ function WorkspaceTab({ spaceId }: { spaceId: string }) {
 
 
 function ResearchTab({ spaceId }: { spaceId: string }) {
-  const [cfg, setCfg] = useState<{ chatModel?: string; visionModel?: string; firecrawlKey?: string; firecrawlUrl?: string; maxPages?: number; maxMinutes?: number }>({});
+  const [cfg, setCfg] = useState<{ chatModel?: string; visionModel?: string; firecrawlKey?: string; firecrawlUrl?: string; maxPages?: number; maxMinutes?: number; style?: string }>({});
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [tplDraft, setTplDraft] = useState({ name: '', instructions: '' });
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     api.get(`/spaces/${spaceId}/settings`).then(({ settings }) => {
       const r = settings?.research ?? {};
-      setCfg({ chatModel: r.chatModel ?? '', visionModel: r.visionModel ?? '', firecrawlKey: r.firecrawlKey ?? '', firecrawlUrl: r.firecrawlUrl ?? '', maxPages: r.maxPages ?? 40, maxMinutes: r.maxMinutes ?? 25 });
+      setTemplates(r.templates ?? []);
+      setCfg({ chatModel: r.chatModel ?? '', visionModel: r.visionModel ?? '', style: r.style ?? 'ste', firecrawlKey: r.firecrawlKey ?? '', firecrawlUrl: r.firecrawlUrl ?? '', maxPages: r.maxPages ?? 40, maxMinutes: r.maxMinutes ?? 25 });
     }).catch(() => {});
   }, [spaceId]);
 
   const save = async () => {
-    await api.patch(`/spaces/${spaceId}/settings`, { settings: { research: cfg } });
+    await api.patch(`/spaces/${spaceId}/settings`, { settings: { research: { ...cfg, templates } } });
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
@@ -686,7 +689,59 @@ function ResearchTab({ spaceId }: { spaceId: string }) {
             />
           </label>
         </div>
+        <label className="block">
+          <span className="text-xs text-set-dim uppercase tracking-wide">Default report style</span>
+          <select
+            className="set-input w-full mt-1" value={cfg.style ?? 'ste'}
+            onChange={(e) => setCfg({ ...cfg, style: e.target.value })}
+          >
+            <option value="ste">Simplified Technical English</option>
+            <option value="professional">Professional analysis</option>
+            <option value="executive">Executive brief</option>
+            <option value="study">Study notes</option>
+          </select>
+        </label>
         <button className="set-btn-primary text-sm" onClick={save}>{saved ? 'Saved ✓' : 'Save research settings'}</button>
+      </div>
+
+      <div className="set-card p-4 mt-4">
+        <h3 className="text-sm font-semibold text-white mb-2">Report templates</h3>
+        <p className="text-xs text-set-dim mb-3">
+          Custom writing styles for this workspace — the instructions replace the built-in style
+          when selected at launch. Keep them concrete: sentence length, voice, tone, structure.
+        </p>
+        <div className="space-y-2 mb-3">
+          {templates.map((t) => (
+            <div key={t.id} className="flex items-center gap-2 text-sm border border-set-border rounded-lg px-3 py-2">
+              <span className="font-medium text-white">🧩 {t.name}</span>
+              <span className="text-xs text-set-dim truncate flex-1">{(t.instructions || '').slice(0, 80)}</span>
+              <button className="set-btn-ghost text-xs" onClick={() => setTemplates(templates.filter((x) => x.id !== t.id))}>Remove</button>
+            </div>
+          ))}
+          {templates.length === 0 && <p className="text-xs text-set-dim">No templates yet.</p>}
+        </div>
+        <input
+          className="set-input w-full mb-2" placeholder="Template name (e.g. Field-service handbook)"
+          value={tplDraft.name}
+          onChange={(e) => setTplDraft({ ...tplDraft, name: e.target.value })}
+        />
+        <textarea
+          className="set-input w-full mb-2 min-h-[70px]" placeholder="Writing instructions — e.g. 'Numbered procedures. Present tense. Max 12 words per sentence. Every step starts with a verb. Include a safety note per section.'"
+          value={tplDraft.instructions}
+          onChange={(e) => setTplDraft({ ...tplDraft, instructions: e.target.value })}
+        />
+        <button
+          className="set-btn text-xs"
+          disabled={!tplDraft.name.trim() || !tplDraft.instructions.trim()}
+          onClick={async () => {
+            const next = [...templates, { id: crypto.randomUUID?.() ?? String(Math.random()).slice(2), ...tplDraft }];
+            setTemplates(next);
+            setTplDraft({ name: '', instructions: '' });
+            await api.patch(`/spaces/${spaceId}/settings`, { settings: { research: { templates: next } } });
+          }}
+        >
+          Add template
+        </button>
       </div>
       <p className="text-[11px] text-set-dim mt-3">
         Polite-by-default: per-domain rate limits, robots.txt respected on direct fetches,

@@ -97,6 +97,13 @@ Playwright in the primary path; optional Playwright/Firecrawl-compatible
 fallbacks via env/settings). Extraction: trafilatura with a crude-text
 last resort, including open shadow-root content.
 
+**Report styles & visuals:** Simplified Technical English is the default style;
+professional / executive / study-notes styles and per-workspace custom
+templates (Settings → Deep Research) are selectable at launch. Reports include
+charts (`set:chart` specs rendered server-side), markdown comparison tables,
+and a sourced picture gallery. Finished runs generate flashcard/quiz decks in
+one click from their ingested sources.
+
 **Run limits:** time limit is user-set — 5 minute minimum, 25 minute default,
 up to 72 hours for deep multi-day runs (rounds scale with budget). Reports are
 written in Simplified Technical English (ASD-STE100 style: short active

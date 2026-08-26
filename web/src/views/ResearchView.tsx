@@ -23,7 +23,13 @@ export function ResearchList() {
   const [notebooks, setNotebooks] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [minutes, setMinutes] = useState(25);
-  const [style, setStyle] = useState<'ste' | 'professional' | 'executive' | 'study'>('ste');
+  const [style, setStyle] = useState<string>('ste');
+  const [templates, setTemplates] = useState<any[]>([]);
+  useEffect(() => {
+    api.get(`/spaces/${spaceId}/settings`).then(({ settings }) => {
+      setTemplates(settings?.research?.templates ?? []);
+    }).catch(() => {});
+  }, [spaceId]);
 
   const DURATIONS: [number, string][] = [
     [5, '5 minutes'], [15, '15 minutes'], [25, '25 minutes (default)'], [60, '1 hour'],
@@ -82,6 +88,9 @@ export function ResearchList() {
             <option value="professional">📊 Professional analysis</option>
             <option value="executive">⚡ Executive brief</option>
             <option value="study">🎓 Study notes</option>
+            {templates.map((t) => (
+              <option key={t.id} value={`tpl:${t.id}`}>🧩 {t.name}</option>
+            ))}
           </select>
           <select
             className="set-input text-xs w-[150px]"
@@ -137,9 +146,21 @@ export function ResearchList() {
 
 export function ResearchRun() {
   const { spaceId, runId } = useParams();
+  const navigate = useNavigate();
   const [run, setRun] = useState<any>(null);
   const [simplifying, setSimplifying] = useState(false);
   const active = ACTIVE.has(run?.status ?? 'pending');
+  const makeDeck = async (kind: 'flashcards' | 'quiz') => {
+    setSimplifying(true); // reuse spinner state
+    try {
+      const { deckId, notebookId } = await api.post(`/research/${runId}/deck`, { kind });
+      navigate(`/app/space/${spaceId}/notebook/${notebookId}/deck/${deckId}`);
+    } catch (e: any) {
+      alert(e.message || 'deck generation failed');
+    } finally {
+      setSimplifying(false);
+    }
+  };
   const simplify = async () => {
     setSimplifying(true);
     try {
@@ -273,6 +294,12 @@ export function ResearchRun() {
               {simplifying ? 'Rewriting…' : 'Plain-English rewrite'}
             </button>
           )}
+          <button className="set-btn text-xs flex items-center gap-1" disabled={simplifying} onClick={() => makeDeck('flashcards')}>
+            <BookOpen size={12} /> Study deck
+          </button>
+          <button className="set-btn text-xs flex items-center gap-1" disabled={simplifying} onClick={() => makeDeck('quiz')}>
+            <BookOpen size={12} /> Quiz me
+          </button>
         </div>
       )}
     </div>
