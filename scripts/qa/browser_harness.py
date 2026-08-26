@@ -145,13 +145,27 @@ class Browser:
             time.sleep(0.5)
         time.sleep(1)  # let React settle; clicks before hydration get dropped
         def fill(sel, text):
-            for _ in range(3):
+            import json as _j
+            def cur():
+                return self.eval(f"document.querySelector({json.dumps(sel)}).value")
+            for attempt in range(3):
+                # CDP input first (fast path)
                 x, y = self._center(sel)
-                self.click(x, y); time.sleep(0.3)
-                self.type_text(text); time.sleep(0.4)
-                if self.eval(f"document.querySelector({json.dumps(sel)}).value") == text:
+                self.click(x, y); time.sleep(0.2)
+                self.type_text(text); time.sleep(0.3)
+                if cur() == text:
+                    return
+                # DOM fallback: select-all + replace via execCommand (React-safe)
+                self.eval(
+                    f"(function(){{var el=document.querySelector({json.dumps(sel)});el.focus();"
+                    f"el.select&&el.select();try{{document.execCommand('delete')}}catch(e){{}}"
+                    f"try{{return document.execCommand('insertText', false, {_j.dumps(text)})}}catch(e){{return false}}}})()"
+                )
+                time.sleep(0.3)
+                if cur() == text:
                     return
             raise RuntimeError(f"could not type into {sel} — {self.shot('login_fill_fail')}")
+
         fill("form input[type=email]", email)
         fill("form input[type=password]", password)
         # submit = the full-width primary button under the fields
