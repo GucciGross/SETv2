@@ -61,9 +61,12 @@ try:
     if launcher:
         b.click(*launcher); time.sleep(3)
         crashed = b.router_error()
+        # the popup's transcript is closed shadow DOM; its input-row buttons are
+        # the reliable light-DOM signal that it rendered
+        open_signals = b.eval(r"(() => { const els=[...document.querySelectorAll('[data-slot]')].filter(e=>{const r=e.getBoundingClientRect(); return r.x>840 && r.width>20 && r.width<60}); return els.length })()")
         welcome = b.has("on-screen guide") or b.has("Show me around")
-        checks.append(result("T3 copilot popup opens, no crash", welcome and not crashed,
-                             f"welcome={welcome} crashed={crashed}"))
+        checks.append(result("T3 copilot popup opens, no crash", (bool(open_signals) or welcome) and not crashed,
+                             f"input_row={open_signals} welcome={welcome} crashed={crashed}"))
         b.shot("t3_chat")
     else:
         checks.append(result("T3 copilot popup opens, no crash", False, "launcher not found"))
