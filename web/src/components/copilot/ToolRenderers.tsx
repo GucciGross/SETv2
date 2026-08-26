@@ -130,7 +130,7 @@ export function SetToolRenderers() {
                 className="w-full flex items-center gap-1.5 px-1.5 py-1 rounded hover:bg-set-panel text-left text-sm"
                 onClick={() => spaceId && navigate(`/app/space/${spaceId}/page/${p.id}`)}
               >
-                <span>{p.icon ?? '📄'}</span> <span className="truncate">{p.title}</span>
+                <FileText size={12} className="shrink-0" /> <span className="truncate">{p.title}</span>
               </button>
             ))}
             {!res?.pages?.length && <div className="text-xs text-set-dim px-1.5">no pages matched</div>}

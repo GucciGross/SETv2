@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope } from 'lucide-react';
+import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate } from 'lucide-react';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 import McpSettings from '../components/McpSettings';
@@ -701,7 +701,7 @@ function ResearchTab({ spaceId }: { spaceId: string }) {
             <option value="study">Study notes</option>
           </select>
         </label>
-        <button className="set-btn-primary text-sm" onClick={save}>{saved ? 'Saved ✓' : 'Save research settings'}</button>
+        <button className="set-btn-primary text-sm" onClick={save}>{saved ? 'Saved' : 'Save research settings'}</button>
       </div>
 
       <div className="set-card p-4 mt-4">
@@ -713,7 +713,7 @@ function ResearchTab({ spaceId }: { spaceId: string }) {
         <div className="space-y-2 mb-3">
           {templates.map((t) => (
             <div key={t.id} className="flex items-center gap-2 text-sm border border-set-border rounded-lg px-3 py-2">
-              <span className="font-medium text-white">🧩 {t.name}</span>
+              <span className="font-medium text-white flex items-center gap-1.5"><LayoutTemplate size={13} className="text-set-accent shrink-0" /> {t.name}</span>
               <span className="text-xs text-set-dim truncate flex-1">{(t.instructions || '').slice(0, 80)}</span>
               <button className="set-btn-ghost text-xs" onClick={() => setTemplates(templates.filter((x) => x.id !== t.id))}>Remove</button>
             </div>

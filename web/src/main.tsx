@@ -52,6 +52,7 @@ import ActivityView from './views/ActivityView';
 import MyTasksView from './views/MyTasksView';
 import { PagesList, DatabasesList } from './views/ListsView';
 import { ResearchList, ResearchRun } from './views/ResearchView';
+import { Compass } from 'lucide-react';
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -104,7 +105,7 @@ const router = createBrowserRouter([
 function NotFound() {
   return (
     <div className="h-screen flex flex-col items-center justify-center gap-3 text-center p-6">
-      <div className="text-4xl">🧭</div>
+      <Compass size={40} className="text-set-accent" strokeWidth={1.5} />
       <h1 className="text-lg font-bold text-white">That page doesn't exist</h1>
       <p className="text-sm text-set-dim max-w-xs">
         The link or navigation went somewhere unknown. Nothing is broken — head back and keep going.

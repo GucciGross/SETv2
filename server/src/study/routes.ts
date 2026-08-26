@@ -3,8 +3,26 @@ import { z } from 'zod';
 import { one, q } from '../db.js';
 import { requireResourceSpace, requireSpace, rid } from '../lib/http.js';
 import { generateDeck, sm2, createDeckRecord } from './generate.js';
+import { deckToH5P } from './h5p.js';
 
 export async function studyRoutes(app: FastifyInstance) {
+  // deck → .h5p package download (LMS interop; libraries cached under DATA_DIR)
+  app.get('/decks/:id/h5p', async (req, reply) => {
+    const id = (req.params as any).id;
+    const ctx = await requireResourceSpace(req, reply, 'decks', id);
+    if (!ctx) return;
+    const deck = await one<any>(`SELECT * FROM decks WHERE id = $1`, [id]);
+    if (!deck) return reply.code(404).send({ error: 'Deck not found' });
+    try {
+      const buf = await deckToH5P(deck);
+      reply.header('content-type', 'application/zip');
+      reply.header('content-disposition', `attachment; filename="${deck.title.replace(/[^\w.-]+/g, '_').slice(0, 60) || 'deck'}.h5p"`);
+      return reply.send(buf);
+    } catch (e: any) {
+      return reply.code(500).send({ error: `H5P export failed: ${e?.message ?? e}` });
+    }
+  });
+
   app.get('/spaces/:spaceId/decks', async (req, reply) => {
     const spaceId = (req.params as any).spaceId;
     if (!(await requireSpace(req, reply, spaceId))) return;

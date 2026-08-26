@@ -120,7 +120,7 @@ export const TOOLS: ToolDef2[] = [
       return {
         ok: true,
         result: { notebookId: nb!.id, title: nb!.title },
-        a2ui: [{ type: 'card', props: { title: nb!.title, icon: '📓', notebookId: nb!.id, body: args.description ?? 'New research notebook', action: 'open_notebook' } }],
+        a2ui: [{ type: 'card', props: { title: nb!.title, icon: '', notebookId: nb!.id, body: args.description ?? 'New research notebook', action: 'open_notebook' } }],
       };
     },
   },

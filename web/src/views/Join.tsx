@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Mail } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, getToken } from '../lib/api';
 import Mascot, { DEFAULT_MASCOT } from '../components/Mascot';
@@ -44,7 +45,7 @@ export default function Join() {
       <div className="set-card p-8 max-w-md w-full text-center space-y-4">
         {state === 'working' && (
           <>
-            <div className="text-4xl animate-pulse">✉️</div>
+            <Mail size={36} className="text-set-accent animate-pulse" strokeWidth={1.5} />
             <h1 className="text-xl font-bold text-white">Accepting your invite…</h1>
             <p className="text-sm text-set-dim">Checking the invite link.</p>
           </>

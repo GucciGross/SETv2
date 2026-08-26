@@ -85,6 +85,10 @@ try:
     else:
         checks.append(result("T4 chat input accepts text", False, "input row not located"))
 
+    # TE — no emojis in UI chrome (lucide icons only, per product decision)
+    emojis = b.eval(r"(() => { const t = document.body.innerText; const m = t.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu); return m ? m.join('') : '' })()")
+    checks.append(result("TE no emojis in UI", not emojis, f"found: {emojis[:20]}"))
+
     # T9 — editor page loads without insecure-context crash (block ids).
     # Open the first page from the real /app/space/<id>/pages list.
     import re as _re

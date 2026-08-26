@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import {
-  BookOpen, FileText, Loader2, Search, Telescope, XCircle, CheckCircle2, AlertTriangle, ArrowRight,
+  BookOpen, FileText, Loader2, Search, Telescope, XCircle, CheckCircle2, AlertTriangle, ArrowRight, Sparkles, Package,
 } from 'lucide-react';
 
 /** Deep research (PLAN.md Phase 1): launch CrewAI research runs, watch progress,
@@ -84,12 +84,12 @@ export function ResearchList() {
             value={style}
             onChange={(e) => setStyle(e.target.value as any)}
           >
-            <option value="ste">📝 Simplified Technical English (default)</option>
-            <option value="professional">📊 Professional analysis</option>
-            <option value="executive">⚡ Executive brief</option>
-            <option value="study">🎓 Study notes</option>
+            <option value="ste">Simplified Technical English (default)</option>
+            <option value="professional">Professional analysis</option>
+            <option value="executive">Executive brief</option>
+            <option value="study">Study notes</option>
             {templates.map((t) => (
-              <option key={t.id} value={`tpl:${t.id}`}>🧩 {t.name}</option>
+              <option key={t.id} value={`tpl:${t.id}`}>{t.name}</option>
             ))}
           </select>
           <select
@@ -150,6 +150,18 @@ export function ResearchRun() {
   const [run, setRun] = useState<any>(null);
   const [simplifying, setSimplifying] = useState(false);
   const active = ACTIVE.has(run?.status ?? 'pending');
+  const exportH5P = async () => {
+    const deckId = run?.progress?.auto_deck_id;
+    if (!deckId) return;
+    const res = await fetch(`/api/decks/${deckId}/h5p`, { headers: { authorization: `Bearer ${localStorage.getItem('set_token')}` } });
+    if (!res.ok) return alert('H5P export failed');
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'set-deck.h5p';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
   const makeDeck = async (kind: 'flashcards' | 'quiz') => {
     setSimplifying(true); // reuse spinner state
     try {
@@ -296,7 +308,7 @@ export function ResearchRun() {
           )}
           {run.progress?.auto_deck_id ? (
             <Link to={`/app/space/${spaceId}/notebook/${run.notebook_id}/deck/${run.progress.auto_deck_id}`} className="set-btn-primary text-xs flex items-center gap-1">
-              <BookOpen size={12} /> Open study deck ✨
+              <Sparkles size={12} /> Open study deck
             </Link>
           ) : (
             <button className="set-btn text-xs flex items-center gap-1" disabled={simplifying} onClick={() => makeDeck('flashcards')}>
@@ -306,6 +318,11 @@ export function ResearchRun() {
           <button className="set-btn text-xs flex items-center gap-1" disabled={simplifying} onClick={() => makeDeck('quiz')}>
             <BookOpen size={12} /> Quiz me
           </button>
+          {run.progress?.auto_deck_id && (
+            <button className="set-btn text-xs flex items-center gap-1" onClick={exportH5P}>
+              <Package size={12} /> Export H5P
+            </button>
+          )}
         </div>
       )}
     </div>
