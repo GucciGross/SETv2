@@ -8,7 +8,7 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from '.
 import ErrorBoundary from '../components/ErrorBoundary';
 import Checklist from '../components/onboarding/Checklist';
 import {
-  FileText, BookOpen, Database, Users, Bell, ListTodo, ArrowRight, Sparkles, TrendingUp,
+  FileText, BookOpen, Database, Users, Bell, ListTodo, ArrowRight, Sparkles, TrendingUp, ChevronDown,
 } from 'lucide-react';
 
 /** Space dashboard: the home view with dithered analytics, tasks, and quick actions. */
@@ -68,12 +68,21 @@ export default function DashboardView() {
 
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto pb-24">
-      <div data-tour="checklist">
-        <Checklist onRevealWelcome={() => {
-          useApp.setState({ user: { ...(user as any), onboarding: { ...(user as any)?.onboarding, welcomed: false } } });
-          window.dispatchEvent(new CustomEvent('set:open-welcome'));
-        }} />
-      </div>
+      <details data-tour="checklist" className="mb-4 group">
+        <summary className="cursor-pointer list-none flex items-center gap-2 text-xs text-set-dim hover:text-set-text select-none">
+          <span className="w-24 h-1.5 rounded-full bg-set-panel2 overflow-hidden inline-flex">
+            <ChecklistProgress className="h-full bg-set-accent/70" />
+          </span>
+          <span>Getting started</span>
+          <ChevronDown size={12} className="transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="mt-2">
+          <Checklist onRevealWelcome={() => {
+            useApp.setState({ user: { ...(user as any), onboarding: { ...(user as any)?.onboarding, welcomed: false } } });
+            window.dispatchEvent(new CustomEvent('set:open-welcome'));
+          }} />
+        </div>
+      </details>
 
       {/* Hero greeting */}
       <div className="flex items-center gap-4 mb-6">
@@ -118,8 +127,9 @@ export default function DashboardView() {
         ))}
       </div>
 
-      {/* Charts row */}
-      <div className="grid lg:grid-cols-2 gap-4 mb-6">
+      {/* Charts row — hidden entirely until there is something to show */}
+      {(mcpData.length > 0 || chartData.some((d) => d.events > 0)) && (
+      <div className={`grid gap-4 mb-6 ${mcpData.length > 0 && chartData.some((d) => d.events > 0) ? 'lg:grid-cols-2' : ''}`}>
         {/* Activity chart (dithered area) */}
         <div className="set-card p-4">
           <div className="flex items-center gap-2 mb-3">
@@ -150,7 +160,7 @@ export default function DashboardView() {
             <Sparkles size={15} className="text-violet-300" />
             <h3 className="text-sm font-semibold text-white">Agent tool usage</h3>
           </div>
-          {mcpData.length > 0 ? (
+          {mcpData.length > 0 && chartData.some((d) => d.events > 0) ? (
             <ErrorBoundary>
               <div className="rounded-xl border border-set-border overflow-hidden h-60">
                 <BarChart data={mcpData} config={{ calls: { label: 'Calls', color: 'green' }, success: { label: 'Success %', color: 'blue' } }} bloom="low">
@@ -172,6 +182,7 @@ export default function DashboardView() {
           )}
         </div>
       </div>
+      )}
 
       {/* Bottom row: tasks + activity feed */}
       <div className="grid lg:grid-cols-2 gap-4">
@@ -237,4 +248,13 @@ export default function DashboardView() {
       </div>
     </div>
   );
+}
+
+
+/** Slim progress fill for the collapsed onboarding checklist. */
+function ChecklistProgress({ className }: { className?: string }) {
+  const onboarding = (useApp.getState() as any)?.user?.onboarding;
+  const steps = ['page', 'notebook', 'chat', 'surface'] as const;
+  const done = steps.filter((k) => (onboarding ?? {})[k]).length;
+  return <span className={className} style={{ width: `${(done / steps.length) * 100}%` }} />;
 }

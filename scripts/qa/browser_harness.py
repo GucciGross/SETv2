@@ -99,7 +99,14 @@ class Browser:
     def url(self) -> str: return self.eval("location.href")
 
     def nav(self, path: str, wait: float = 2.5):
-        self.cmd("Page.navigate", {"url": self.base_url + path})
+        # fire-and-forget navigate: some hosts stall the navigate response even
+        # though the navigation succeeds; readiness is judged by readyState
+        self._id += 1
+        self.ws.settimeout(3)
+        try:
+            self.ws.send(json.dumps({"id": self._id, "method": "Page.navigate", "params": {"url": self.base_url + path}}))
+        except Exception:
+            pass
         time.sleep(wait); self._wait_ready(); return self.url()
 
     def reload(self, wait: float = 3.0):

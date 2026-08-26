@@ -15,6 +15,21 @@ import GuideFab from './GuideFab';
 import Notifications from './Notifications';
 import CommandPalette from './CommandPalette';
 
+function NavList({ title, defaultOpen, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <div>
+      <button
+        className="flex w-full items-center gap-1 px-1 pt-2 pb-1 text-[10px] uppercase tracking-wider text-set-dim/80 font-semibold hover:text-set-text"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />} {title}
+      </button>
+      {open && <div className="space-y-0.5">{children}</div>}
+    </div>
+  );
+}
+
 function PageTree() {
   const { spaceId: routeSpaceId, pageId } = useParams();
   const { pages, createPage, deletePage, currentSpaceId } = useApp();
@@ -306,69 +321,93 @@ function AppShellInner() {
             </button>
           </div>
 
-          <div className="text-[11px] uppercase tracking-wider text-set-dim font-semibold px-1">Workspace</div>
+          {/* Grouped, progressive-disclosure nav: essentials stay visible,
+              everything else folds away. Collapse state persists per user. */}
           <nav className="space-y-0.5 text-sm" data-tour="nav">
             {[
-              { icon: <LayoutDashboard size={15} />, label: 'Dashboard', to: link(''), surface: null, exact: true },
-              { icon: <ListTodo size={15} />, label: 'My Tasks', to: link('/tasks'), surface: null },
-              { icon: <ActivityIcon size={15} />, label: 'Activity', to: link('/activity'), surface: null },
-              { icon: <Network size={15} />, label: 'Graph', to: link('/graph'), surface: null },
-              { icon: <BookOpen size={15} />, label: 'Notebooks', to: link('/notebooks'), surface: null },
-              { icon: <Telescope size={15} />, label: 'Deep Research', to: link('/research'), surface: null },
-              { icon: <Code2 size={15} />, label: 'Coding', to: link('/coding'), surface: 'coding' },
-              { icon: <SquareTerminal size={15} />, label: 'Terminal', to: link('/terminal'), surface: 'terminal' },
-              { icon: <Route size={15} />, label: 'Learning Paths', to: link('/paths'), surface: 'paths' },
-              { icon: <Boxes size={15} />, label: '3D & CAD', to: link('/models'), surface: 'threeD' },
-              { icon: <LibraryBig size={15} />, label: 'Library', to: link('/library'), surface: 'library' },
-              { icon: <PenLine size={15} />, label: 'Canvas (beta)', to: link('/canvas'), surface: 'canvas' },
-              { icon: <BookOpen size={15} />, label: 'Docs', to: link('/docs'), surface: null },
-              { icon: <Settings size={15} />, label: 'Settings', to: link('/settings'), surface: null },
-            ]
-              .filter((item) => !item.surface || surfaces[item.surface])
-              .map((item) => {
-                const active = item.exact
-                  ? location.pathname === item.to
-                  : location.pathname.startsWith(item.to);
-                return (
-                  <Link
-                    key={item.label}
-                    to={item.to}
-                    onClick={() => setMobileNav(false)}
-                    className={`flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-set-panel2 text-set-text ${active ? 'bg-set-panel2 text-white' : ''}`}
-                    title={railMode ? item.label : undefined}
-                  >
-                    <span className={active ? 'text-set-accent' : 'text-set-dim'}>{item.icon}</span> {item.label}
-                  </Link>
-                );
-              })}
+              { label: null, items: [
+                { icon: <LayoutDashboard size={15} />, label: 'Dashboard', to: link(''), surface: null, exact: true },
+                { icon: <FileText size={15} />, label: 'Pages', to: link('/pages'), surface: null },
+                { icon: <BookOpen size={15} />, label: 'Notebooks', to: link('/notebooks'), surface: null },
+                { icon: <Telescope size={15} />, label: 'Deep Research', to: link('/research'), surface: null },
+              ]},
+              { label: 'Knowledge', items: [
+                { icon: <Network size={15} />, label: 'Graph', to: link('/graph'), surface: null },
+                { icon: <Database size={15} />, label: 'Databases', to: link('/databases'), surface: null },
+                { icon: <ListTodo size={15} />, label: 'My Tasks', to: link('/tasks'), surface: null },
+                { icon: <ActivityIcon size={15} />, label: 'Activity', to: link('/activity'), surface: null },
+              ]},
+              { label: 'Surfaces', items: [
+                { icon: <Code2 size={15} />, label: 'Coding', to: link('/coding'), surface: 'coding' },
+                { icon: <SquareTerminal size={15} />, label: 'Terminal', to: link('/terminal'), surface: 'terminal' },
+                { icon: <Route size={15} />, label: 'Learning Paths', to: link('/paths'), surface: 'paths' },
+                { icon: <Boxes size={15} />, label: '3D & CAD', to: link('/models'), surface: 'threeD' },
+                { icon: <LibraryBig size={15} />, label: 'Library', to: link('/library'), surface: 'library' },
+                { icon: <PenLine size={15} />, label: 'Canvas', to: link('/canvas'), surface: 'canvas' },
+              ]},
+            ].map((group: any) => {
+              const items = (group.items as any[]).filter((item: any) => !item.surface || surfaces[item.surface]);
+              if (!items.length) return null;
+              const storageKey = group.label ? `set_navgroup_${group.label}` : null;
+              const open = storageKey ? localStorage.getItem(storageKey) !== '0' : true;
+              const [expanded, setExpanded] = useState(open);
+              const toggleGroup = () => {
+                setExpanded((o) => {
+                  if (storageKey) localStorage.setItem(storageKey, o ? '0' : '1');
+                  return !o;
+                });
+              };
+              return (
+                <div key={group.label ?? 'main'}>
+                  {group.label && !railMode && (
+                    <button
+                      className="flex w-full items-center gap-1 px-1 pt-2 pb-1 text-[10px] uppercase tracking-wider text-set-dim/80 font-semibold hover:text-set-text"
+                      onClick={toggleGroup}
+                    >
+                      {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />} {group.label}
+                    </button>
+                  )}
+                  {(expanded || railMode || !group.label) && items.map((item: any) => {
+                    const active = item.exact
+                      ? location.pathname === item.to
+                      : location.pathname.startsWith(item.to);
+                    return (
+                      <Link
+                        key={item.label}
+                        to={item.to}
+                        onClick={() => setMobileNav(false)}
+                        className={`flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-set-panel2 text-set-text ${active ? 'bg-set-panel2 text-white' : ''}`}
+                        title={railMode ? item.label : undefined}
+                      >
+                        <span className={active ? 'text-set-accent' : 'text-set-dim'}>{item.icon}</span> {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </nav>
 
-          {dbs.length > 0 && !railMode && (
-            <>
-              <div className="text-[11px] uppercase tracking-wider text-set-dim font-semibold px-1">Databases</div>
-              <nav className="space-y-0.5 text-sm">
-                {dbs.map((d) => (
-                  <Link key={d.id} to={link(`/db/${d.id}`)} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-set-panel2">
-                    <DatabaseIcon size={13} className="text-set-dim shrink-0" /> <span className="truncate">{d.name}</span>
-                    <span className="ml-auto text-xs text-set-dim">{d.row_count}</span>
-                  </Link>
-                ))}
-              </nav>
-            </>
+          {/* database + notebook lists fold under compact headers (collapsed by default) */}
+          {!railMode && dbs.length > 0 && (
+            <NavList title="Databases" defaultOpen={false}>
+              {dbs.map((d) => (
+                <Link key={d.id} to={link(`/db/${d.id}`)} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-set-panel2">
+                  <DatabaseIcon size={13} className="text-set-dim shrink-0" /> <span className="truncate">{d.name}</span>
+                  <span className="ml-auto text-xs text-set-dim">{d.row_count}</span>
+                </Link>
+              ))}
+            </NavList>
           )}
-
-          {nbs.length > 0 && !railMode && (
-            <>
-              <div className="text-[11px] uppercase tracking-wider text-set-dim font-semibold px-1">Notebooks</div>
-              <nav className="space-y-0.5 text-sm">
-                {nbs.map((n) => (
-                  <Link key={n.id} to={link(`/notebook/${n.id}`)} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-set-panel2">
-                    <BookOpen size={13} className="text-set-dim shrink-0" /><span className="truncate">{n.title}</span>
-                    <span className="ml-auto text-xs text-set-dim">{n.source_count}</span>
-                  </Link>
-                ))}
-              </nav>
-            </>
+          {!railMode && nbs.length > 0 && (
+            <NavList title="Notebooks" defaultOpen={false}>
+              {nbs.map((n) => (
+                <Link key={n.id} to={link(`/notebook/${n.id}`)} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-set-panel2">
+                  <BookOpen size={13} className="text-set-dim shrink-0" /><span className="truncate">{n.title}</span>
+                  <span className="ml-auto text-xs text-set-dim">{n.source_count}</span>
+                </Link>
+              ))}
+            </NavList>
           )}
 
           {!railMode && (
