@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
-import { ArrowRight, BookOpen, FileText, Search, Sparkles, Wrench } from 'lucide-react';
+import { ArrowRight, BookOpen, Camera, FileText, Search, Sparkles, Wrench } from 'lucide-react';
 import { useRenderTool, useDefaultRenderTool, useAgent } from '@copilotkit/react-core/v2';
 import { A2UIRenderer, type A2UIComponent } from '../A2UI';
 import { getToken } from '../../lib/api';
@@ -209,12 +209,23 @@ export function SetToolRenderers() {
               className="rounded-lg border border-set-border max-h-72 w-auto mb-1.5"
             />
           )}
-          {res?.summary && (
-            <details className="text-[11px] text-set-dim">
-              <summary className="cursor-pointer hover:text-set-text">element index</summary>
-              <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap">{res.summary.slice(0, 3000)}</pre>
-            </details>
-          )}
+          <div className="flex items-center gap-2">
+            {res?.summary && (
+              <details className="text-[11px] text-set-dim flex-1 min-w-0">
+                <summary className="cursor-pointer hover:text-set-text">element index</summary>
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap">{res.summary.slice(0, 3000)}</pre>
+              </details>
+            )}
+            {spaceId && (
+              <button
+                className="set-btn-ghost text-[11px] flex items-center gap-1 shrink-0"
+                title="All captures from computer-use sessions"
+                onClick={() => navigate(`/app/space/${spaceId}/captures`)}
+              >
+                <Camera size={11} /> history
+              </button>
+            )}
+          </div>
         </div>
       </RunState>
     );

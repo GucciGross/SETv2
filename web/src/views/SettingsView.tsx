@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal } from 'lucide-react';
+import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera } from 'lucide-react';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 import McpSettings from '../components/McpSettings';
@@ -756,10 +756,18 @@ function ResearchTab({ spaceId }: { spaceId: string }) {
 
 function CompanionTab({ spaceId }: { spaceId: string }) {
   const [tokens, setTokens] = useState<any[]>([]);
+  const [companions, setCompanions] = useState<any[] | null>(null);
   const [fresh, setFresh] = useState<string | null>(null);
 
-  const load = () => api.get(`/spaces/${spaceId}/companion/tokens`).then((r) => setTokens(r.tokens)).catch(() => {});
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [spaceId]);
+  const load = () => {
+    api.get(`/spaces/${spaceId}/companion/tokens`).then((r) => setTokens(r.tokens)).catch(() => {});
+    api.get(`/spaces/${spaceId}/companion/health`).then((r) => setCompanions(r.companions)).catch(() => {});
+  };
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 30_000); // live companion health refresh
+    return () => clearInterval(t);
+  }, [spaceId]);
 
   const create = async () => {
     const { token } = await api.post(`/spaces/${spaceId}/companion/tokens`, { name: `companion-${new Date().toISOString().slice(0, 10)}` });
@@ -769,11 +777,69 @@ function CompanionTab({ spaceId }: { spaceId: string }) {
 
   return (
     <div>
-      <p className="text-sm text-set-dim mb-4">
-        The teaching companion runs <strong className="text-set-text">on your own machine</strong> and demonstrates SET
-        live in your real browser — it opens pages, highlights elements and shows captions. Visible actions only:
-        it never clicks, edits, or runs in the background, and you can stop it (Ctrl-C) or revoke its token at any time.
-      </p>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <p className="text-sm text-set-dim flex-1 min-w-[260px]">
+          The teaching companion runs <strong className="text-set-text">on your own machine</strong> and demonstrates SET
+          live in your real browser — it opens pages, highlights elements and shows captions. Visible actions only:
+          it never clicks, edits, or runs in the background, and you can stop it (Ctrl-C) or revoke its token at any time.
+        </p>
+        <a className="set-btn text-xs flex items-center gap-1" href={`/app/space/${spaceId}/captures`}>
+          <Camera size={13} /> Capture history
+        </a>
+      </div>
+
+      {/* live health — heartbeats from the companion every ~45s */}
+      <div className="set-card p-4 mb-4">
+        <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-1.5"><HeartPulse size={14} /> Companion health</h3>
+        {companions === null && <p className="text-xs text-set-dim">Loading…</p>}
+        {companions?.filter((c) => !c.revoked_at).length === 0 && (
+          <p className="text-xs text-set-dim">
+            No companions connected. Create a pairing token below and start the companion — its diagnostics
+            (daemon, accessibility, permissions) appear here live.
+          </p>
+        )}
+        <div className="space-y-2">
+          {companions?.filter((c) => !c.revoked_at).map((c) => {
+            const h = c.health ?? {};
+            const daemon = h.daemon ?? {};
+            const atspi = h.atspi ?? {};
+            return (
+              <div key={c.id} className="border border-set-border rounded-lg px-3 py-2.5">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${c.online ? 'bg-green-400 animate-pulse' : 'bg-set-dim'}`} />
+                  <span className="text-white font-medium">{c.name}</span>
+                  <span className="text-xs text-set-dim font-mono">{c.token_prefix}…</span>
+                  <span className={`text-xs ml-auto shrink-0 ${c.online ? 'text-green-400' : 'text-set-dim'}`}>
+                    {c.online ? 'online' : 'offline'}
+                    {c.health_at ? ` · heartbeat ${new Date(c.health_at).toLocaleTimeString()}` : ' · never seen'}
+                  </span>
+                </div>
+                {c.online && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    <span className={`set-chip text-[10px] border ${daemon.running ? 'border-green-500/40 bg-green-500/10 text-green-300' : 'border-red-500/40 bg-red-500/10 text-red-300'}`}>
+                      cua-driver {daemon.running ? 'running' : 'down'}
+                    </span>
+                    <span className={`set-chip text-[10px] border ${atspi.ok ? 'border-green-500/40 bg-green-500/10 text-green-300' : 'border-red-500/40 bg-red-500/10 text-red-300'}`}>
+                      AT-SPI {atspi.ok ? `${atspi.windows} window(s)` : 'unavailable'}
+                    </span>
+                    <span className={`set-chip text-[10px] border ${h.allow_input ? 'border-amber-500/40 bg-amber-500/10 text-amber-300' : 'border-set-border bg-set-panel2 text-set-dim'}`}>
+                      {h.allow_input ? 'input enabled' : 'observe-only'}
+                    </span>
+                    {h.host && <span className="set-chip text-[10px] border-set-border bg-set-panel2 text-set-dim">{h.host}</span>}
+                  </div>
+                )}
+                {!c.online && c.health_at && (
+                  <p className="text-[11px] text-set-dim mt-1.5">Last seen {new Date(c.health_at).toLocaleString()} — companion stopped or asleep.</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-set-dim mt-2">
+          Full local check: <code className="text-violet-300">uv run companion.py --doctor</code> — pairing token, cua-driver daemon,
+          AT-SPI accessibility, input permission and browser debugging in one command.
+        </p>
+      </div>
 
       <div className="set-card p-4 mb-4">
         <h3 className="set-mono set-mono-dim mb-2 flex items-center gap-1.5"><Terminal size={13} /> Setup</h3>
@@ -785,6 +851,10 @@ function CompanionTab({ spaceId }: { spaceId: string }) {
           <li>Create a pairing token below.</li>
           <li>On your machine, inside the SET checkout:
             <code className="block mt-1 bg-set-panel2 rounded px-2 py-1">cd companion &amp;&amp; SET_URL={location.origin} COMPANION_TOKEN=… uv run companion.py</code>
+          </li>
+          <li>Verify the whole stack in one command:
+            <code className="block mt-1 bg-set-panel2 rounded px-2 py-1">uv run companion.py --doctor</code>
+            (token, daemon, accessibility, permissions, browser)
           </li>
           <li>Ask the copilot to <em>show</em> you something — e.g. "show me the knowledge graph".
             For <strong className="text-set-text">native desktop app demos</strong>, also install cua-driver

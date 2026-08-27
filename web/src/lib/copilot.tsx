@@ -60,6 +60,7 @@ const VIEW_NAMES: [RegExp, string][] = [
   [/\/terminal/, 'Terminal'],
   [/\/tasks/, 'My tasks'],
   [/\/activity/, 'Activity feed'],
+  [/\/captures/, 'Capture history'],
   [/\/canvas/, 'Canvas'],
   [/\/settings/, 'Settings'],
   [/\/space\//, 'Dashboard'],

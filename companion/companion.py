@@ -29,6 +29,8 @@ Setup (one time):
        export SET_URL=http://your-set-host:8080
        export COMPANION_TOKEN=<token from step 1>
        uv run companion.py
+     One-command health check (token, daemon, AT-SPI, permissions, browser):
+       uv run companion.py --doctor
 """
 from __future__ import annotations
 
@@ -258,23 +260,31 @@ def _windows(retries: int = 3) -> list:
     raise RuntimeError(f"list_windows failed {retries}x: {last_err}")
 
 
-def _resolve_window(op: dict) -> dict | None:
+def _resolve_window(op: dict) -> tuple[dict | None, list[dict], bool]:
     """Pick the window an op targets: explicit window_id/pid, else the
-    topmost window whose title/app matches `app`, else the newest window."""
+    topmost window whose title/app matches `app`, else the newest window.
+    Returns (window, candidates, matched): when an app/title request matches
+    more than one open window (two same-titled Calculators, browser tabs…),
+    candidates lists ALL of them so the capture summary can tell the model
+    to re-target by explicit window_id instead of guessing. matched=False
+    means an `app` was requested but nothing matched and the newest window
+    was captured as a fallback — the summary says so, or the model would
+    mistake whatever it got for the app it asked about."""
     wins = _windows()
     if not wins:
-        return None
+        return None, [], False
     if op.get("window_id"):
-        return next((w for w in wins if w.get("window_id") == op["window_id"]), None)
+        return next((w for w in wins if w.get("window_id") == op["window_id"]), None), [], True
     if op.get("pid"):
-        return next((w for w in wins if w.get("pid") == op["pid"]), None)
+        return next((w for w in wins if w.get("pid") == op["pid"]), None), [], True
     app = str(op.get("app") or "").lower()
     if app:
-        by_title = next((w for w in wins if app in str(w.get("title") or "").lower()
-                         or app in str(w.get("app") or "").lower()), None)
-        if by_title:
-            return by_title
-    return wins[-1]
+        matches = [w for w in wins if app in str(w.get("title") or "").lower()
+                   or app in str(w.get("app") or "").lower()]
+        if matches:
+            return matches[0], matches if len(matches) > 1 else [], True
+        return wins[-1], [], False
+    return wins[-1], [], True
 
 
 def _downscale_png_b64(b64: str) -> tuple[str, int, int]:
@@ -296,7 +306,7 @@ def _downscale_png_b64(b64: str) -> tuple[str, int, int]:
 
 
 def cua_capture(op: dict) -> dict:
-    win = _resolve_window(op)
+    win, candidates, matched = _resolve_window(op)
     if not win:
         return {"error": "no windows open — launch_app first"}
     # Two calls: the tree WITHOUT the screenshot carries usable element frames
@@ -312,6 +322,17 @@ def cua_capture(op: dict) -> dict:
     elements = state.get("elements") or []
     title = win.get("title") or win.get("app") or "window"
     lines = [f"capture {title} (window_id={win['window_id']}) — {len(elements)} interactable element(s):"]
+    # targeting notes go right under the header: the server slices long tool
+    # results, and losing the tail would hide exactly these hints
+    if len(candidates) > 1:
+        lines.append(f"  NOTE: '{op.get('app')}' matches {len(candidates)} windows; captured window_id={win['window_id']}.")
+        lines.append("  If that is the wrong one, re-run with the exact window_id of the window you meant:")
+        for c in candidates:
+            lines.append(f"    window_id={c.get('window_id')} pid={c.get('pid')} "
+                         f"\"{str(c.get('title') or '')[:50]}\" ({c.get('app') or '?'})")
+    elif not matched:
+        lines.append(f"  NOTE: no open window matches '{op.get('app')}' — captured the newest window instead.")
+        lines.append("  If this is not what you wanted, use list_windows and re-run with an exact window_id.")
     max_lines = 500 if op.get("detail") else CAPTURE_MAX_LINES
     shown = 0
     for el in elements:
@@ -326,7 +347,7 @@ def cua_capture(op: dict) -> dict:
         lines.append(f"  [{el.get('element_index')}] {el.get('role')} \"{label}\" "
                      f"({int(f['x'])},{int(f['y'])} {int(f['w'])}x{int(f['h'])}){flag}")
     out: dict = {"summary": "\n".join(lines), "window_id": win["window_id"],
-                 "total_elements": len(elements)}
+                 "window_title": title, "total_elements": len(elements)}
     # full tree spills to disk so the model can grep details we truncated
     total = state.get("total_element_count") or len(elements)
     framed = sum(1 for el in elements
@@ -372,7 +393,8 @@ def cua_action(op: dict) -> dict:
     if not INPUT_ALLOWED:
         return {"error": "input actions (click/type/key/scroll) are disabled on this companion — "
                          "restart it with SET_ALLOW_INPUT=1 to permit them"}
-    win = _resolve_window(op) or {}
+    win, _, _ = _resolve_window(op)
+    win = win or {}
     if not win.get("pid"):
         return {"error": "could not resolve a target window — capture first and pass its window_id "
                          "(e.g. screen_act with window_id from the capture summary)"}
@@ -445,15 +467,116 @@ def cua_action(op: dict) -> dict:
             "png_b64": follow.get("png_b64"), "width": follow.get("width"), "height": follow.get("height")}
 
 
+# ---------------- diagnostics: doctor + heartbeat ----------------
+# Failures here should surface to the HUMAN first (Settings → Companion),
+# never as agent-facing errors mid-task. `--doctor` is the one-command local
+# check; the heartbeat keeps Settings continuously informed while running.
+
+VERSION = "2.1.0"
+HEARTBEAT_S = float(os.environ.get("COMPANION_HEARTBEAT_SECONDS", "45"))
+
+
+def collect_health(check_browser: bool = False) -> dict:
+    """Cheap machine-side health snapshot. Shared by `--doctor` (full,
+    including the browser check) and the periodic heartbeat (daemon/AT-SPI
+    only — attaching to the browser opens a tab, so it must not run on a
+    timer)."""
+    h: dict = {"version": VERSION, "host": os.uname().nodename, "pid": os.getpid(),
+               "allow_input": INPUT_ALLOWED}
+    try:
+        st = cua("status")
+        running = "running" in str(st).lower()
+        detail = st.get("status") if isinstance(st, dict) else None
+        h["daemon"] = {"running": running, **({"detail": str(detail)[:120]} if detail else {})}
+    except Exception as e:
+        h["daemon"] = {"running": False, "error": str(e)[:200]}
+    try:
+        wins = _windows(retries=1)
+        h["atspi"] = {"ok": bool(wins), "windows": len(wins)}
+    except Exception as e:
+        h["atspi"] = {"ok": False, "error": str(e)[:200]}
+    if check_browser:
+        h["browser"] = {"cdp_ok": Tab().ensure()}
+    return h
+
+
+def doctor() -> int:
+    print(f"SET companion doctor — {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  SET_URL          {SET_URL}")
+    print(f"  COMPANION_TOKEN  {TOKEN[:6] + '…' if TOKEN else 'NOT SET'}")
+    fatal = 0
+
+    if not TOKEN:
+        print("  [FAIL] pairing token — COMPANION_TOKEN is not set (Settings → Companion → Create token)")
+        fatal += 1
+    else:
+        try:
+            r = httpx.get(f"{SET_URL}/api/companion/ping",
+                          headers={"authorization": f"Bearer {TOKEN}"}, timeout=10)
+            if r.status_code == 200:
+                print("  [ ok ] pairing token accepted by server")
+            elif r.status_code == 401:
+                print("  [FAIL] pairing token rejected — revoke + recreate it in Settings → Companion")
+                fatal += 1
+            else:
+                print(f"  [FAIL] server answered HTTP {r.status_code} — check SET_URL ({SET_URL})")
+                fatal += 1
+        except Exception as e:
+            print(f"  [FAIL] cannot reach {SET_URL}: {e}")
+            fatal += 1
+
+    h = collect_health(check_browser=True)
+    d = h.get("daemon", {})
+    if d.get("running"):
+        print("  [ ok ] cua-driver daemon running")
+    else:
+        why = f" ({d.get('error') or d.get('detail')})" if (d.get("error") or d.get("detail")) else ""
+        print(f"  [FAIL] cua-driver daemon not running{why} — start it with `cua-driver serve`")
+        fatal += 1
+    a = h.get("atspi", {})
+    if a.get("ok"):
+        print(f"  [ ok ] AT-SPI accessibility — {a.get('windows')} window(s) visible")
+    else:
+        print(f"  [FAIL] AT-SPI unavailable ({a.get('error') or 'no windows listed'}) — "
+              "try `gsettings set org.gnome.desktop.interface toolkit-accessibility true`, "
+              "then restart the target app")
+        fatal += 1
+    if h.get("browser", {}).get("cdp_ok"):
+        print("  [ ok ] browser remote debugging (CDP) attachable")
+    else:
+        print("  [warn] browser not attachable — relaunch with --remote-debugging-port=9222 "
+              "(only needed for in-browser demos)")
+    if INPUT_ALLOWED:
+        print("  [ ok ] input actions ENABLED (SET_ALLOW_INPUT=1) — click/type/key/scroll permitted")
+    else:
+        print("  [warn] input actions disabled — companion is observe-only "
+              "(restart with SET_ALLOW_INPUT=1 to permit them)")
+    print("  doctor: " + ("healthy" if fatal == 0 else f"{fatal} critical problem(s)"))
+    return 0 if fatal == 0 else 1
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] in ("--doctor", "doctor"):
+        return doctor()
     if not TOKEN:
         print(__doc__)
         print("ERROR: COMPANION_TOKEN is not set.")
         return 2
     tab = Tab()
     log(f"paired with {SET_URL} — watching for teach tasks (Ctrl-C to stop)")
+    last_hb = 0.0
     while True:
         try:
+            # heartbeat keeps Settings → Companion informed (daemon, AT-SPI,
+            # input permission); fires immediately, then every HEARTBEAT_S
+            if time.time() - last_hb > HEARTBEAT_S:
+                last_hb = time.time()
+                try:
+                    httpx.post(f"{SET_URL}/api/companion/heartbeat",
+                               headers={"authorization": f"Bearer {TOKEN}"},
+                               json={"health": collect_health()}, timeout=10)
+                except Exception as e:
+                    log(f"heartbeat failed: {e}")
             r = httpx.get(
                 f"{SET_URL}/api/companion/next",
                 headers={"authorization": f"Bearer {TOKEN}"},

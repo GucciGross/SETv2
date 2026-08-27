@@ -12,13 +12,23 @@ import { join } from 'node:path';
 import { config } from '../config.js';
 
 /** Persist a capture PNG and return its API url. Keeps ~1MB data URLs out of
- *  the event stream (inline payloads stall the CopilotKit transport). */
-async function saveCapturePng(pngB64: string): Promise<string | null> {
+ *  the event stream (inline payloads stall the CopilotKit transport) and
+ *  records a history row so the gallery can replay the session afterwards. */
+async function saveCapturePng(pngB64: string, meta: {
+  spaceId: string; userId: string; action: string; windowTitle?: string;
+  windowId?: string; width?: number; height?: number;
+}): Promise<string | null> {
   try {
     const dir = join(config.dataDir, 'captures');
     await mkdir(dir, { recursive: true });
     const file = `${randomUUID()}.png`;
     await writeFile(join(dir, file), Buffer.from(pngB64, 'base64'));
+    await q(
+      `INSERT INTO captures (space_id, user_id, file, action, window_title, window_id, width, height)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [meta.spaceId, meta.userId, file, meta.action, meta.windowTitle ?? null,
+       meta.windowId ?? null, meta.width ?? null, meta.height ?? null]
+    );
     return `/api/captures/${file}`;
   } catch {
     return null;
@@ -85,7 +95,19 @@ async function runCuaOp(ctx: ToolContext, op: Record<string, any>, timeoutMs = 1
       // Keep screenshotUrl early in the object: the emitted tool result is
       // sliced to 4000 chars and the summary can exceed that.
       const png: string | undefined = data.png_b64;
-      const screenshotUrl = png ? await saveCapturePng(png) : null;
+      // screen_act results nest the follow-up capture under `after`
+      const cap = data.after ?? data;
+      const screenshotUrl = png
+        ? await saveCapturePng(png, {
+            spaceId: ctx.spaceId,
+            userId: ctx.userId,
+            action: op.action === 'capture' || !op.action ? 'capture' : `act:${op.action}`,
+            windowTitle: cap.window_title,
+            windowId: cap.window_id,
+            width: data.width,
+            height: data.height,
+          })
+        : null;
       if (png && providerAcceptsScreenshots(ctx.provider) && png.length * 0.75 < MAX_INLINE_SCREENSHOT_BYTES) {
         const visionSummary = data.summary ?? (data.after ? `${data.action_result ?? 'ok'}\n${data.after.summary}` : undefined) ?? row.result;
         return {

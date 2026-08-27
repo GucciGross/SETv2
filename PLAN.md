@@ -1,6 +1,6 @@
 # SET v2 — Product Roadmap: Deep Research & Show-Me Teaching
 
-Status: active · Owner: Gucci + SET copilot · Last updated: 2026-08-25
+Status: active · Owner: Gucci + SET copilot · Last updated: 2026-08-26
 
 ---
 
@@ -155,6 +155,55 @@ serve` on their machine. Original scope notes:
   hard off switch; never installed silently, never acts unfocused
 - Scope-limited: teach/demonstrate workflows the user asks for
 - Big surface — only build with Phase-2 usage data justifying it
+
+## Phase 4 — Agent computer use · *live (Linux)*
+
+The copilot sees and (with explicit opt-in) drives native desktop apps through
+the user's companion + cua-driver: `screen_capture` (annotated element index +
+screenshot with vision routing), `screen_act` (click/type/key/scroll, each
+followed by a fresh capture), layered consent (observe-only by default;
+`SET_ALLOW_INPUT=1` per machine; revocable pairing; workspace-level approval
+gate). Follow-ups shipped 2026-08-26: capture history gallery (every persisted
+screenshot = reviewable activity log), companion doctor (`--doctor`) +
+heartbeat surfaced in Settings → Companion, and multi-window targeting notes
+(ambiguous titles list candidate window_ids; silent fallback-to-newest is
+called out so the model never mistakes one window for another).
+
+## Phase 5 — Hosted cloud + LLM proxy billing · *design (next)*
+
+The self-host core is stable; the money path is a hosted control plane where
+users don't run Docker and don't bring keys. Same images, new surroundings:
+
+```
+Hosted SET (multi-tenant: spaces + memberships + JWT already isolate data)
+   │
+   ├── Signup/billing (Stripe) ── free tier → Pro (metered) → Team
+   │
+   ├── LLM gateway (the only cloud component users touch)
+   │     · platform provider row "SET Cloud" in the existing BYOK settings UI
+   │     · holds real upstream keys; per-space token metering + spend caps
+   │     · rate limits + hard cutoff at cap; BYOK rows keep working unchanged
+   │
+   └── Usage metering: gateway logs (space, model, tokens) → usage table
+         → Stripe metered billing; dashboard shows spend vs. cap
+```
+
+**Why this shape:** the server already routes all model calls through
+`llm/router.ts` with per-space providers — a hosted default provider is one
+row, not a rewrite. Spaces/memberships/`requireSpace` already give tenant
+isolation in one Postgres. The companion pairs with any `SET_URL`, so hosted
+users get computer use unchanged (still opt-in, still revocable).
+
+**Principles carried over:** hosted ≠ snooping — computer use stays opt-in
+per machine; capture history gets a retention setting (auto-delete after N
+days, default short); BYOK always remains the escape hatch (a space can point
+at its own endpoint and bypass billing entirely).
+
+**Build order:** (1) gateway as a thin OpenAI-compatible proxy + usage table,
+platform provider seeded per space; (2) Stripe checkout + portal, spend caps
+in Settings; (3) hosted deploy (compose unchanged + TLS + backups); (4)
+retention controls for captures. Open questions: region choice, model
+passthrough pricing vs. margin, team-tier seat math.
 
 ---
 

@@ -49,6 +49,7 @@ import DashboardView from './views/DashboardView';
 import Reset from './views/Reset';
 import Join from './views/Join';
 import ActivityView from './views/ActivityView';
+import CapturesView from './views/CapturesView';
 import MyTasksView from './views/MyTasksView';
 import { PagesList, DatabasesList } from './views/ListsView';
 import { ResearchList, ResearchRun } from './views/ResearchView';
@@ -93,6 +94,7 @@ const router = createBrowserRouter([
           { path: 'space/:spaceId/docs', element: <DocsView /> },
           { path: 'space/:spaceId/tasks', element: <MyTasksView /> },
           { path: 'space/:spaceId/activity', element: <ActivityView /> },
+          { path: 'space/:spaceId/captures', element: <CapturesView /> },
           { path: 'space/:spaceId/canvas', element: <CanvasView /> },
           { path: 'space/:spaceId/settings', element: <SettingsView /> },
         ],
