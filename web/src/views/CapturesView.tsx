@@ -17,9 +17,9 @@ function captureSrc(c: any): string {
 function ActionChip({ action }: { action: string }) {
   const isAct = action.startsWith('act:');
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border ${isAct ? 'border-amber-500/40 bg-amber-500/10 text-amber-300' : 'border-set-border bg-set-panel2 text-set-dim'}`}>
+    <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border shrink-0 whitespace-nowrap ${isAct ? 'border-amber-500/40 bg-amber-500/10 text-amber-300' : 'border-set-border bg-set-panel2 text-set-dim'}`}>
       {isAct ? <MousePointerClick size={10} /> : <Camera size={10} />}
-      {isAct ? action.slice(5) : 'capture'}
+      {isAct ? action.slice(4) : 'capture'}
     </span>
   );
 }

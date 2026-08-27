@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import psycopg
-from psycopg.types.json import Json
+from psycopg.types.json import Json, Jsonb
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://set:set@localhost:5432/set")
 
@@ -75,8 +75,12 @@ def log_event(run_id: str, type_: str, message: str, **detail) -> None:
 def set_progress(run_id: str, **fields) -> None:
     with conn() as c, c.cursor() as cur:
         cur.execute(
+            # Jsonb, not Json: a bare Json param types the arg as `json`, and
+            # there is no `jsonb || json` operator — every update failed with
+            # 'operator does not exist: jsonb || json', silently breaking
+            # per-page progress (the fuel-combustion run lost its fetch log)
             "UPDATE research_runs SET progress = progress || %s WHERE id = %s",
-            (Json(fields), run_id),
+            (Jsonb(fields), run_id),
         )
 
 

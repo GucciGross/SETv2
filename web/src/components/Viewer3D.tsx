@@ -4,6 +4,7 @@ import { OrbitControls, Grid, useGLTF, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { Boxes } from 'lucide-react';
 import { api, getToken } from '../lib/api';
 
 /**
@@ -27,10 +28,23 @@ export function askCopilot(text: string) {
   window.dispatchEvent(new CustomEvent('set:ask-copilot', { detail: text }));
 }
 
+/** WebGL available? Without it @react-three/fiber throws while creating the
+ *  renderer (headless browsers, hardware acceleration disabled) — detect up
+ *  front so the route degrades to a message + inspector instead of crashing. */
+function webglAvailable(): boolean {
+  try {
+    const c = document.createElement('canvas');
+    return !!(c.getContext('webgl2') ?? c.getContext('webgl'));
+  } catch {
+    return false;
+  }
+}
+
 export default function Viewer3D({ model, onPartLink }: { model: any; onPartLink?: (pageId: string) => void }) {
   const [explode, setExplode] = useState(0);
   const [selected, setSelected] = useState<PartInfo | null>(null);
   const [jointValues, setJointValues] = useState<Record<string, number>>({});
+  const [glOK] = useState(webglAvailable);
   const rawParts: any = model.parts ?? [];
   // glTF models store a flat part array; URDF models store {links, joints}
   const parts: any[] = Array.isArray(rawParts) ? rawParts : (rawParts.links ?? []);
@@ -44,6 +58,16 @@ export default function Viewer3D({ model, onPartLink }: { model: any; onPartLink
   return (
     <div className="h-full flex" data-viewer3d>
       <div className="flex-1 relative">
+        {!glOK ? (
+          <div className="h-full flex flex-col items-center justify-center gap-2 text-center p-6">
+            <Boxes size={30} className="text-set-dim" />
+            <p className="text-sm text-set-text">3D preview needs WebGL</p>
+            <p className="text-xs text-set-dim max-w-xs">
+              This browser can&apos;t create a WebGL context (hardware acceleration off or unavailable).
+              Enable GPU acceleration in your browser settings — the parts inspector still works.
+            </p>
+          </div>
+        ) : (
         <Canvas camera={{ position: [2.2, 1.6, 2.6], fov: 45 }} shadows>
           <color attach="background" args={['#0c0e13']} />
           <ambientLight intensity={0.5} />
@@ -65,6 +89,7 @@ export default function Viewer3D({ model, onPartLink }: { model: any; onPartLink
           )}
           <OrbitControls makeDefault />
         </Canvas>
+        )}
 
         {(model.kind === 'gltf') && (
           <div className="absolute top-3 left-3 set-card px-3 py-2 flex items-center gap-2 bg-set-panel/90">

@@ -260,30 +260,31 @@ export function ResearchRun() {
       )}
 
       <div className="grid md:grid-cols-2 gap-4">
-        {/* outline */}
-        <div className="set-card p-4">
+        {/* outline — min-w-0: long source URLs elsewhere on mobile must not inflate the column */}
+        <div className="set-card p-4 min-w-0">
           <h3 className="set-mono set-mono-dim mb-2">Research outline</h3>
           {outline.length === 0 && <p className="text-xs text-set-dim">Planning…</p>}
           <div className="space-y-1.5">
             {outline.map((sq: any) => (
-              <div key={sq.id} className="flex items-start gap-2 text-sm">
+              <div key={sq.id} className="flex items-start gap-2 text-sm min-w-0">
                 {sq.status === 'covered'
                   ? <CheckCircle2 size={14} className="text-green-400 mt-0.5 shrink-0" />
                   : <div className="w-3.5 h-3.5 rounded-full border border-set-dim/60 mt-1 shrink-0" />}
-                <span className={sq.status === 'covered' ? 'text-set-text' : 'text-set-dim'}>{sq.question}</span>
+                <span className={`min-w-0 ${sq.status === 'covered' ? 'text-set-text' : 'text-set-dim'}`}>{sq.question}</span>
               </div>
             ))}
           </div>
         </div>
 
         {/* sources */}
-        <div className="set-card p-4">
+        <div className="set-card p-4 min-w-0">
           <h3 className="set-mono set-mono-dim mb-2">Sources ({sources.length})</h3>
           {sources.length === 0 && <p className="text-xs text-set-dim">None yet.</p>}
           <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
             {sources.map((s: any) => (
               <a key={s.id} href={s.uri ?? '#'} target="_blank" rel="noreferrer"
-                 className="block text-xs text-set-dim hover:text-set-text truncate">
+                 className="block text-xs text-set-dim hover:text-set-text truncate min-w-0"
+                 title={s.name}>
                 <span className={
                   s.status === 'ready' ? 'text-green-400' : s.status === 'error' ? 'text-red-400' : 'text-amber-300'
                 }>● </span>
