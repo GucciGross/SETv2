@@ -16,7 +16,14 @@ function drawGlyphMask(kind, grid, marginPct = 0.13) {
   const tmp = document.createElement('canvas'); tmp.width = tmp.height = S;
   const tc = tmp.getContext('2d', { willReadFrequently: true });
   tc.fillStyle = '#fff';
-  if (kind === 'font') {
+  if (kind === 'word') {
+    // the original SET wordmark: full "SET", heavy rounded geometric sans
+    const fams = ['Ubuntu Sans', 'Ubuntu', 'DejaVu Sans', 'Liberation Sans', 'sans-serif'];
+    tc.font = `800 ${S*0.42}px ${fams.join(',')}`;
+    tc.letterSpacing = `${S*0.015}px`;
+    tc.textAlign = 'center'; tc.textBaseline = 'middle';
+    tc.fillText('SET', S/2, S/2 + S*0.01);
+  } else if (kind === 'font') {
     const fams = ['Inter','SF Pro Display','Helvetica Neue','Arial','DejaVu Sans','sans-serif'];
     tc.font = `900 ${S*0.72}px ${fams.join(',')}`;
     tc.textAlign = 'center'; tc.textBaseline = 'middle';
@@ -80,6 +87,26 @@ function renderIcon(N, kind, grid, {dither, marginPct}) {
   ctx.fillStyle = 'rgba(108,140,255,0.5)';
   const tickPairs = [[m,m],[N-m-tk,m],[m,N-m-tw],[N-m-tk,N-m-tw]];
   tickPairs.forEach(([tx,ty])=>{ ctx.fillRect(tx,ty,tk,tw); ctx.fillRect(tx,ty,tw,tk); });
+  if (g) {
+    // radial dither glow behind the letters — the original's soft blue halo,
+    // rebuilt in DitherGradient language (fine cells, ordered dither falloff)
+    let gy0=grid,gy1=0,gx0=grid,gx1=0;
+    for(let y=0;y<grid;y++)for(let x=0;x<grid;x++)if(g.mask[y][x]){gy0=Math.min(gy0,y);gy1=Math.max(gy1,y);gx0=Math.min(gx0,x);gx1=Math.max(gx1,x);}
+    const ccx=(gx0+gx1+1)/2/grid*N, ccy=(gy0+gy1+1)/2/grid*N;
+    const rad=Math.max(gx1-gx0,gy1-gy0)/grid*N*0.95;
+    const gc = Math.max(3, Math.round(N/80));   // ~6px cells at 512
+    const gcs = gc;
+    for(let cy=0; cy<N; cy+=gcs) for(let cx=0; cx<N; cx+=gcs){
+      const dx=cx+gcs/2-ccx, dy=cy+gcs/2-ccy;
+      const t=Math.min(1, Math.hypot(dx,dy)/rad);
+      const d=Math.pow(1-t,1.5);
+      if(d<=0.03) continue;
+      const gy=Math.floor(cy/gcs), gx=Math.floor(cx/gcs);
+      const lit = d > BAYER[gy&3][gx&3];
+      ctx.fillStyle=`rgba(${FILL},${(lit?0.085:0.02)*d+0.015})`;
+      ctx.fillRect(cx,cy,gcs+0.5,gcs+0.5);
+    }
+  }
   if (!g) return cv.toDataURL('image/png');
   const {mask} = g;
   // glyph bbox rows for the density ramp
