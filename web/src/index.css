@@ -70,15 +70,78 @@ body {
   }
 }
 
+/* ---------- Foundation: selection, focus, headings ---------- */
+::selection {
+  background: rgb(108 140 255 / 0.35);
+  color: #fff;
+}
+/* Keyboard focus gets a visible instrument ring; mouse clicks stay clean. */
+:focus-visible {
+  outline: 2px solid rgb(108 140 255 / 0.75);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+h1, h2, h3, h4 {
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+/* ---------- Texture system — the dither-kit's language as CSS ----------
+   The canvas charts dither with a Bayer matrix; these utilities echo that
+   with two offset dot grids (reads as ordered dither at 1px scale) so flat
+   surfaces carry SET's pixel identity without JS. */
+.tex-dither {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgb(158 172 205 / 0.09) 1px, transparent 1.15px),
+    radial-gradient(circle at 1px 1px, rgb(108 140 255 / 0.07) 1px, transparent 1.15px);
+  background-size: 6px 6px, 6px 6px;
+  background-position: 0 0, 3px 3px;
+}
+.tex-grid {
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.022) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+/* Stepped dissolve masks — hard alpha bands instead of a smooth fade, so a
+   textured layer breaks up like a dither ramp when it meets the page. */
+.dither-mask-b {
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, rgb(0 0 0 / 0.55) 75%, rgb(0 0 0 / 0.18) 90%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 55%, rgb(0 0 0 / 0.55) 75%, rgb(0 0 0 / 0.18) 90%, transparent 100%);
+}
+.dither-mask-t {
+  -webkit-mask-image: linear-gradient(to top, #000 55%, rgb(0 0 0 / 0.55) 75%, rgb(0 0 0 / 0.18) 90%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 55%, rgb(0 0 0 / 0.55) 75%, rgb(0 0 0 / 0.18) 90%, transparent 100%);
+}
+
+/* Corner registration marks — machined-plate corners for feature panels.
+   Pure background gradients; layer under content (it's a background). */
+.set-corners {
+  background-image:
+    linear-gradient(rgb(108 140 255 / 0.55), rgb(108 140 255 / 0.55)),
+    linear-gradient(rgb(108 140 255 / 0.55), rgb(108 140 255 / 0.55)),
+    linear-gradient(rgb(108 140 255 / 0.55), rgb(108 140 255 / 0.55)),
+    linear-gradient(rgb(108 140 255 / 0.55), rgb(108 140 255 / 0.55));
+  background-repeat: no-repeat;
+  background-size: 10px 1px, 1px 10px, 10px 1px, 1px 10px;
+  background-position: left top, left top, right bottom, right bottom;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a3040;
+  background: #262e40;
   border-radius: 4px;
 }
+::-webkit-scrollbar-thumb:hover {
+  background: #313a52;
+}
 ::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-corner {
   background: transparent;
 }
 
@@ -156,23 +219,46 @@ body {
 @keyframes mascot-float { 0% { opacity: 0; transform: translateY(4px) } 40% { opacity: 1 } 100% { opacity: 0; transform: translateY(-6px) } }
 .mascot-tail { animation: mascot-wiggle 0.8s ease-in-out infinite; transform-origin: 74px 72px; }
 
+/* ---------- Component layer ---------- */
+/* Card: hairline cage + top light catch + ink shadow, so panels sit ON the
+   canvas instead of floating in it. */
 .set-card {
-  @apply bg-set-panel border border-set-border rounded-xl;
+  @apply bg-set-panel border border-set-border rounded-xl shadow-card;
 }
 .set-input {
-  @apply bg-set-panel2 border border-set-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-set-accent w-full;
+  @apply bg-set-panel2 border border-set-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-set-accent focus:ring-1 focus:ring-set-accent/40 w-full transition-colors;
 }
+/* Secondary action: quiet panel chip that finds its accent on hover. */
 .set-btn {
-  @apply bg-set-accent/20 text-blue-200 border border-set-accent/40 rounded-lg px-3 py-1.5 text-sm hover:bg-set-accent/30 transition-colors;
+  @apply bg-set-panel2 text-set-text border border-set-border rounded-lg px-3 py-1.5 text-sm hover:border-set-accent/50 hover:text-white transition-all;
 }
+/* Primary action: solid accent with a pressed-in top light — tactile, no gloss. */
 .set-btn-primary {
-  @apply bg-set-accent text-white rounded-lg px-3 py-1.5 text-sm hover:brightness-110 transition-all;
+  @apply bg-set-accent text-white rounded-lg px-3 py-1.5 text-sm font-medium border border-set-accent transition-all;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22), 0 2px 8px -2px rgb(108 140 255 / 0.45);
+}
+.set-btn-primary:hover {
+  filter: brightness(1.1);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22), 0 4px 14px -4px rgb(108 140 255 / 0.6);
+}
+.set-btn-primary:active {
+  transform: translateY(1px);
+  filter: brightness(0.97);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1);
+}
+.set-btn-primary:disabled {
+  @apply opacity-40 pointer-events-none;
 }
 .set-btn-ghost {
   @apply text-set-dim hover:text-set-text hover:bg-set-panel2 rounded-lg px-2 py-1 text-sm transition-colors;
 }
+/* Chip: squared technical tag, not a SaaS pill. */
 .set-chip {
-  @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs border;
+  @apply inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs border bg-set-panel2/60;
+}
+/* Mono link — for technical cross-references (docs, repo). */
+.set-link {
+  @apply text-set-accent hover:text-white underline decoration-set-accent/40 underline-offset-4 transition-colors;
 }
 
 /* Spotlight tour (driver.js) themed to SET.

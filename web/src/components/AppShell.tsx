@@ -10,6 +10,7 @@ import { useApp, type PageMeta } from '../stores/app';
 import { api } from '../lib/api';
 import { startTour } from '../lib/tour';
 import { SetCopilotProvider, useSetScreenContext } from '../lib/copilot';
+import { DitherAvatar } from './dither-kit';
 import WelcomeModal from './onboarding/WelcomeModal';
 import GuideFab from './GuideFab';
 import Notifications from './Notifications';
@@ -263,7 +264,16 @@ function AppShellInner() {
         data-tour-sidebar
         className={`${railMode ? 'w-14' : 'w-64'} shrink-0 bg-set-panel border-r border-set-border flex flex-col transition-all max-md:w-64 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:transition-transform max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] ${mobileNav ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'}`}
       >
-        <div className="p-3 border-b border-set-border" data-tour="space-switcher">
+        <div className="p-3 border-b border-set-border tex-dither" data-tour="space-switcher">
+          <div className="flex items-center gap-2 mb-2.5">
+            <DitherAvatar name="SET" hue={222} size={20} bloom="low" className="shrink-0 rounded" />
+            {!railMode && (
+              <span className="font-bold text-white text-sm tracking-tight leading-none">
+                SET
+                <span className="set-mono set-mono-dim ml-2 align-middle">OS</span>
+              </span>
+            )}
+          </div>
           <div className="flex gap-1.5">
             <select
               className="set-input font-medium flex-1 min-w-0"
@@ -376,9 +386,12 @@ function AppShellInner() {
                         key={item.label}
                         to={item.to}
                         onClick={() => setMobileNav(false)}
-                        className={`flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-set-panel2 text-set-text ${active ? 'bg-set-panel2 text-white' : ''}`}
+                        className={`relative flex items-center gap-2 px-2 py-1.5 rounded-md text-set-text transition-colors ${active ? 'bg-set-panel2 text-white' : 'hover:bg-set-panel2/70'}`}
                         title={railMode ? item.label : undefined}
                       >
+                        {active && (
+                          <span className="absolute -left-2 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-full bg-set-accent shadow-[0_0_8px_rgb(108_140_255/0.8)]" />
+                        )}
                         <span className={active ? 'text-set-accent' : 'text-set-dim'}>{item.icon}</span> {item.label}
                       </Link>
                     );
@@ -472,11 +485,18 @@ function AppShellInner() {
 
       {/* Main */}
       <main className="flex-1 overflow-hidden flex flex-col min-w-0">
-        <div className="h-12 border-b border-set-border flex items-center px-3 gap-2 bg-set-panel/50">
+        <div className="h-12 border-b border-set-border flex items-center px-3 gap-2 bg-set-panel/50 backdrop-blur-sm">
           <button className="md:hidden set-btn-ghost p-1.5" onClick={() => setMobileNav(true)} aria-label="Open navigation">
             <Menu size={18} />
           </button>
-          <Notifications />
+          {/* Instrument breadcrumb — where am I, in mono */}
+          <div className="set-mono set-mono-dim truncate hidden sm:flex items-center gap-1.5 select-none">
+            <span className="text-set-accent/90">SET://</span>
+            <span className="text-set-text/80">{spaces.find((s) => s.id === currentSpaceId)?.name ?? 'space'}</span>
+            <span className="text-set-border">/</span>
+            <span>{location.pathname.replace(/^\/app\/space\/[^/]+\/?/, '').replace(/-/g, ' ') || 'dashboard'}</span>
+          </div>
+          <div className="ml-auto"><Notifications /></div>
         </div>
         <div className="flex-1 overflow-y-auto">
           <Outlet />

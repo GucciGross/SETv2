@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 // @ts-nocheck
-import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from '../components/DitherChart';
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, DitherGradient, DitherAvatar } from '../components/DitherChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import Checklist from '../components/onboarding/Checklist';
 import {
@@ -84,27 +84,33 @@ export default function DashboardView() {
         </div>
       </details>
 
-      {/* Hero greeting */}
-      <div className="flex items-center gap-4 mb-6">
-        <Mascot config={mascot} mood={overdue.length > 0 ? 'thinking' : 'idle'} size={56} />
-        <div>
-          <h1 className="text-2xl font-bold text-white">
-            {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}, {user?.name?.split(' ')[0]}
-          </h1>
-          <p className="text-sm text-set-dim">
-            {overdue.length > 0
-              ? `${overdue.length} assignment${overdue.length > 1 ? 's' : ''} overdue — let's catch up.`
-              : openTasks > 0
-                ? `${openTasks} open task${openTasks > 1 ? 's' : ''} across your workspace.`
-                : 'All clear. What would you like to work on?'}
-          </p>
+      {/* Hero greeting — the dither wash gives the canvas its brand texture */}
+      <div className="relative overflow-hidden rounded-xl border border-set-border bg-set-panel mb-6 shadow-card">
+        <DitherGradient from="blue" direction="up" opacity={0.1} cell={3} className="dither-mask-t" />
+        <div className="relative flex flex-wrap items-center gap-x-4 gap-y-3 p-5">
+          <Mascot config={mascot} mood={overdue.length > 0 ? 'thinking' : 'idle'} size={56} />
+          <div className="min-w-0 flex-1 basis-52">
+            <div className="set-mono set-mono-dim mb-1">
+              {space ? space.name.toUpperCase() : 'WORKSPACE'} · {new Date().toLocaleDateString('en', { weekday: 'short', day: '2-digit', month: 'short' }).toUpperCase()}
+            </div>
+            <h1 className="text-2xl font-bold text-white">
+              {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}, {user?.name?.split(' ')[0]}
+            </h1>
+            <p className="text-sm text-set-dim">
+              {overdue.length > 0
+                ? `${overdue.length} assignment${overdue.length > 1 ? 's' : ''} overdue — let's catch up.`
+                : openTasks > 0
+                  ? `${openTasks} open task${openTasks > 1 ? 's' : ''} across your workspace.`
+                  : 'All clear. What would you like to work on?'}
+            </p>
+          </div>
+          <button
+            className="ml-auto set-btn flex items-center gap-1.5 text-xs shrink-0"
+            onClick={() => navigate(`/app/space/${spaceId}/tasks`)}
+          >
+            <ListTodo size={14} /> My Tasks <ArrowRight size={12} />
+          </button>
         </div>
-        <button
-          className="ml-auto set-btn flex items-center gap-1.5 text-xs"
-          onClick={() => navigate(`/app/space/${spaceId}/tasks`)}
-        >
-          <ListTodo size={14} /> My Tasks <ArrowRight size={12} />
-        </button>
       </div>
 
       {/* Stat cards */}
@@ -114,14 +120,17 @@ export default function DashboardView() {
           { icon: <BookOpen size={18} />, label: 'Notebooks', value: stats?.notebooks ?? '—', to: `/app/space/${spaceId}/notebooks` },
           { icon: <Database size={18} />, label: 'Databases', value: stats?.databases ?? '—', to: `/app/space/${spaceId}/databases` },
           { icon: <ListTodo size={18} />, label: 'My Tasks', value: openTasks, to: `/app/space/${spaceId}/tasks` },
-        ].map((card) => (
+        ].map((card, i) => (
           <button
             key={card.label}
-            className="set-card p-4 text-left hover:border-set-accent/40 transition-colors"
+            className="group set-card p-4 text-left hover:border-set-accent/40 transition-all hover:-translate-y-0.5 hover:shadow-pop"
             onClick={() => navigate(card.to)}
           >
-            <div className="text-set-dim mb-2">{card.icon}</div>
-            <div className="text-2xl font-bold text-white">{card.value}</div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-set-dim group-hover:text-set-accent transition-colors">{card.icon}</span>
+              <span className="set-mono set-mono-dim opacity-60">{String(i + 1).padStart(2, '0')}</span>
+            </div>
+            <div className="text-2xl font-bold text-white set-mono-num">{card.value}</div>
             <div className="set-mono set-mono-dim">{card.label}</div>
           </button>
         ))}
@@ -192,7 +201,12 @@ export default function DashboardView() {
             <ListTodo size={15} className="text-green-300" />
             <h3 className="set-mono set-mono-dim">My assignments</h3>
           </div>
-          {(tasks?.paths ?? []).length === 0 && <p className="text-sm text-set-dim">No assignments.</p>}
+          {(tasks?.paths ?? []).length === 0 && (
+            <div className="flex items-center gap-3 py-1">
+              <DitherAvatar name={space?.name ?? 'set'} hue={222} size={28} className="rounded shrink-0 opacity-70" />
+              <p className="text-sm text-set-dim">No assignments.</p>
+            </div>
+          )}
           {(tasks?.paths ?? []).slice(0, 4).map((p: any) => {
             const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
             const isOverdue = p.due_date && new Date(p.due_date) < new Date() && pct < 100;
@@ -225,7 +239,12 @@ export default function DashboardView() {
             <Users size={15} className="text-amber-300" />
             <h3 className="set-mono set-mono-dim">Recent activity</h3>
           </div>
-          {activity.length === 0 && <p className="text-sm text-set-dim">Nothing yet.</p>}
+          {activity.length === 0 && (
+            <div className="flex items-center gap-3 py-1">
+              <DitherAvatar name={(user?.name ?? 'set') + ':act'} hue={222} size={28} className="rounded shrink-0 opacity-70" />
+              <p className="text-sm text-set-dim">Nothing yet.</p>
+            </div>
+          )}
           {activity.slice(0, 6).map((a, i) => (
             <div key={i} className="flex items-start gap-2.5 py-1.5 border-t border-set-border/30 first:border-t-0 text-sm">
               <Bell size={12} className="mt-1 text-set-dim shrink-0" />

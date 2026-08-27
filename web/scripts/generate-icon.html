@@ -1,0 +1,116 @@
+<!doctype html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<script>
+// Dithered SET icon generator v2 — runs in-browser so we can use real
+// typography and canvas paths. Outputs dataURLs for a list of specs.
+
+// ---- dither-kit constants ----
+const BAYER = [[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]].map(r => r.map(v => (v+0.5)/16));
+const FILL = [108,140,255], LINE = [176,196,255];
+const BG_TOP = [13,16,23], BG_BOT = [20,26,40];
+
+function drawGlyphMask(kind, grid, marginPct = 0.13) {
+  // sample source: big offscreen canvas, ink coverage per cell
+  const S = 400;
+  const tmp = document.createElement('canvas'); tmp.width = tmp.height = S;
+  const tc = tmp.getContext('2d', { willReadFrequently: true });
+  tc.fillStyle = '#fff';
+  if (kind === 'font') {
+    const fams = ['Inter','SF Pro Display','Helvetica Neue','Arial','DejaVu Sans','sans-serif'];
+    tc.font = `900 ${S*0.72}px ${fams.join(',')}`;
+    tc.textAlign = 'center'; tc.textBaseline = 'middle';
+    const w = tc.measureText('S').width;
+    tc.save();
+    tc.translate(S/2, S/2 + S*0.02);
+    const k = Math.min(1, (S*0.82)/w);
+    tc.scale(k, 1);
+    tc.fillText('S', 0, 0);
+    tc.restore();
+  } else {
+    const cx = S/2, cy = S/2, r = S*0.185, lw = S*0.115, h = r*0.92;
+    const T = Math.PI/180;
+    tc.lineWidth = lw; tc.lineCap = 'round'; tc.strokeStyle = '#fff';
+    tc.beginPath(); tc.arc(cx, cy - h, r, -40*T, 126*T, true); tc.stroke();
+    tc.beginPath(); tc.arc(cx, cy + h, r, 140*T, 306*T, true); tc.stroke();
+  }
+  const data = tc.getImageData(0,0,S,S).data;
+  const alpha = (x,y) => data[(y*S+x)*4+3];
+  let x0=S,y0=S,x1=0,y1=0;
+  for (let y=0;y<S;y++) for (let x=0;x<S;x++) if (alpha(x,y)>40) { if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+  if (x1<=x0) return null;
+  // fit the bbox INTO a centered sub-grid keeping aspect
+  const bw=x1-x0, bh=y1-y0;
+  const gMargin = Math.max(2, Math.round(grid*marginPct));
+  const gAvailW = grid-gMargin*2, gAvailH = grid-gMargin*2;
+  const sc = Math.min(gAvailW/bw, gAvailH/bh);
+  const gW = Math.max(1,Math.round(bw*sc)), gH = Math.max(1,Math.round(bh*sc));
+  const offX = Math.floor((grid-gW)/2), offY = Math.floor((grid-gH)/2);
+  const mask = Array.from({length:grid},()=>Array(grid).fill(false));
+  for (let gy=0; gy<gH; gy++) for (let gx=0; gx<gW; gx++) {
+    const X0=Math.floor(x0+bw*gx/gW), X1=Math.ceil(x0+bw*(gx+1)/gW);
+    const Y0=Math.floor(y0+bh*gy/gH), Y1=Math.ceil(y0+bh*(gy+1)/gH);
+    let acc=0,n=0;
+    for(let y=Y0;y<Y1&&y<S;y+=2) for(let x=X0;x<X1&&x<S;x+=2){acc+=alpha(x,y);n++;}
+    mask[offY+gy][offX+gx]=acc/Math.max(n,1)/255 > 0.46;
+  }
+  const out = mask.map(r=>r.slice());
+  for(let y=1;y<grid-1;y++)for(let x=1;x<grid-1;x++){
+    const n=(+mask[y-1][x])+(+mask[y+1][x])+(+mask[y][x-1])+(+mask[y][x+1]);
+    if(!mask[y][x] && n>=3) out[y][x]=true;
+    if(mask[y][x] && n===0) out[y][x]=false;
+  }
+  return {mask:out};
+}
+
+function renderIcon(N, kind, grid, {dither, marginPct}) {
+  const g = drawGlyphMask(kind, grid, marginPct ?? 0.13);
+  const cv = document.createElement('canvas'); cv.width=cv.height=N;
+  const ctx = cv.getContext('2d');
+  // plate
+  const grad = ctx.createLinearGradient(0,0,N,N);
+  grad.addColorStop(0,'#0e1119'); grad.addColorStop(1,'#131927');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,N,N);
+  // subtle dither texture on plate
+  const cell = N/grid;
+  ctx.fillStyle='rgba(158,172,205,0.05)';
+  for(let y=0;y<N;y+=Math.max(3,cell*0.35)) for(let x=((y/3)|0)%2?Math.max(3,cell*0.35):0;x<N;x+=Math.max(6,cell*0.7)) ctx.fillRect(x,y,Math.max(1,cell*0.14),Math.max(1,cell*0.14));
+  // corner ticks
+  const tk = Math.max(2, cell*0.55), tw = Math.max(1, cell*0.09), m = Math.max(2, N*0.037);
+  ctx.fillStyle = 'rgba(108,140,255,0.5)';
+  const tickPairs = [[m,m],[N-m-tk,m],[m,N-m-tw],[N-m-tk,N-m-tw]];
+  tickPairs.forEach(([tx,ty])=>{ ctx.fillRect(tx,ty,tk,tw); ctx.fillRect(tx,ty,tw,tk); });
+  if (!g) return cv.toDataURL('image/png');
+  const {mask} = g;
+  // glyph bbox rows for the density ramp
+  let gy0=grid,gy1=0,gx0=grid,gx1=0;
+  for(let y=0;y<grid;y++)for(let x=0;x<grid;x++)if(mask[y][x]){gy0=Math.min(gy0,y);gy1=Math.max(gy1,y);gx0=Math.min(gx0,x);gx1=Math.max(gx1,x);}
+  const span = Math.max(1,gy1-gy0);
+  const cs = cell;
+  for(let y=0;y<grid;y++)for(let x=0;x<grid;x++){
+    if(!mask[y][x]) continue;
+    const px=x*cs, py=y*cs;
+    const edge = !mask[y-1]?.[x]||!mask[y+1]?.[x]||!mask[y][x-1]||!mask[y][x+1];
+    if(edge){
+      ctx.fillStyle=`rgba(${LINE},0.9)`; ctx.fillRect(px,py,cs+0.5,cs+0.5);
+      continue;
+    }
+    // gentler dissolve: punchier fill, softer off-tier — icons need more
+    // contrast than chart areas at this scale
+    const density = 0.45+0.55*((y-gy0)/span);
+    const base = 0.66+0.34*density;
+    if(dither){
+      const lit = density > BAYER[y&3][x&3]-0.06;
+      ctx.fillStyle=`rgba(${FILL},${Math.min(1,lit?base:base*0.45)})`;
+    } else {
+      ctx.fillStyle=`rgba(${FILL},${Math.min(1,base)})`;
+    }
+    ctx.fillRect(px,py,cs+0.5,cs+0.5);
+  }
+  return cv.toDataURL('image/png');
+}
+
+window.renderSet = (N,kind,grid,dither,marginPct) => renderIcon(N,kind,grid,{dither,marginPct});
+document.title='ready';
+</script>
+</body></html>

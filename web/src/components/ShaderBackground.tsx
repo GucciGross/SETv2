@@ -128,6 +128,8 @@ export default function ShaderBackground({ className = '' }: { className?: strin
   return (
     <div className={`absolute inset-0 overflow-hidden bg-gradient-to-br from-[#05070f] via-[#0a0f22] to-[#0d0a1a] ${className}`} aria-hidden>
       <canvas ref={ref} className="absolute inset-0 w-full h-full" />
+      {/* the dither language, over the nebula — one texture system everywhere */}
+      <div className="absolute inset-0 tex-dither opacity-70" />
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#05070a]" />
     </div>
   );

@@ -38,24 +38,30 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] overflow-y-auto bg-gradient-to-br from-set-bg via-[#101422] to-[#141126]">
-      <div className="w-full max-w-md">
+    <div className="relative min-h-screen flex items-center justify-center p-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] overflow-y-auto bg-set-bg">
+      {/* dither floor — brand texture instead of a flat gradient void */}
+      <div className="pointer-events-none absolute inset-0 tex-grid opacity-70" aria-hidden />
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-[45vh] tex-dither dither-mask-t opacity-80"
+        aria-hidden
+        style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgb(108 140 255 / 0.14) 1px, transparent 1.15px), radial-gradient(circle at 1px 1px, rgb(139 92 246 / 0.1) 1px, transparent 1.15px)' }}
+      />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-set-accent/40 to-transparent" aria-hidden />
+      <div className="relative w-full max-w-md">
         <div className="text-center mb-8">
           <a href="/" className="text-xs text-set-dim hover:text-set-text">&larr; back to set home</a>
 
-          <div className="text-5xl mb-3"></div>
-          <h1 className="text-3xl font-bold text-white">SET</h1>
-          <p className="text-set-dim mt-2">Strategic Enablement Toolkit — your Knowledge + Learning OS</p>
-          <p className="text-xs text-set-dim mt-1">Workspaces · knowledge graph · grounded research · AI agents · work surfaces</p>
+          <h1 className="text-3xl font-bold text-white mt-4 tracking-tight">SET</h1>
+          <p className="set-mono set-mono-dim mt-2">KNOWLEDGE + LEARNING OS · SELF-HOSTED</p>
         </div>
-        <form onSubmit={submit} className="set-card p-6 space-y-4">
-          <div className="flex gap-2 p-1 bg-set-panel2 rounded-lg">
+        <form onSubmit={submit} className="set-card set-corners p-6 space-y-4">
+          <div className="flex gap-2 p-1 bg-set-panel2 rounded-lg border border-set-border/60">
             {(['login', 'register'] as const).map((m) => (
               <button
                 key={m}
                 type="button"
                 onClick={() => setMode(m)}
-                className={`flex-1 py-1.5 rounded-md text-sm transition-colors ${mode === m ? 'bg-set-accent text-white' : 'text-set-dim hover:text-set-text'}`}
+                className={`flex-1 py-1.5 rounded-md text-sm transition-colors ${mode === m ? 'bg-set-accent text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.2)]' : 'text-set-dim hover:text-set-text'}`}
               >
                 {m === 'login' ? 'Sign in' : 'Create account'}
               </button>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { DitherAvatar } from '../components/dither-kit';
 import {
   BookOpen, FileText, Loader2, Search, Telescope, XCircle, CheckCircle2, AlertTriangle, Sparkles, Package, Link2,
 } from 'lucide-react';
@@ -137,7 +138,12 @@ export function ResearchList() {
         </div>
       </div>
 
-      {runs.length === 0 && <p className="text-sm text-set-dim">No research runs yet.</p>}
+      {runs.length === 0 && (
+        <div className="flex items-center gap-3 py-2">
+          <DitherAvatar name="deep-research" hue={265} size={30} className="rounded shrink-0 opacity-80" />
+          <p className="text-sm text-set-dim">No research runs yet — the crew is standing by.</p>
+        </div>
+      )}
       <div className="space-y-2">
         {runs.map((r) => (
           <Link
