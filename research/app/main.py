@@ -30,6 +30,10 @@ class RunRequest(BaseModel):
     notebook_id: str | None = None
     max_pages: int = 40
     max_minutes: int = 25  # 5 min … 72 h; long runs are legitimate
+    # enum ('ste'|'professional'|'executive'|'study') or 'tpl:<id>' — the
+    # server always sends it; dropping the field made req.style raise AFTER
+    # pydantic silently ignored the extra key, leaving runs stuck 'pending'
+    style: str = "ste"
     llm_config: dict = {}          # {base_url, api_key, chat_model}
     style_instructions: str | None = None  # workspace-defined report template (overrides style enum)
     # optional Firecrawl-compatible override (self-hosted or cloud); the
@@ -55,37 +59,40 @@ async def create_run(req: RunRequest) -> dict:
 
 
 def _execute(req: RunRequest) -> None:
-    """Runs in a worker thread; owns status transitions around the flow."""
+    """Runs in a worker thread; owns status transitions around the flow.
+    Everything up to kickoff sits inside the try: any construction failure
+    must mark the run errored, not leave it pending forever."""
     from . import flow as flow_mod
 
     import os
     llm_cfg = dict(req.llm_config)
-    layer = WebLayer(
-        searxng_url=os.environ.get("SEARXNG_URL", ""),
-        chrome_url=os.environ.get("CHROME_CDP_URL", ""),
-        playwright_url=os.environ.get("PLAYWRIGHT_URL", ""),
-        firecrawl_url=req.firecrawl_url or "",
-        firecrawl_key=req.firecrawl_key,
-        # vision-tuned model reads unextractable pages by eye (mixed-model crews)
-        vision_config=(
-            {"base_url": llm_cfg.get("base_url"), "api_key": llm_cfg.get("api_key"),
-             "model": llm_cfg["vision_model"]}
-            if llm_cfg.get("base_url") and llm_cfg.get("vision_model") else None
-        ),
-    )
-    state = ResearchState(
-        run_id=req.run_id,
-        question=req.question,
-        llm_config=req.llm_config,
-        style_instructions=req.style_instructions or "",
-        style=req.style or "ste",
-        pages_budget=max(1, min(req.max_pages, 120)),
-        deadline=__import__("time").time() + max(5, min(req.max_minutes, 4320)) * 60,
-        search_enabled=layer.has_search,
-    )
-    flow_mod.WEB = layer
-    flow_mod.STATE = None  # bound to the flow's live state inside @start
+    layer = None
     try:
+        layer = WebLayer(
+            searxng_url=os.environ.get("SEARXNG_URL", ""),
+            chrome_url=os.environ.get("CHROME_CDP_URL", ""),
+            playwright_url=os.environ.get("PLAYWRIGHT_URL", ""),
+            firecrawl_url=req.firecrawl_url or "",
+            firecrawl_key=req.firecrawl_key,
+            # vision-tuned model reads unextractable pages by eye (mixed-model crews)
+            vision_config=(
+                {"base_url": llm_cfg.get("base_url"), "api_key": llm_cfg.get("api_key"),
+                 "model": llm_cfg["vision_model"]}
+                if llm_cfg.get("base_url") and llm_cfg.get("vision_model") else None
+            ),
+        )
+        state = ResearchState(
+            run_id=req.run_id,
+            question=req.question,
+            llm_config=req.llm_config,
+            style_instructions=req.style_instructions or "",
+            style=req.style or "ste",
+            pages_budget=max(1, min(req.max_pages, 120)),
+            deadline=__import__("time").time() + max(5, min(req.max_minutes, 4320)) * 60,
+            search_enabled=layer.has_search,
+        )
+        flow_mod.WEB = layer
+        flow_mod.STATE = None  # bound to the flow's live state inside @start
         db.log_event(req.run_id, "start", "Research worker picked up the run",
                      search_enabled=state.search_enabled, pages_budget=state.pages_budget)
         DeepResearchFlow().kickoff(inputs=state.model_dump())
@@ -98,4 +105,5 @@ def _execute(req: RunRequest) -> None:
         db.set_status(req.run_id, "error", error=str(e)[:800])
         db.log_event(req.run_id, "error", f"Run failed: {str(e)[:200]}")
     finally:
-        layer.shutdown()
+        if layer is not None:
+            layer.shutdown()
