@@ -70,10 +70,13 @@ services:
     profiles: ["research"]
     environment:
       DATABASE_URL: postgres://set:${POSTGRES_PASSWORD:-set}@db:5432/set
+      DATA_DIR: /app/data
       SEARXNG_URL: http://searxng:8080
       CHROME_CDP_URL: http://chrome:9222
       # optional Playwright-fallback renderer (not shipped; set to enable):
       # PLAYWRIGHT_URL: http://playwright-service:3000
+    volumes:
+      - server_data:/app/data
     depends_on:
       db:
         condition: service_healthy
