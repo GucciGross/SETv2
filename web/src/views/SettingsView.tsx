@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera } from 'lucide-react';
+import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera, Gauge, Cloud } from 'lucide-react';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 import McpSettings from '../components/McpSettings';
@@ -339,16 +339,50 @@ function SurfacesTab({ spaceId }: { spaceId: string }) {
 function ProvidersTab({ spaceId }: { spaceId: string }) {
   const [providers, setProviders] = useState<any[]>([]);
   const [presets, setPresets] = useState<any[]>([]);
+  const [gatewayEnabled, setGatewayEnabled] = useState(false);
+  const [usage, setUsage] = useState<{ month: string; totals: any[]; daily: any[]; billing: any } | null>(null);
+  const [caps, setCaps] = useState({ capTokens: '', capUsd: '' });
+  const [capsSaved, setCapsSaved] = useState(false);
+  const [platformMsg, setPlatformMsg] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, any>>({});
   const [form, setForm] = useState({ name: '', baseUrl: '', apiKey: '', chatModel: '', embedModel: '', isDefault: false });
 
   const load = async () => {
-    setProviders((await api.get(`/spaces/${spaceId}/providers`)).providers);
+    const r = await api.get(`/spaces/${spaceId}/providers`);
+    setProviders(r.providers);
+    setGatewayEnabled(!!r.gatewayEnabled);
     setPresets((await api.get('/providers/presets')).presets);
+    const u = await api.get(`/spaces/${spaceId}/usage`).catch(() => null);
+    if (u) {
+      setUsage(u);
+      setCaps({
+        capTokens: u.billing?.capTokens ? String(u.billing.capTokens) : '',
+        capUsd: u.billing?.capUsd ? String(u.billing.capUsd) : '',
+      });
+    }
   };
   useEffect(() => {
     load();
   }, [spaceId]);
+
+  const saveCaps = async () => {
+    await api.patch(`/spaces/${spaceId}/settings`, {
+      settings: { billing: { capTokens: caps.capTokens ? Number(caps.capTokens) : null, capUsd: caps.capUsd ? Number(caps.capUsd) : null } },
+    });
+    setCapsSaved(true);
+    setTimeout(() => setCapsSaved(false), 1500);
+  };
+
+  const enablePlatform = async () => {
+    setPlatformMsg(null);
+    try {
+      await api.post(`/spaces/${spaceId}/providers/platform`, {});
+      setPlatformMsg('SET Cloud enabled and set as default provider.');
+      load();
+    } catch (e: any) {
+      setPlatformMsg(e.message);
+    }
+  };
 
   const create = async () => {
     if (!form.name || !form.baseUrl) return;
@@ -368,11 +402,63 @@ function ProvidersTab({ spaceId }: { spaceId: string }) {
     setTestResults((t) => ({ ...t, [id]: res }));
   };
 
+  const hasCloud = providers.some((p) => p.name === 'SET Cloud (managed)');
+  const monthTokens = usage?.totals?.reduce((s: number, t: any) => s + t.total_tokens, 0) ?? 0;
+  const monthCost = usage?.totals?.reduce((s: number, t: any) => s + Number(t.cost_usd ?? 0), 0) ?? 0;
+
   return (
     <div>
       <p className="text-sm text-set-dim mb-3">
         Bring Your Own LLM — any OpenAI-compatible endpoint works. Ollama users: start ollama and use <code className="text-violet-300">http://host.docker.internal:11434/v1</code>.
       </p>
+
+      {/* usage & spend — metered by the LLM gateway (SET Cloud); caps are enforced per calendar month */}
+      <div className="set-card p-4 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <h3 className="text-sm font-semibold text-white flex items-center gap-1.5"><Gauge size={14} /> Usage &amp; spend</h3>
+          <span className="text-xs text-set-dim">{usage?.month ?? ''}</span>
+          <span className="ml-auto text-xs text-set-dim">{monthTokens.toLocaleString()} tokens{monthCost > 0 ? ` · $${monthCost.toFixed(2)}` : ''} this month</span>
+        </div>
+        {usage?.totals?.length ? (
+          <div className="space-y-1 mb-3">
+            {usage.totals.map((t: any, i: number) => (
+              <div key={i} className="flex items-center gap-2 text-xs border border-set-border rounded-lg px-2.5 py-1.5">
+                <span className={`set-chip text-[10px] border ${t.kind === 'chat' ? 'border-set-accent/40 bg-set-accent/10 text-blue-200' : 'border-set-border bg-set-panel2 text-set-dim'}`}>{t.kind}</span>
+                <span className="font-mono text-set-text truncate flex-1">{t.model || '—'}</span>
+                <span className="text-set-dim">{t.requests} req · {t.prompt_tokens.toLocaleString()} in / {t.completion_tokens.toLocaleString()} out</span>
+                {Number(t.cost_usd) > 0 && <span className="text-amber-300">${Number(t.cost_usd).toFixed(3)}</span>}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-set-dim mb-3">No metered usage this month{gatewayEnabled ? '' : ' — usage is metered when the space uses the SET Cloud provider.'}</p>
+        )}
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-xs text-set-dim">
+            <span className="block mb-1">Token cap / month</span>
+            <input className="set-input w-36" type="number" min={0} placeholder="unlimited" value={caps.capTokens} onChange={(e) => setCaps({ ...caps, capTokens: e.target.value })} />
+          </label>
+          <label className="text-xs text-set-dim">
+            <span className="block mb-1">Spend cap ($ / month)</span>
+            <input className="set-input w-36" type="number" min={0} step="0.01" placeholder="unlimited" value={caps.capUsd} onChange={(e) => setCaps({ ...caps, capUsd: e.target.value })} />
+          </label>
+          <button className="set-btn text-xs" onClick={saveCaps}>{capsSaved ? 'Saved' : 'Save caps'}</button>
+          <span className="text-[11px] text-set-dim">Caps apply to SET Cloud calls and cut off hard at the limit.</span>
+        </div>
+      </div>
+
+      {/* managed platform provider — only offered when the server has a gateway configured */}
+      {gatewayEnabled && !hasCloud && (
+        <div className="set-card p-4 mb-4 flex flex-wrap items-center gap-3">
+          <Cloud size={18} className="text-blue-300 shrink-0" />
+          <div className="flex-1 min-w-[220px]">
+            <div className="text-sm text-white">SET Cloud <span className="set-chip border-set-accent/40 bg-set-accent/10 text-blue-200">managed</span></div>
+            <div className="text-xs text-set-dim">Models served by this deployment&apos;s gateway — metered per workspace, capped above, no keys to manage. Your own providers keep working and can take over as default any time.</div>
+            {platformMsg && <p className="text-xs mt-1 text-amber-300">{platformMsg}</p>}
+          </div>
+          <button className="set-btn-primary text-xs" onClick={enablePlatform}>Enable SET Cloud</button>
+        </div>
+      )}
 
       <div className="set-card p-4 mb-4">
         <div className="flex flex-wrap gap-1.5 mb-3">
@@ -384,13 +470,13 @@ function ProvidersTab({ spaceId }: { spaceId: string }) {
           ))}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <input className="set-input" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <input className="set-input" placeholder="Base URL (https://…/v1)" value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} />
-          <input className="set-input" placeholder="API key (optional for local)" value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} />
-          <input className="set-input" placeholder="Chat model (e.g. llama3.1)" value={form.chatModel} onChange={(e) => setForm({ ...form, chatModel: e.target.value })} />
-          <input className="set-input" placeholder="Embedding model (e.g. nomic-embed-text)" value={form.embedModel} onChange={(e) => setForm({ ...form, embedModel: e.target.value })} />
+          <input className="set-input" placeholder="Name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          <input className="set-input" placeholder="Base URL (https://…/v1)" value={form.baseUrl} onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))} />
+          <input className="set-input" placeholder="API key (optional for local)" value={form.apiKey} onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))} />
+          <input className="set-input" placeholder="Chat model (e.g. llama3.1)" value={form.chatModel} onChange={(e) => setForm((f) => ({ ...f, chatModel: e.target.value }))} />
+          <input className="set-input" placeholder="Embedding model (e.g. nomic-embed-text)" value={form.embedModel} onChange={(e) => setForm((f) => ({ ...f, embedModel: e.target.value }))} />
           <label className="flex items-center gap-2 text-sm text-set-dim">
-            <input type="checkbox" className="accent-set-accent" checked={form.isDefault} onChange={(e) => setForm({ ...form, isDefault: e.target.checked })} />
+            <input type="checkbox" className="accent-set-accent" checked={form.isDefault} onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))} />
             Set as default
           </label>
         </div>
@@ -758,16 +844,23 @@ function CompanionTab({ spaceId }: { spaceId: string }) {
   const [tokens, setTokens] = useState<any[]>([]);
   const [companions, setCompanions] = useState<any[] | null>(null);
   const [fresh, setFresh] = useState<string | null>(null);
+  const [retentionDays, setRetentionDays] = useState<number>(30);
 
   const load = () => {
     api.get(`/spaces/${spaceId}/companion/tokens`).then((r) => setTokens(r.tokens)).catch(() => {});
     api.get(`/spaces/${spaceId}/companion/health`).then((r) => setCompanions(r.companions)).catch(() => {});
+    api.get(`/spaces/${spaceId}/settings`).then(({ settings }) => setRetentionDays(Number(settings?.captures?.retentionDays ?? 30))).catch(() => {});
   };
   useEffect(() => {
     load();
     const t = setInterval(load, 30_000); // live companion health refresh
     return () => clearInterval(t);
   }, [spaceId]);
+
+  const setRetention = async (days: number) => {
+    setRetentionDays(days);
+    await api.patch(`/spaces/${spaceId}/settings`, { settings: { captures: { retentionDays: days } } });
+  };
 
   const create = async () => {
     const { token } = await api.post(`/spaces/${spaceId}/companion/tokens`, { name: `companion-${new Date().toISOString().slice(0, 10)}` });
@@ -786,6 +879,21 @@ function CompanionTab({ spaceId }: { spaceId: string }) {
         <a className="set-btn text-xs flex items-center gap-1" href={`/app/space/${spaceId}/captures`}>
           <Camera size={13} /> Capture history
         </a>
+        <label className="text-xs text-set-dim flex items-center gap-1.5">
+          Keep captures
+          <select
+            className="set-input w-28 py-1 text-xs"
+            value={retentionDays}
+            onChange={(e) => setRetention(Number(e.target.value))}
+            title="Captures older than this are deleted automatically"
+          >
+            <option value={7}>7 days</option>
+            <option value={30}>30 days</option>
+            <option value={90}>90 days</option>
+            <option value={365}>1 year</option>
+            <option value={0}>forever</option>
+          </select>
+        </label>
       </div>
 
       {/* live health — heartbeats from the companion every ~45s */}

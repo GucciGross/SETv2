@@ -227,7 +227,8 @@ docker-compose.yml single-command self-host
 - **Phase 2 — Collaboration + agents** ✅ live sync + presence, A2UI generative UI, HITL agents, team spaces, MCP server
 - **Phase 3 — Interactive learning** ✅ 3D environments, URDF robotics with joint animation, native desktop teaching demos
 - **Phase 4 — Computer use** ✅ agent screen capture (annotated), clicks/typing/scroll with layered consent, vision routing for mixed model fleets
-- **Next** — capture history surface, companion doctor/diagnostics, browser-route unification, hosted cloud + LLM proxy billing
+- **Shipped follow-ups** ✅ capture history gallery, companion doctor + live health heartbeats, multi-window targeting notes, capture retention controls, LLM gateway (metered "SET Cloud" provider with per-workspace token/spend caps — `docker-compose.cloud.yml`)
+- **Next** — browser-route unification, hosted cloud + Stripe metered billing on top of the gateway
 
 ## Monetization model
 

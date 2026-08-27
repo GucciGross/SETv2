@@ -46,6 +46,9 @@ const env = z
     TELEMETRY_FLUSH_MINUTES: z.coerce.number().default(360), // 6h
     // Deep-research worker (docker compose service "research"; see PLAN.md)
     RESEARCH_SERVICE_URL: z.string().default('http://research:8000'),
+    // LLM gateway (PLAN.md Phase 5): internal URL of the OpenAI-compatible
+    // proxy. When set, spaces can enable the managed "SET Cloud" provider.
+    GATEWAY_URL: z.string().optional(),
   })
   .passthrough()
   .parse(process.env);
@@ -80,6 +83,7 @@ export const config = {
   registrationOpen: env.REGISTRATION_OPEN !== '0',
   mcpEnabled: env.MCP_ENABLED !== '0',
   researchServiceUrl: env.RESEARCH_SERVICE_URL,
+  gatewayUrl: env.GATEWAY_URL,
   transcribe: {
     baseUrl: env.TRANSCRIBE_BASE_URL || env.LLM_BASE_URL,
     apiKey: env.TRANSCRIBE_API_KEY || env.LLM_API_KEY,

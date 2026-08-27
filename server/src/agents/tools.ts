@@ -7,9 +7,13 @@ import type { Provider } from '../llm/router.js';
 import type { ToolDef } from '../llm/router.js';
 import { providerAcceptsScreenshots, MAX_INLINE_SCREENSHOT_BYTES } from './visionRouting.js';
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from '../config.js';
+
+/** Default capture retention (days). 0 = keep forever; overridable per space
+ *  in Settings → Companion (settings.captures.retentionDays). */
+const CAPTURE_RETENTION_DAYS = 30;
 
 /** Persist a capture PNG and return its API url. Keeps ~1MB data URLs out of
  *  the event stream (inline payloads stall the CopilotKit transport) and
@@ -29,6 +33,21 @@ async function saveCapturePng(pngB64: string, meta: {
       [meta.spaceId, meta.userId, file, meta.action, meta.windowTitle ?? null,
        meta.windowId ?? null, meta.width ?? null, meta.height ?? null]
     );
+    // trust surface housekeeping: expire old captures per the space's
+    // retention setting while we're already on this code path
+    try {
+      const s = await one<{ data: any }>(`SELECT data FROM settings WHERE space_id = $1`, [meta.spaceId]);
+      const days = Number(s?.data?.captures?.retentionDays ?? CAPTURE_RETENTION_DAYS);
+      if (days > 0) {
+        const expired = await q(
+          `DELETE FROM captures WHERE space_id = $1 AND created_at < now() - make_interval(days => $2::int) RETURNING file`,
+          [meta.spaceId, days]
+        );
+        for (const r of expired as any[]) await unlink(join(dir, r.file)).catch(() => {});
+      }
+    } catch {
+      // retention is best-effort; never block the capture itself
+    }
     return `/api/captures/${file}`;
   } catch {
     return null;

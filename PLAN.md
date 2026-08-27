@@ -169,7 +169,7 @@ heartbeat surfaced in Settings → Companion, and multi-window targeting notes
 (ambiguous titles list candidate window_ids; silent fallback-to-newest is
 called out so the model never mistakes one window for another).
 
-## Phase 5 — Hosted cloud + LLM proxy billing · *design (next)*
+## Phase 5 — Hosted cloud + LLM proxy billing · *step 1 live*
 
 The self-host core is stable; the money path is a hosted control plane where
 users don't run Docker and don't bring keys. Same images, new surroundings:
@@ -199,11 +199,17 @@ per machine; capture history gets a retention setting (auto-delete after N
 days, default short); BYOK always remains the escape hatch (a space can point
 at its own endpoint and bypass billing entirely).
 
-**Build order:** (1) gateway as a thin OpenAI-compatible proxy + usage table,
-platform provider seeded per space; (2) Stripe checkout + portal, spend caps
-in Settings; (3) hosted deploy (compose unchanged + TLS + backups); (4)
-retention controls for captures. Open questions: region choice, model
-passthrough pricing vs. margin, team-tier seat math.
+**Build order:** (1) ✅ gateway as a thin OpenAI-compatible proxy + usage table,
+platform provider seeded per space — `gateway/` service (`docker-compose.cloud.yml`,
+profile `cloud`), exact token metering incl. streamed calls (usage chunk
+injection), per-space monthly token/USD caps enforced with a hard 429, naive
+rate limiting, usage dashboard + caps in Settings → AI Providers; verified
+live against the real upstream (stream + non-stream + cap cutoff). Also ✅ (4)
+capture retention controls (settings.captures.retentionDays, pruned on save,
+configurable in Settings → Companion). **Remaining:** (2) Stripe checkout +
+portal over the metered usage; (3) hosted deploy (compose unchanged + TLS +
+backups). Open questions: region choice, model passthrough pricing vs.
+margin (GATEWAY_PRICES), team-tier seat math.
 
 ---
 

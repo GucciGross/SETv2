@@ -1,0 +1,29 @@
+# SET — LLM gateway (PLAN.md Phase 5, step 1)
+#
+# Opt-in layer for metered, capped model access ("SET Cloud" provider):
+#   docker compose -f docker-compose.yml -f docker-compose.cloud.yml --profile cloud up -d
+#
+# The gateway shares the stack's Postgres (gateway keys, space billing caps,
+# usage_events) and forwards to one OpenAI-compatible upstream configured via
+# the same LLM_* env the server already uses — or GATEWAY_UPSTREAM_URL/KEY to
+# point it elsewhere. Optional: GATEWAY_PRICES='{"glm-4.7":[0.6,2.2]}' (USD
+# per 1M prompt/completion tokens, matched by model-substring) enables USD
+# spend caps; without prices, metering is token-only.
+services:
+  server:
+    environment:
+      GATEWAY_URL: http://gateway:4100/v1
+
+  gateway:
+    build: ./gateway
+    profiles: ["cloud"]
+    environment:
+      DATABASE_URL: postgres://set:${POSTGRES_PASSWORD:-set}@db:5432/set
+      GATEWAY_UPSTREAM_URL: ${GATEWAY_UPSTREAM_URL:-${LLM_BASE_URL:-}}
+      GATEWAY_UPSTREAM_KEY: ${GATEWAY_UPSTREAM_KEY:-${LLM_API_KEY:-}}
+      GATEWAY_PRICES: ${GATEWAY_PRICES:-{}}
+      GATEWAY_RATE_LIMIT_PER_MIN: ${GATEWAY_RATE_LIMIT_PER_MIN:-120}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
