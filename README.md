@@ -1,21 +1,17 @@
 <div align="center">
 
-# SET
+<img src="docs/assets/banner-dither.png" alt="SET — Knowledge + Learning OS" width="100%" />
 
-### The self-hosted Knowledge + Learning Operating System
-
-**Structured workspace · connected knowledge graph · grounded AI research with citations · an agent that can see your screen and use your apps**
-
-[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-3DA639?style=flat-square)](./LICENSE)
-[![Self-hosted](https://img.shields.io/badge/self--hosted-docker--compose-2496ED?style=flat-square&logo=docker&logoColor=white)](#quick-start)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-34D399?style=flat-square)](./LICENSE)
+[![Self-hosted](https://img.shields.io/badge/self--hosted-docker--compose-6C8CFF?style=flat-square&logo=docker&logoColor=white)](#-quick-start)
 [![BYOK](https://img.shields.io/badge/LLM-bring--your--own--key-8B5CF6?style=flat-square)](#connect-an-llm-byok)
-[![MCP](https://img.shields.io/badge/MCP-native-FF6F00?style=flat-square)](#built-for-agents-not-just-humans)
+[![MCP](https://img.shields.io/badge/MCP-native-×26_tools-A78BFA?style=flat-square)](#-built-for-agents-not-just-humans)
 
 *Your notes. Your graph. Your research. Your models. Your machine.*
 
-</div>
+**Structured workspace · connected knowledge graph · grounded AI research with citations · an agent that can see your screen and use your apps**
 
----
+</div>
 
 ```bash
 $ git clone github.com/GucciGross/SETv2 set && cd set
@@ -25,7 +21,7 @@ $ open http://localhost:8080        # that's it — Postgres, Redis, API, UI
 
 ---
 
-## Why SET exists
+## ▚ Why SET exists
 
 Every team has the same problem: knowledge scattered across five tools, AI that
 hallucinates because it can't see your documents, and learning that happens once
@@ -51,7 +47,27 @@ Toggle per workspace in Settings. Not a CAD person? You'll never see the 3D surf
 
 ---
 
-## The agent that uses your computer
+## ▞ The interface speaks dither
+
+SET has a design language of its own — **dither** — not another glassmorphism
+clone. The whole UI runs on `dither-kit`, a small Bayer-ordered dither engine
+(`web/src/components/dither-kit/`): charts paint as ordered-dither fields with
+bloom, empty states get deterministic pixel avatars, hero panels carry dither
+gradient washes, and the app icon is the same algorithm — an Inter Black "S"
+quantized to a dither grid, solid at the floor and dissolving upward.
+
+| | |
+|---|---|
+| ![SET dashboard](docs/assets/dashboard-dither.png) | ![SET landing](docs/assets/landing-dither.png) |
+| *Dashboard — dithered hero, numbered stat cards, dither avatars* | *Landing — instrument layout, spec plate, terminal install* |
+
+And yes, it installs as a PWA with the dithered mark on your home screen:
+
+<p align="center"><img src="docs/assets/icon-dither.png" width="96" alt="SET dithered app icon" /></p>
+
+---
+
+## ▙ The agent that uses your computer
 
 Phase 4 shipped a full computer-use loop for Linux desktops (macOS/Windows via
 the same driver), adapted from the [hermes-agent](https://github.com/NousResearch/hermes-agent)
@@ -92,7 +108,7 @@ own effects instead of trusting them.
 
 ---
 
-## Built for agents, not just humans
+## ▛ Built for agents, not just humans
 
 SET speaks the **Model Context Protocol** natively — 26 tools, grounded
 citations, OAuth 2.1 consent. Connect Claude, ChatGPT, Cursor or any MCP client
@@ -104,7 +120,7 @@ rendered as rich UI, and write-tools behind human approval.
 
 ---
 
-## Quick start (Docker)
+## ▜ Quick start (Docker)
 
 ```bash
 cp .env.example .env        # set JWT_SECRET for production
@@ -121,8 +137,6 @@ SEED_DEMO=1 docker compose up -d    # login: demo@set.local / demo-demo
 The demo ships linked pages, an experiments database with all four views, an
 indexed research notebook (chat-ready with zero LLM setup), a learning path,
 and an animated URDF robot arm in the 3D viewer.
-
-![SET dashboard](docs/assets/dashboard.png)
 
 ### Connect an LLM (BYOK)
 
@@ -164,7 +178,7 @@ cd web && npm install && npm run dev       # UI on :5173, proxies /api
 
 ---
 
-## Architecture
+## ▟ Architecture
 
 ```
 ┌─ Web (React + Vite + Tailwind) ──────────────────────────────┐
@@ -214,13 +228,14 @@ server/            Node.js + TypeScript backend (Fastify + Postgres)
   sql/             migrations
 companion/         local teaching + computer-use agent (pairs with your SET)
 web/               React + Vite + Tailwind frontend
+  components/      dither-kit — Bayer-ordered dither engine (charts, icons, washes)
 scripts/qa/        CDP browser harness for real-browser QA
 docker-compose.yml single-command self-host
 ```
 
 ---
 
-## Roadmap
+## □ Roadmap
 
 - **Phase 0 — Foundation** ✅ Docker Compose, block editor, databases, bidirectional links + graph, BYOK LLM, grounded RAG chat, copilot runtime
 - **Phase 1 — Research strength** ✅ multi-source notebooks, chunk inspection + correction, high-precision citations, knowledge views, study materials, learning paths
