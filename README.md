@@ -1,36 +1,106 @@
-#  SET — Strategic Enablement Toolkit v2
+<div align="center">
 
-**An open-source, self-hostable Knowledge + Learning Operating System.**
+# SET
 
-> **The self-hostable Knowledge + Learning Operating System** — structured documents and databases, a connected knowledge graph, grounded AI research with citations, and an agent copilot. Docker-first, bring your own LLM, local-first data ownership, optional hosted cloud.
+### The self-hosted Knowledge + Learning Operating System
 
-**Core (always on):**
+**Structured workspace · connected knowledge graph · grounded AI research with citations · an agent that can see your screen and use your apps**
+
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-3DA639?style=flat-square)](./LICENSE)
+[![Self-hosted](https://img.shields.io/badge/self--hosted-docker--compose-2496ED?style=flat-square&logo=docker&logoColor=white)](#quick-start)
+[![BYOK](https://img.shields.io/badge/LLM-bring--your--own--key-8B5CF6?style=flat-square)](#connect-an-llm-byok)
+[![MCP](https://img.shields.io/badge/MCP-native-FF6F00?style=flat-square)](#built-for-agents-not-just-humans)
+
+*Your notes. Your graph. Your research. Your models. Your machine.*
+
+</div>
+
+---
+
+```bash
+$ git clone github.com/GucciGross/SETv2 set && cd set
+$ cp .env.example .env && docker compose up -d
+$ open http://localhost:8080        # that's it — Postgres, Redis, API, UI
+```
+
+---
+
+## Why SET exists
+
+Every team has the same problem: knowledge scattered across five tools, AI that
+hallucinates because it can't see your documents, and learning that happens once
+in an onboarding doc and is never revisited. SET is one self-hosted stack that
+treats **knowledge, research, and learning as a single system** — with an agent
+that is actually grounded in your content, and (optionally) can see and operate
+your desktop when you ask it to.
 
 | Layer | What you get |
 |---|---|
-| **Structured Workspace** | Hierarchical pages, rich block editor (TipTap) with tables, images, highlights, slash menu & `[[` autocomplete, relational databases with table/kanban/calendar/gallery views, spaces & permissions |
-| **Connected Knowledge Graph** | `[[wiki links]]` with bidirectional backlinks, unlinked mentions, block-level references with permanent IDs, interactive force-directed graph, full Markdown import/export, daily notes |
-| **Grounded Research** | Multi-source notebooks (PDF / Markdown / web / transcripts / pasted text), structure-aware chunking with human-in-the-loop correction, grounded chat with inline citations, knowledge views (mind map / tree / timeline / page index), generated flashcards, quizzes, study guides & audio overviews with spaced repetition |
-| **AI Copilot** | AG-UI-style streaming agent with workspace tools, human-in-the-loop approvals, A2UI generative UI (cards, tables, forms, quizzes, flashcards, 3D viewers) |
+| 📝 **Structured Workspace** | Rich block editor (TipTap) with tables, images, highlights, slash menu & `[[autocomplete]]`, relational databases with table/kanban/calendar/gallery views, spaces, roles & permissions |
+| 🕸 **Knowledge Graph** | Wiki links with bidirectional backlinks, unlinked mentions, block references with permanent IDs, live force-directed graph, full Markdown round-trip, daily notes |
+| 🔬 **Grounded Research** | Multi-source notebooks (PDF / web / transcripts / datasets), structure-aware chunking with human-in-the-loop correction, chat with inline `[1] [2]` citations, deep-research runs with a formatted paper view, knowledge views (mind map / tree / timeline / index) |
+| 🎓 **Learning System** | Generated flashcards, quizzes, study guides & two-host audio overviews, SM-2 spaced repetition, learning paths with deadlines and per-member progress |
+| 🤖 **AI Copilot** | Streaming agent runtime with workspace tools, human-in-the-loop approvals, generative UI (cards, tables, forms, quizzes, flashcards, 3D viewers) rendered natively in chat |
+| 🖥 **Computer Use** *(new)* | The agent sees real desktop apps — annotated captures (screenshot + numbered element index) — and can click, type and scroll **only** with your explicit opt-in, action-by-action approval |
 
-**Optional work surfaces (toggle per space in Settings):**
+### Optional work surfaces — power features are opt-in
 
-| Surface | What you get |
+Toggle per workspace in Settings. Not a CAD person? You'll never see the 3D surface.
+
+`Coding` (editor + sandboxed JS runner) · `Terminal` (workspace console with grounded search) · `3D & CAD` (GLB/STL/OBJ, URDF robotics with animated joints, STEP import) · `Library` (curated HuggingFace datasets importable into notebooks) · `Learning Paths` · `Canvas` (infinite-canvas spatial view)
+
+---
+
+## The agent that uses your computer
+
+Phase 4 shipped a full computer-use loop for Linux desktops (macOS/Windows via
+the same driver), adapted from the [hermes-agent](https://github.com/NousResearch/hermes-agent)
+computer-use stack (MIT, Nous Research) onto SET's companion architecture:
+
+```
+You:     "Use screen_capture on the Calculator and tell me what the display shows."
+
+Copilot: [screen_capture → screenshot + 404-element index renders in chat]
+         "The display shows 77875, and you're in Scientific mode."
+
+You:     "Click the 7 button."
+
+Copilot: [screen_act → click element [202] → fresh capture]
+         "Done — display went 77875 → 778757."
+```
+
+![The copilot reading a native app](docs/assets/copilot-computer-use.png)
+
+**How it works.** Your local **teaching companion** (a small Python process on
+your machine) pairs with your SET instance via a revocable token and speaks to
+[cua-driver](https://github.com/trycua/cua-driver-rs). `screen_capture` returns
+a grounding pair: a downscaled screenshot *and* an AT-SPI element index —
+`[199] push button "5" (156,359 64x44)` — so **vision and non-vision models can
+both act** (vision routing decides, per model, whether the image rides along).
+Every action is followed by an automatic re-capture so the agent verifies its
+own effects instead of trusting them.
+
+**Safety is layered, and defaults to watching, not touching:**
+
+| Layer | Behavior |
 |---|---|
-| **Coding** (on by default) | Code files with a CodeMirror editor and a sandboxed JavaScript runner (no fs/network, timeout-capped) |
-| **Terminal** (on by default) | Workspace console: `pages`, `open`, `find` (grounded search), `new`, `runjs`, `surfaces`, `stat` |
-| **3D & CAD** | Interactive 3D learning: GLB/GLTF with explode view, STL/OBJ meshes, URDF robotics with animated joints, STEP import via OpenCascade WASM, clickable parts linked to notes |
-| **Library** | Leverage what's already out there: curated HuggingFace datasets (markov-ai/cad-1000-hours expert CAD workflows, Objaverse 3D, textbooks, Wikipedia, GSM8K...) browsable and importable into notebooks / 3D viewer / files — parquet included |
-| **Learning Paths** | Ordered curricula with per-member readiness tracking |
-| **Canvas** | Experimental infinite-canvas spatial view over your pages |
+| Observe-only default | Captures, element indexes and demos work with input actions **off** |
+| Machine opt-in | Clicks/typing require the companion started with `SET_ALLOW_INPUT=1` |
+| Action approval | Write actions can require per-call Approve/Reject in the chat |
+| Revocable pairing | Kill the companion's token in Settings anytime |
+| Honesty | Driver `effect: unverifiable` verdicts are surfaced so the model re-grounds instead of assuming success |
 
----|---|
-| **Structured Workspace** | Hierarchical pages, rich block editor (TipTap) with tables, images, highlights, slash menu & `[[` autocomplete, relational databases with table/kanban/calendar/gallery views, learning paths, templates, spaces & permissions |
-| **Connected Knowledge Graph** | `[[wiki links]]` with bidirectional backlinks, unlinked mentions, block-level references with permanent IDs (`((id))` embeds + copy-block-id), interactive force-directed graph, Markdown import/export (full rich round-trip), daily notes |
-| **Grounded Research** | Multi-source notebooks (PDF / Markdown / web / transcripts / pasted text), structure-aware chunking with human-in-the-loop correction, grounded chat with inline citations, knowledge views (mind map / tree / timeline / page index), generated flashcards, quizzes, study guides & two-host audio overviews with spaced repetition |
-| **AI Agents** | AG-UI-style streaming agent runtime, 8 workspace tools (read/write pages, hybrid knowledge search, study generation, 3D, generative UI), human-in-the-loop approvals, A2UI declarative generative UI (cards, tables, forms, quizzes, flashcards, 3D viewers) |
-| **3D Learning (Three.js)** | GLB/GLTF viewer with explode view & clickable parts linked to notes, URDF robotics support with animated joints, "Explain this actuator" AI flow, auto-linking parts  pages |
-| **Infra** | Single `docker compose up`, Postgres + pgvector (optional) + Redis pub/sub, WebSocket presence & live sync, BYOK LLM router (Ollama / LM Studio / vLLM / OpenAI / OpenRouter / Groq), optional RAGFlow retrieval provider |
+---
+
+## Built for agents, not just humans
+
+SET speaks the **Model Context Protocol** natively — 26 tools, grounded
+citations, OAuth 2.1 consent. Connect Claude, ChatGPT, Cursor or any MCP client
+in under a minute from `/agents`. The same engine backs the built-in copilot:
+`search_workspace`, `read_page`, `create_page`, `append_to_page`,
+`search_knowledge` (hybrid RRF), `generate_study_material`, `screen_capture`,
+`screen_act`, `render_ui`, and more — with streaming AG-UI events, tool results
+rendered as rich UI, and write-tools behind human approval.
 
 ---
 
@@ -38,159 +108,142 @@
 
 ```bash
 cp .env.example .env        # set JWT_SECRET for production
-docker compose up -d        # builds server + web + Postgres(pgvector) + Redis
+docker compose up -d        # server + web + Postgres(pgvector) + Redis
 open http://localhost:8080
 ```
 
-Register an account (first user) or seed the demo workspace:
+Register an account (first user), or seed a full demo workspace:
 
 ```bash
-SEED_DEMO=1 docker compose up -d   # login: demo@set.local / demo-demo
+SEED_DEMO=1 docker compose up -d    # login: demo@set.local / demo-demo
 ```
 
-The demo includes linked pages, an experiments database with all four views, an
-indexed research notebook (chat-ready without any LLM), a learning path, and an
-animated URDF robot arm in the 3D viewer.
+The demo ships linked pages, an experiments database with all four views, an
+indexed research notebook (chat-ready with zero LLM setup), a learning path,
+and an animated URDF robot arm in the 3D viewer.
+
+![SET dashboard](docs/assets/dashboard.png)
 
 ### Connect an LLM (BYOK)
 
-Everything works without an LLM except chat/generation (search & embeddings fall
-back to a built-in hashed index). To enable the full experience add a provider in
-**Settings  AI Providers**:
+Everything except chat/generation works with no LLM at all (search and
+embeddings fall back to a deterministic built-in hash index). For the full
+experience add any OpenAI-compatible provider in **Settings → AI Providers**:
 
 | Provider | Base URL | Notes |
 |---|---|---|
-| Ollama (local) | `http://host.docker.internal:11434/v1` | `ollama pull llama3.1` + `ollama pull nomic-embed-text` |
+| Ollama (local) | `http://host.docker.internal:11434/v1` | `ollama pull llama3.1` + `nomic-embed-text` |
 | LM Studio | `http://host.docker.internal:1234/v1` | start the local server |
 | vLLM | `http://your-host:8000/v1` | any hosted model |
-| OpenAI / OpenRouter / Groq | official URLs | API key |
+| OpenAI / OpenRouter / Groq / Z.AI | official URLs | API key |
 
-Or run Ollama inside compose: `docker compose --profile ollama up -d`.
+Or run Ollama inside the stack: `docker compose --profile ollama up -d`.
+
+### Computer use setup (optional)
+
+1. Install [cua-driver](https://github.com/trycua/cua-driver-rs) and start it: `cua-driver serve`
+2. SET → **Settings → Companion** → create a pairing token
+3. Run the companion on your desktop:
+   ```bash
+   cd companion
+   SET_URL=http://localhost:8080 COMPANION_TOKEN=<token> python3 companion.py
+   # add SET_ALLOW_INPUT=1 to permit clicks/typing (still approval-gated)
+   ```
+4. Ask the copilot to look at (or operate) a desktop app.
 
 ### Local development
 
 ```bash
-# Postgres + Redis via docker (or your own)
-docker compose up -d db redis
-
-# backend (http://localhost:4000)
-cd server && npm install && npm run dev
-
-# frontend (http://localhost:5173, proxies /api)
-cd web && npm install && npm run dev
+docker compose up -d db redis      # Postgres + Redis
+cd server && npm install && npm run dev    # API on :4000
+cd web && npm install && npm run dev       # UI on :5173, proxies /api
 ```
 
-Handy scripts: `npm run migrate` (server), `SEED_DEMO=1 npm run seed` (server),
-`npm test` (server, 10 unit tests), `node smoke.mjs` (server, 54-check API smoke
-suite against a running instance — run once per fresh database).
+`npm run migrate` (server) · `SEED_DEMO=1 npm run seed` · `npm test` ·
+`node smoke.mjs` (54-check API smoke suite)
 
 ---
 
 ## Architecture
 
 ```
+┌─ Web (React + Vite + Tailwind) ──────────────────────────────┐
+│  TipTap editor · Graph view · DB views · Notebooks · 3D      │
+│  Copilot panel (AG-UI client, A2UI + computer-use renderers) │
+└──────────────┬───────────────────────────────────────────────┘
+               │  /api (REST + SSE) · /ws (live sync + presence)
+┌─ SET Server (Node.js + TypeScript + Fastify) ────────────────┐
+│  Auth/JWT · Spaces & roles · Pages & wiki-links · Databases  │
+│  RAG engine (hybrid RRF search, grounded citations)          │
+│  Agent runtime + HITL approvals + vision routing             │
+│  Study generator + SM-2 SRS · 3D/URDF manager · MCP server   │
+│  LLM router (OpenAI-compatible, BYOK)                        │
+└──────┬───────────────┬───────────────┬───────────────────────┘
+       │               │               │
+  Postgres        Redis pub/sub    Your LLMs
+  (+pgvector)     (collab/WS)      Ollama · vLLM · OpenAI · …
 
-  Web (React + Vite + Tailwind)                             
-  TipTap block editor · Graph view · DB views · Notebooks   
-  Copilot panel (AG-UI client + A2UI renderer) · Three.js  
-
-                /api (REST + SSE)  ·  /ws (WebSocket)
-
-  SET Server (Node.js + TypeScript + Fastify)               
-  Auth/JWT · Spaces & permissions · Pages & wiki-links      
-  Databases & views · RAG engine (chunkembedhybrid search)
-  Grounded chat (citations) · Agent runtime + HITL + A2UI   
-  Study generator + SM-2 SRS · 3D model mgr + URDF parser   
-  LLM router (OpenAI-compatible, BYOK, presets)             
-
-                             
-           
- Postgres             Object/file storage    LLM router  
- (+pgvector           (files, 3D models)     Ollama/vLLM 
-  optional)              /OpenAI/etc 
-                                  
-        Redis (pub/sub collab, presence) — optional, in-memory fallback
+  Companion (user's machine) — pairs via revocable token,
+  executes teach demos + computer use through cua-driver:
+  capture (screenshot + AT-SPI index) · click · type · scroll
 ```
 
 ### How grounding works
 
-1. Sources are parsed (PDF text extraction, web fetch & boilerplate strip, or raw text).
+1. Sources are parsed (PDF text extraction, web fetch + boilerplate strip, raw text).
 2. A structure-aware chunker splits along headings/paragraphs with size budget + overlap.
-3. Chunks are embedded via the configured embedding model (or the deterministic
-   built-in hash embedding — so search works with zero LLM).
-4. Retrieval fuses Postgres full-text ranking and vector cosine similarity via
-   Reciprocal Rank Fusion.
-5. Answers must cite sources inline `[1] [2]`; the UI shows the exact chunk on click.
+3. Chunks are embedded with your embedding model — or the built-in hash index (zero-LLM mode).
+4. Retrieval fuses Postgres full-text and vector cosine via Reciprocal Rank Fusion.
+5. Answers must cite inline `[1] [2]`; clicking a citation shows the exact chunk.
 6. Humans can inspect and correct any chunk, then re-embed it.
 
-**RAGFlow integration (optional):** set `RAGFLOW_URL` and `RAGFLOW_API_KEY` and bind a
-notebook to a RAGFlow dataset (`PATCH /api/notebooks/:id/ragflow {datasetId}`) —
-retrieval then routes through RAGFlow's deep-document-understanding chunks, with
-graceful fallback to the built-in engine when unavailable.
-
-### The rich editor
-
-- **Slash menu** — type `/` at a word start for headings, lists, tasks, tables,
-  code, quotes, dividers, images, wiki links and block references.
-- **`[[` autocomplete** — fuzzy page-title dropdown with create-on-the-fly.
-- **Tables** — insert via `/table` or the toolbar; add/remove rows & columns,
-  toggle header row; markdown pipe-table round-trip preserves column alignment.
-- **Images** — paste or drop to upload (stored in your data dir, served by the
-  API), or use the toolbar/`/image` picker.
-- **Marks** — bold, italic, underline, ~~strike~~, ==highlight==, inline code, links.
-- **Block references** — toolbar "Copy block id" stamps a permanent UUID on any
-  paragraph/heading; embed it anywhere with `((id))` or `/block reference` —
-  embeds render the live source text and link to the origin page.
-
-### The agent layer
-
-- Streams AG-UI-style lifecycle events (`RUN_STARTED`, `TEXT_MESSAGE_CONTENT`,
-  `TOOL_CALL_START/END`, `CUSTOM`, `RUN_FINISHED`) over SSE.
-- Tools: `search_workspace`, `read_page`, `create_page`, `append_to_page`,
-  `search_knowledge`, `generate_study_material`, `open_3d_model`, `render_ui`.
-- Write tools can require **human approval** (workspace setting) — the run pauses
-  until you approve/reject in the copilot panel.
-- Agents answer with **A2UI components** (cards, tables, forms, quizzes,
-  flashcards, 3D viewers) that render natively in the chat.
+Optional **RAGFlow** integration: point a notebook at a RAGFlow dataset and
+retrieval routes through its deep-document-understanding chunks, with graceful
+fallback to the built-in engine.
 
 ### Repository layout
 
 ```
 server/            Node.js + TypeScript backend (Fastify + Postgres)
-  src/agents/      AG-UI runtime, tools, HITL approvals, A2UI emission
-  src/rag/         chunker, hybrid search (RRF), grounded chat routes
+  src/agents/      AG-UI runtime, tools, vision routing, HITL approvals
+  src/copilotkit/  CopilotKit/AG-UI adapter (SSE events, protocol envelopes)
+  src/rag/         chunker, hybrid search (RRF), grounded chat
   src/llm/         BYOK provider management + OpenAI-compatible router
   src/study/       flashcards/quiz/study-guide/audio generation + SM-2
-  src/models3d/    GLB streaming + URDF kinematic parser + autolink
+  src/models3d/    GLB streaming + URDF kinematic parser
   sql/             migrations
-  smoke.mjs        47-check end-to-end API suite
+companion/         local teaching + computer-use agent (pairs with your SET)
 web/               React + Vite + Tailwind frontend
-  src/components/  Editor, CopilotPanel, A2UI registry, Viewer3D …
-  src/views/       Pages, Graph, Database, Notebooks, Study, Models, Paths, Canvas
-docker-compose.yml Single-command self-host (db + redis + server + web [+ ollama])
+scripts/qa/        CDP browser harness for real-browser QA
+docker-compose.yml single-command self-host
 ```
 
 ---
 
-## Monetization model (per product spec)
+## Roadmap
 
-- **Self-host / open-source: free forever** (AGPL-3.0).
-- Optional hosted cloud version.
-- LLM API proxy / hosted models as primary revenue.
+- **Phase 0 — Foundation** ✅ Docker Compose, block editor, databases, bidirectional links + graph, BYOK LLM, grounded RAG chat, copilot runtime
+- **Phase 1 — Research strength** ✅ multi-source notebooks, chunk inspection + correction, high-precision citations, knowledge views, study materials, learning paths
+- **Phase 2 — Collaboration + agents** ✅ live sync + presence, A2UI generative UI, HITL agents, team spaces, MCP server
+- **Phase 3 — Interactive learning** ✅ 3D environments, URDF robotics with joint animation, native desktop teaching demos
+- **Phase 4 — Computer use** ✅ agent screen capture (annotated), clicks/typing/scroll with layered consent, vision routing for mixed model fleets
+- **Next** — capture history surface, companion doctor/diagnostics, browser-route unification, hosted cloud + LLM proxy billing
 
-## Roadmap status
+## Monetization model
 
-- **Phase 0 — Foundation:**  Docker Compose, block editor + Markdown import/export, databases, bidirectional links + graph, BYOK LLM + grounded RAG chat with citations, copilot runtime.
-- **Phase 1 — Research strength:**  multi-source notebooks, visual chunk inspection + correction, high-precision citations, knowledge views (tree/mind map/timeline/index), study materials + learning paths.  deeper RAGFlow-style layout parsing (OCR, tables).
-- **Phase 2 — Collaboration + agents:**  live sync + presence (WS/Redis), A2UI generative UI, HITL agents, permissions & team spaces.  CRDT character-level editing.
-- **Phase 3 — Interactive learning:**  Three.js 3D environments, URDF robotics with joint animation, AI-controllable 3D scenes.  extensible tool surface.
-- **Phase 4 — Polish & scale:**  canvas UI experiment.  hosted offering, LLM proxy billing, mobile, PocketJS exploration.
+Self-hosting is **free forever** (AGPL-3.0) — that's the promise. An optional
+hosted cloud runs the same core for teams that want zero ops, plus an optional
+bundled LLM API. Same export-anytime guarantee everywhere.
 
 ## License
 
 Copyright (C) 2026 SET contributors.
 
-SET is free software: you can redistribute it and/or modify it under the terms of
-the **GNU Affero General Public License v3.0** (see [LICENSE](./LICENSE)) — the
-license choice protects against closed commercial forks while keeping the project
-fully open. Dual/commercial licensing available for hosted/enterprise use.
+SET is free software: you can redistribute it and/or modify it under the terms
+of the **GNU Affero General Public License v3.0** (see [LICENSE](./LICENSE)) —
+the license choice protects against closed commercial forks while keeping the
+project fully open. Dual/commercial licensing available for hosted/enterprise use.
+
+Computer-use concepts adapted from [hermes-agent](https://github.com/NousResearch/hermes-agent)
+(MIT © Nous Research). Desktop automation by [cua-driver](https://github.com/trycua/cua-driver-rs).
+Mascot concept inspired by the Apache-2.0 OpenMausBot project.
