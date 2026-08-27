@@ -242,10 +242,26 @@ CAPTURE_MAX_LINES = 120         # framed elements surfaced in the agent-visible 
 SCREENSHOT_LONGEST_EDGE = 1024   # downscale before sending to the model
 
 
+def _windows(retries: int = 3) -> list:
+    """list_windows with retries — the daemon occasionally returns an empty
+    or errored reply under load (observed right after foreground input),
+    which the agent would otherwise read as 'no windows open' and burn its
+    step budget retrying."""
+    last_err = None
+    for i in range(retries):
+        r = cua("list_windows", "{}")
+        wins = r.get("windows")
+        if wins:
+            return wins
+        last_err = r.get("error") or "empty window list"
+        _t.sleep(1.0 + i)
+    raise RuntimeError(f"list_windows failed {retries}x: {last_err}")
+
+
 def _resolve_window(op: dict) -> dict | None:
     """Pick the window an op targets: explicit window_id/pid, else the
     topmost window whose title/app matches `app`, else the newest window."""
-    wins = cua("list_windows", "{}").get("windows") or []
+    wins = _windows()
     if not wins:
         return None
     if op.get("window_id"):
@@ -346,7 +362,7 @@ def cua_action(op: dict) -> dict:
 
     read_ops = {
         "capture": lambda: cua_capture(op),
-        "list_windows": lambda: {"windows": cua("list_windows", "{}").get("windows") or []},
+        "list_windows": lambda: {"windows": _windows()},
         "list_apps": lambda: cua("list_apps", "{}"),
         "launch_app": lambda: cua("launch_app", json.dumps({"name": op.get("app") or ""})),
     }
@@ -357,6 +373,9 @@ def cua_action(op: dict) -> dict:
         return {"error": "input actions (click/type/key/scroll) are disabled on this companion — "
                          "restart it with SET_ALLOW_INPUT=1 to permit them"}
     win = _resolve_window(op) or {}
+    if not win.get("pid"):
+        return {"error": "could not resolve a target window — capture first and pass its window_id "
+                         "(e.g. screen_act with window_id from the capture summary)"}
     # cua-driver input pairing: pixel actions want window_id + x/y; AX actions
     # want pid + element_index. Sending both ids makes the driver expect an
     # element_index and silently drop the coordinates.
