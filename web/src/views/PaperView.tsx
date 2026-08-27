@@ -16,14 +16,29 @@ const md = (s: string) => ({ __html: marked.parse(s ?? '', { async: false }) as 
 export default function PaperView() {
   const { spaceId, runId } = useParams();
   const [run, setRun] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!runId) return;
-    api.get(`/research/${runId}`).then((r) => setRun(r.run)).catch(() => {});
+    setRun(null);
+    setError(null);
+    api.get(`/research/${runId}`)
+      .then((r) => setRun(r.run))
+      .catch((e) => setError(e?.message ?? 'Could not load this run'));
   }, [runId]);
 
+  // runs on the first render while `run` is still null — buildPaper handles it
   const paper = useMemo(() => buildPaper(run), [run]);
 
+  if (error) return (
+    <div className="p-8 text-set-dim">
+      <p className="text-red-300 text-sm mb-2">Couldn&apos;t load this paper — {error}.</p>
+      <div className="flex gap-2">
+        <button className="set-btn text-xs" onClick={() => location.reload()}>Retry</button>
+        <Link className="set-btn-ghost text-xs underline underline-offset-2" to={`/app/space/${spaceId}/research/${runId}`}>back to the run</Link>
+      </div>
+    </div>
+  );
   if (!run) return <div className="p-8 text-set-dim">Loading paper…</div>;
   if (!run.report_md) return (
     <div className="p-8 text-set-dim">
@@ -98,8 +113,10 @@ export default function PaperView() {
   );
 }
 
-/** Split report_md into title / abstract / body, remap [S#] to numbered refs. */
+/** Split report_md into title / abstract / body, remap [S#] to numbered refs.
+ *  Null-safe: called via useMemo before the run fetch resolves. */
 function buildPaper(run: any) {
+  if (!run) return { title: '', abstract: '', body: '', references: [], wordCount: 0, duration: '' };
   const mdText: string = run.report_md ?? '';
   const lines = mdText.split('\n');
 

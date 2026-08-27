@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import {
-  BookOpen, FileText, Loader2, Search, Telescope, XCircle, CheckCircle2, AlertTriangle, ArrowRight, Sparkles, Package, Link2,
+  BookOpen, FileText, Loader2, Search, Telescope, XCircle, CheckCircle2, AlertTriangle, Sparkles, Package, Link2,
 } from 'lucide-react';
 
 /** Deep research (PLAN.md Phase 1): launch CrewAI research runs, watch progress,
@@ -279,7 +279,7 @@ export function ResearchRun() {
         {/* sources */}
         <div className="set-card p-4">
           <h3 className="set-mono set-mono-dim mb-2">Sources ({sources.length})</h3>
-          {sources.length === 0 && <p className="text-xs text-set-set-dim">None yet.</p>}
+          {sources.length === 0 && <p className="text-xs text-set-dim">None yet.</p>}
           <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
             {sources.map((s: any) => (
               <a key={s.id} href={s.uri ?? '#'} target="_blank" rel="noreferrer"
@@ -309,44 +309,49 @@ export function ResearchRun() {
       </div>
 
       {run.status === 'finished' && (
-        <div className="set-card p-4 mt-4 flex items-center gap-3">
-          <CheckCircle2 className="text-green-400 shrink-0" size={18} />
-          <span className="text-sm text-set-text flex-1">
-            Research complete — {sources.length} sources indexed, report ready.
-          </span>
-          {run.notebook_id && (
-            <Link to={`/app/space/${spaceId}/notebook/${run.notebook_id}`} className="set-btn text-xs flex items-center gap-1">
-              Open notebook <ArrowRight size={11} />
-            </Link>
-          )}
-          {run.report_page_id && (
-            <button className="set-btn text-xs flex items-center gap-1" disabled={simplifying} onClick={simplify}>
-              {simplifying ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
-              {simplifying ? 'Rewriting…' : 'Plain-English rewrite'}
+        <div className="set-card p-4 mt-4">
+          <div className="flex items-center gap-2.5 mb-3">
+            <CheckCircle2 className="text-green-400 shrink-0" size={18} />
+            <span className="text-sm text-set-text flex-1">
+              Research complete — {sources.length} sources indexed, report ready.
+            </span>
+          </div>
+          {/* actions wrap on narrow screens; one primary (read), the rest secondary */}
+          <div className="flex flex-wrap gap-2">
+            {run.report_md && (
+              <Link to={`/app/space/${spaceId}/research/${runId}/paper`} className="set-btn-primary text-xs flex items-center gap-1.5">
+                <BookOpen size={13} /> Read as paper
+              </Link>
+            )}
+            {run.notebook_id && (
+              <Link to={`/app/space/${spaceId}/notebook/${run.notebook_id}`} className="set-btn text-xs flex items-center gap-1.5">
+                <BookOpen size={13} /> Open notebook
+              </Link>
+            )}
+            {run.progress?.auto_deck_id ? (
+              <Link to={`/app/space/${spaceId}/notebook/${run.notebook_id}/deck/${run.progress.auto_deck_id}`} className="set-btn text-xs flex items-center gap-1.5">
+                <Sparkles size={13} /> Open study deck
+              </Link>
+            ) : (
+              <button className="set-btn text-xs flex items-center gap-1.5" disabled={simplifying} onClick={() => makeDeck('flashcards')}>
+                <Sparkles size={13} /> Study deck
+              </button>
+            )}
+            <button className="set-btn text-xs flex items-center gap-1.5" disabled={simplifying} onClick={() => makeDeck('quiz')}>
+              <BookOpen size={13} /> Quiz me
             </button>
-          )}
-          {run.report_md && (
-            <Link to={`/app/space/${spaceId}/research/${runId}/paper`} className="set-btn-primary text-xs flex items-center gap-1">
-              <BookOpen size={12} /> Read as paper
-            </Link>
-          )}
-          {run.progress?.auto_deck_id ? (
-            <Link to={`/app/space/${spaceId}/notebook/${run.notebook_id}/deck/${run.progress.auto_deck_id}`} className="set-btn-primary text-xs flex items-center gap-1">
-              <Sparkles size={12} /> Open study deck
-            </Link>
-          ) : (
-            <button className="set-btn text-xs flex items-center gap-1" disabled={simplifying} onClick={() => makeDeck('flashcards')}>
-              <BookOpen size={12} /> Study deck
-            </button>
-          )}
-          <button className="set-btn text-xs flex items-center gap-1" disabled={simplifying} onClick={() => makeDeck('quiz')}>
-            <BookOpen size={12} /> Quiz me
-          </button>
-          {run.progress?.auto_deck_id && (
-            <button className="set-btn text-xs flex items-center gap-1" onClick={exportH5P}>
-              <Package size={12} /> Export H5P
-            </button>
-          )}
+            {run.progress?.auto_deck_id && (
+              <button className="set-btn text-xs flex items-center gap-1.5" onClick={exportH5P}>
+                <Package size={13} /> Export H5P
+              </button>
+            )}
+            {run.report_page_id && (
+              <button className="set-btn-ghost text-xs flex items-center gap-1.5" disabled={simplifying} onClick={simplify} title="Re-write the report page in Simplified Technical English">
+                {simplifying ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                {simplifying ? 'Rewriting…' : 'Plain-English rewrite'}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

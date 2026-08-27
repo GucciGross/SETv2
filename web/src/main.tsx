@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate, useRouteError } from 'react-router-dom';
 import './index.css';
 // CopilotKit v2 styles are Tailwind v4 output; a virtual module (see
 // vite.config.ts) hands them over as a string, bypassing our Tailwind v3
@@ -54,7 +54,7 @@ import MyTasksView from './views/MyTasksView';
 import { PagesList, DatabasesList } from './views/ListsView';
 import { ResearchList, ResearchRun } from './views/ResearchView';
 import PaperView from './views/PaperView';
-import { Compass } from 'lucide-react';
+import { Compass, RefreshCw } from 'lucide-react';
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -71,6 +71,7 @@ const router = createBrowserRouter([
       {
         path: '/app',
         element: <AppShell />,
+        errorElement: <RouteError />,
         children: [
           { index: true, element: <Home /> },
           { path: 'space/:spaceId', element: <DashboardView /> },
@@ -115,6 +116,32 @@ function NotFound() {
         The link or navigation went somewhere unknown. Nothing is broken — head back and keep going.
       </p>
       <a href="/app" className="set-btn-primary text-sm mt-1">Back to workspace</a>
+    </div>
+  );
+}
+
+/** Route-level crash page: a render error in any view degrades to this
+ *  instead of React Router's raw error dump. The rest of the app stays
+ *  reachable; reload usually clears transient bad state. */
+function RouteError() {
+  const err = useRouteError() as any;
+  return (
+    <div className="h-screen flex flex-col items-center justify-center gap-3 text-center p-6">
+      <RefreshCw size={36} className="text-amber-300" strokeWidth={1.5} />
+      <h1 className="text-lg font-bold text-white">This page hit a bug</h1>
+      <p className="text-sm text-set-dim max-w-sm">
+        Something failed while rendering this view. Your workspace and data are fine —
+        reload the page, or head back and retry.
+      </p>
+      {typeof err?.message === 'string' && (
+        <code className="text-[11px] text-red-300/80 bg-set-panel2 border border-set-border rounded px-2 py-1 max-w-full truncate">
+          {err.message}
+        </code>
+      )}
+      <div className="flex gap-2 mt-1">
+        <button className="set-btn text-sm" onClick={() => window.location.reload()}>Reload</button>
+        <a href="/app" className="set-btn-primary text-sm">Back to workspace</a>
+      </div>
     </div>
   );
 }
