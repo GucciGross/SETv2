@@ -3,6 +3,8 @@ import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import websocket from '@fastify/websocket';
 import path from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { config } from './config.js';
 import { migrate } from './migrate.js';
 import { bus } from './lib/events.js';
@@ -53,6 +55,21 @@ async function main() {
   });
 
   app.get('/health', async () => ({ ok: true, name: 'SET', version: '2.1.0' }));
+
+  // capture screenshots from the computer-use tools — JWT via header or
+  // ?token= so <img> tags can authenticate
+  app.get('/api/captures/:file', async (req, reply) => {
+    const { getUser } = await import('./lib/http.js');
+    if (!getUser(req)) return reply.code(401).send({ error: 'Unauthorized' });
+    const file = (req.params as any).file as string;
+    if (!/^[a-f0-9-]+\.png$/.test(file)) return reply.code(400).send({ error: 'Bad file' });
+    try {
+      const buf = await readFile(join(config.dataDir, 'captures', file));
+      reply.header('content-type', 'image/png').send(buf);
+    } catch {
+      reply.code(404).send({ error: 'Not found' });
+    }
+  });
 
   await app.register(async (api) => {
     await authRoutes(api);

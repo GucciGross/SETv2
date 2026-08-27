@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ArrowRight, BookOpen, FileText, Search, Sparkles, Wrench } from 'lucide-react';
 import { useRenderTool, useDefaultRenderTool, useAgent } from '@copilotkit/react-core/v2';
 import { A2UIRenderer, type A2UIComponent } from '../A2UI';
+import { getToken } from '../../lib/api';
 import { askAgent, GUIDE_AGENT } from '../../lib/copilot';
 import { useApp } from '../../stores/app';
 
@@ -192,6 +193,41 @@ export function SetToolRenderers() {
       </RunState>
       );
     },
+  });
+
+  // screen_capture / screen_act → capture screenshot + element summary
+  const captureRender = ({ parameters, result }: { parameters: any; result?: any }) => {
+    const res = parseResult(result);
+    const src = res?.screenshotUrl;
+    return (
+      <RunState result={result}>
+        <div className="px-2.5 py-2">
+          {src && (
+            <img
+              src={`${src}${src.includes('?') ? '&' : '?'}token=${encodeURIComponent(getToken())}`}
+              alt={res?.summary?.slice(0, 120) ?? 'capture'}
+              className="rounded-lg border border-set-border max-h-72 w-auto mb-1.5"
+            />
+          )}
+          {res?.summary && (
+            <details className="text-[11px] text-set-dim">
+              <summary className="cursor-pointer hover:text-set-text">element index</summary>
+              <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap">{res.summary.slice(0, 3000)}</pre>
+            </details>
+          )}
+        </div>
+      </RunState>
+    );
+  };
+  useRenderTool({
+    name: 'screen_capture',
+    parameters: z.object({ action: z.string().optional(), app: z.string().optional(), detail: z.boolean().optional() }),
+    render: captureRender,
+  });
+  useRenderTool({
+    name: 'screen_act',
+    parameters: z.object({ action: z.string(), element_index: z.number().optional(), x: z.number().optional(), y: z.number().optional(), text: z.string().optional() }),
+    render: captureRender,
   });
 
   // everything else → transparent activity line: what the agent ran, with

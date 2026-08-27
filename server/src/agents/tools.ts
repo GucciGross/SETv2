@@ -6,6 +6,24 @@ import { generateDeck, createDeckRecord } from '../study/generate.js';
 import type { Provider } from '../llm/router.js';
 import type { ToolDef } from '../llm/router.js';
 import { providerAcceptsScreenshots, MAX_INLINE_SCREENSHOT_BYTES } from './visionRouting.js';
+import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { config } from '../config.js';
+
+/** Persist a capture PNG and return its API url. Keeps ~1MB data URLs out of
+ *  the event stream (inline payloads stall the CopilotKit transport). */
+async function saveCapturePng(pngB64: string): Promise<string | null> {
+  try {
+    const dir = join(config.dataDir, 'captures');
+    await mkdir(dir, { recursive: true });
+    const file = `${randomUUID()}.png`;
+    await writeFile(join(dir, file), Buffer.from(pngB64, 'base64'));
+    return `/api/captures/${file}`;
+  } catch {
+    return null;
+  }
+}
 
 export interface ToolContext {
   spaceId: string;
@@ -60,26 +78,26 @@ async function runCuaOp(ctx: ToolContext, op: Record<string, any>, timeoutMs = 1
     if (row?.status === 'done' || row?.status === 'error') {
       const data = row.result_data ?? {};
       if (row.status === 'error') return { ok: false, result: { error: data.error ?? row.result ?? 'companion error' } };
-      // The human always sees the capture in chat (a2ui image); the model
-      // additionally gets the inline screenshot only when vision routing
-      // says the active provider can consume it.
+      // The human sees the capture through the registered frontend tool
+      // renderer (screen_capture/screen_act in ToolRenderers) using the
+      // served URL; the model additionally gets the inline data-URL
+      // screenshot in the thread message only when vision routing allows.
+      // Keep screenshotUrl early in the object: the emitted tool result is
+      // sliced to 4000 chars and the summary can exceed that.
       const png: string | undefined = data.png_b64;
-      const a2ui = png
-        ? [{ type: 'image' as const, props: { src: `data:image/png;base64,${png}`, title: op.action === 'capture' ? 'Screen capture' : `After ${op.action}`, alt: data.summary?.slice(0, 120) ?? 'capture' } }]
-        : undefined;
+      const screenshotUrl = png ? await saveCapturePng(png) : null;
       if (png && providerAcceptsScreenshots(ctx.provider) && png.length * 0.75 < MAX_INLINE_SCREENSHOT_BYTES) {
         const visionSummary = data.summary ?? (data.after ? `${data.action_result ?? 'ok'}\n${data.after.summary}` : undefined) ?? row.result;
         return {
           ok: true,
-          result: { summary: visionSummary, screenshot: `data:image/png;base64,${png}`, windowId: data.window_id },
-          a2ui,
+          result: { screenshotUrl, windowId: data.window_id, summary: visionSummary, screenshot: `data:image/png;base64,${png}` },
         };
       }
       const summary = data.summary
         ?? (data.after ? `${data.action_result ?? 'ok'}\n${data.after.summary}` : undefined)
         ?? JSON.stringify(data).slice(0, 4000);
       const note = png && !providerAcceptsScreenshots(ctx.provider) ? '\n(screenshot omitted — active model is not vision-capable; ground on the element index)' : '';
-      return { ok: true, result: { summary: summary + note, windowId: data.window_id }, a2ui };
+      return { ok: true, result: { screenshotUrl, windowId: data.window_id, summary: summary + note } };
     }
   }
   return { ok: false, result: { error: 'companion did not answer in time — is it connected? (Settings → Companion)' } };

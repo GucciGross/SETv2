@@ -262,7 +262,12 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {
 
         try {
           const out = await tool.run(args, { spaceId, userId, provider });
-          emit('TOOL_CALL_END', { callId: tc.id, name: tc.function.name, ok: out.ok, result: out.result });
+          // The emitted event must stay small: strip inline screenshots (the
+          // full result with data-URL still reaches the model via the thread).
+          const emitted = out.result && typeof out.result === 'object'
+            ? { ...out.result, screenshot: undefined, hasScreenshot: !!out.result.screenshot }
+            : out.result;
+          emit('TOOL_CALL_END', { callId: tc.id, name: tc.function.name, ok: out.ok, result: emitted });
           if (out.a2ui?.length) emit('CUSTOM', { subtype: 'a2ui', components: out.a2ui });
           thread.push({ role: 'tool', tool_call_id: tc.id, name: tc.function.name, content: JSON.stringify(out.result).slice(0, 12000) } as ChatMessage);
           toolLog.push({ name: tc.function.name, args, ok: out.ok, result: out.result });

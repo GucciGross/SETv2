@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { marked } from 'marked';
-import { api } from '../lib/api';
+import { api, getToken } from '../lib/api';
 
 /** A2UI-style declarative generative UI — agents emit component descriptors, this registry renders them. */
 
@@ -85,14 +85,20 @@ export function A2UIRenderer({ component, onFormSubmit }: { component: A2UICompo
           </div>
         </div>
       );
-    case 'image':
+    case 'image': {
+      // capture screenshots sit behind auth; <img> can't send headers, so
+      // append the session token as a query param
+      const src = typeof p.src === 'string' && p.src.startsWith('/api/')
+        ? `${p.src}${p.src.includes('?') ? '&' : '?'}token=${encodeURIComponent(getToken())}`
+        : p.src;
       return (
         <figure className="set-card p-3 fadein">
           {p.title && <h4 className="font-semibold text-white text-sm mb-2">{p.title}</h4>}
-          <img src={p.src} alt={p.alt ?? 'capture'} className="rounded-lg border border-set-border max-h-96 w-auto" />
+          <img src={src} alt={p.alt ?? 'capture'} className="rounded-lg border border-set-border max-h-96 w-auto" />
           {p.caption && <figcaption className="text-xs text-set-dim mt-1.5">{p.caption}</figcaption>}
         </figure>
       );
+    }
     case 'form':
       return <A2Form props={p} onSubmit={onFormSubmit} />;
     case 'quiz':

@@ -111,6 +111,21 @@ export class SetAgent extends AbstractAgent {
             .join('\n');
           if (screen) context.screen = screen;
 
+          // AG-UI runtimes validate stream completeness: RUN_FINISHED with a
+          // text message still open is rejected (INCOMPLETE_STREAM) and the
+          // client silently drops the whole run. When the model goes straight
+          // to tool calls with no text, the engine emits no TEXT_MESSAGE_*
+          // envelope at all — so we synthesize one around tool-only turns.
+          // State must live HERE, outside the emit callback (which is invoked
+          // once per event).
+          let syntheticMessageId: string | null = null;
+          const closeSynthetic = () => {
+            if (syntheticMessageId) {
+              send({ type: EventType.TEXT_MESSAGE_END, messageId: syntheticMessageId } as BaseEvent);
+              syntheticMessageId = null;
+            }
+          };
+
           await runAgentLoop({
             spaceId,
             userId: user.id,
@@ -127,7 +142,7 @@ export class SetAgent extends AbstractAgent {
                 }
               : {}),
             signal: abort.signal,
-            emit: (type, payload) => {
+            emit: (type: string, payload: any) => {
               switch (type) {
                 case 'RUN_STARTED':
                   send({ type: EventType.RUN_STARTED, threadId, runId } as BaseEvent);
@@ -136,6 +151,7 @@ export class SetAgent extends AbstractAgent {
                   send({ type: EventType.STATE_SNAPSHOT, threadId, snapshot: payload.context ?? {} } as BaseEvent);
                   break;
                 case 'TEXT_MESSAGE_START':
+                  closeSynthetic();
                   send({ type: EventType.TEXT_MESSAGE_START, messageId: payload.messageId, role: 'assistant' } as BaseEvent);
                   break;
                 case 'TEXT_MESSAGE_CONTENT':
@@ -145,20 +161,36 @@ export class SetAgent extends AbstractAgent {
                   send({ type: EventType.TEXT_MESSAGE_END, messageId: payload.messageId } as BaseEvent);
                   break;
                 case 'TOOL_CALL_START':
+                  if (!syntheticMessageId) {
+                    syntheticMessageId = `tc-${payload.callId}`;
+                    send({ type: EventType.TEXT_MESSAGE_START, messageId: syntheticMessageId, role: 'assistant' } as BaseEvent);
+                  }
                   send({ type: EventType.TOOL_CALL_START, toolCallId: payload.callId, toolCallName: payload.name } as BaseEvent);
                   send({ type: EventType.TOOL_CALL_ARGS, toolCallId: payload.callId, delta: JSON.stringify(payload.args ?? {}) } as BaseEvent);
                   break;
                 case 'TOOL_CALL_END':
                   send({ type: EventType.TOOL_CALL_END, toolCallId: payload.callId } as BaseEvent);
-                  send({ type: EventType.TOOL_CALL_RESULT, toolCallId: payload.callId, content: JSON.stringify(payload.result ?? null).slice(0, 4000) } as BaseEvent);
+                  // messageId is REQUIRED on TOOL_CALL_RESULT (AG-UI schema);
+                  // without it the client's apply wedges and the whole run
+                  // silently stops rendering. It must reference the assistant
+                  // message carrying the tool call — our synthetic envelope.
+                  send({
+                    type: EventType.TOOL_CALL_RESULT,
+                    messageId: syntheticMessageId ?? `tc-${payload.callId}`,
+                    toolCallId: payload.callId,
+                    role: 'tool',
+                    content: JSON.stringify(payload.result ?? null).slice(0, 4000),
+                  } as BaseEvent);
                   break;
                 case 'CUSTOM':
                   send({ type: EventType.CUSTOM, name: payload.subtype ?? 'set', value: payload } as BaseEvent);
                   break;
                 case 'RUN_FINISHED':
+                  closeSynthetic();
                   send({ type: EventType.RUN_FINISHED, threadId, runId } as BaseEvent);
                   break;
                 case 'RUN_ERROR':
+                  closeSynthetic();
                   send({ type: EventType.RUN_ERROR, message: payload.message ?? 'Unknown error' } as BaseEvent);
                   break;
                 default:
