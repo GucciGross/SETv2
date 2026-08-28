@@ -97,10 +97,7 @@ export function GuideTools() {
       name: 'start_tour',
       description: 'Start the full SET product walkthrough (spotlight tour of the workspace).',
       parameters: z.object({}),
-      handler: async () => {
-        startTour();
-        return { started: true };
-      },
+      handler: async () => startTour(),
     },
     []
   );

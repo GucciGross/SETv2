@@ -72,8 +72,89 @@ export interface RunAgentLoopOptions {
   signal?: AbortSignal;
 }
 
-export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {
-  const { spaceId, userId, message, emit, signal } = opts;
+/**
+ * Providers are strict about message sequences — GLM answers 400 "messages
+ * parameter is illegal" (code 1214) for any of: a tool result whose
+ * tool_call was never declared, an assistant tool_calls turn whose results
+ * got cut off (the -16 window does this as threads grow), empty content, or
+ * empty tool_call ids. Runs that errored mid-tool-call poison the stored
+ * thread, and then EVERY later run on that thread 400s. Sanitize the window
+ * into a legal sequence; orphaned tool-call turns are rewritten as plain
+ * assistant text (dropped when they have none) so the thread survives.
+ */
+export function sanitizeMessages(input: ChatMessage[]): ChatMessage[] {
+  const msgs: ChatMessage[] = [];
+  for (const m of input) {
+    const content = (m.content ?? '').toString();
+    if (m.role === 'system' || m.role === 'user') {
+      if (content.trim()) msgs.push({ role: m.role, content });
+      continue;
+    }
+    if (m.role === 'assistant') {
+      const toolCalls = Array.isArray(m.tool_calls)
+        ? m.tool_calls
+            .filter((tc: any) => tc?.function?.name)
+            .map((tc: any, i: number) => ({
+              id: typeof tc.id === 'string' && tc.id ? tc.id : `call_${i}`,
+              type: 'function' as const,
+              function: {
+                name: String(tc.function.name),
+                arguments:
+                  typeof tc.function.arguments === 'string' && tc.function.arguments ? tc.function.arguments : '{}',
+              },
+            }))
+        : [];
+      if (toolCalls.length) msgs.push({ role: 'assistant', content, tool_calls: toolCalls });
+      else if (content.trim()) msgs.push({ role: 'assistant', content });
+      continue;
+    }
+    msgs.push({ role: 'tool', content, tool_call_id: (m.tool_call_id ?? '').toString(), name: m.name });
+  }
+
+  // Tool results must follow their declaration, and every declared tool_call
+  // must be resolved before the next non-tool message — rewrite violations
+  // as plain assistant text.
+  const out: ChatMessage[] = [];
+  let pending = new Set<string>();
+  let lastAssistant = -1;
+  const resolveAssistant = () => {
+    if (!pending.size || lastAssistant < 0) return;
+    const m = out[lastAssistant];
+    const text = (m.content ?? '').toString().trim();
+    if (text) out[lastAssistant] = { role: 'assistant', content: text };
+    else out.splice(lastAssistant, 1);
+    pending = new Set();
+    lastAssistant = -1;
+  };
+  for (const m of msgs) {
+    if (m.role === 'assistant' && m.tool_calls?.length) {
+      resolveAssistant();
+      out.push(m);
+      lastAssistant = out.length - 1;
+      pending = new Set(m.tool_calls.map((tc: any) => tc.id));
+      continue;
+    }
+    if (m.role === 'tool') {
+      if (m.tool_call_id && pending.has(m.tool_call_id)) {
+        out.push(m);
+        pending.delete(m.tool_call_id);
+      }
+      continue; // orphaned result — drop
+    }
+    resolveAssistant();
+    // merge consecutive plain assistant messages (some providers reject them)
+    const prev = out[out.length - 1];
+    if (m.role === 'assistant' && prev?.role === 'assistant' && !prev.tool_calls?.length) {
+      prev.content = `${prev.content}\n\n${m.content}`.trim();
+      continue;
+    }
+    out.push(m);
+  }
+  resolveAssistant();
+  return out;
+}
+
+export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {  const { spaceId, userId, message, emit, signal } = opts;
   console.log(`[engine] runAgentLoop space=${spaceId} source=${opts.source ?? 'api'} msg="${message.slice(0, 60)}"`);
   const historyMode = opts.history ?? 'db';
   await ensureBootstrapProvider(spaceId);
@@ -167,7 +248,7 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {
       const messages: ChatMessage[] = [
         { role: 'system', content: systemContent },
         ...(contextBlock && step === 0 ? ([{ role: 'system', content: contextBlock }] as ChatMessage[]) : []),
-        ...thread.slice(-16),
+        ...sanitizeMessages(thread.slice(-16)),
       ];
       let assistantContent = '';
       let messageId: string | null = null;
@@ -209,8 +290,11 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {
 
         // Client-side (frontend) tool: CopilotKit executes it in the browser and
         // re-runs with the result appended — end this run after emitting.
+        // The placeholder must be exactly "Forwarded to client": that string is
+        // what CopilotKit's client matches (isFrontendPlaceholderResult) before
+        // it strips the stub, runs the real handler, and continues the run.
         if (!tool && extraNames.has(tc.function.name)) {
-          emit('TOOL_CALL_END', { callId: tc.id, name: tc.function.name, ok: true, result: { delegated: 'client' } });
+          emit('TOOL_CALL_END', { callId: tc.id, name: tc.function.name, ok: true, result: 'Forwarded to client' });
           toolLog.push({ name: tc.function.name, args, delegated: true });
           clientToolCalled = true;
           continue;

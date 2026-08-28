@@ -66,39 +66,63 @@ export const TOUR_STEPS: (DriveStep & { mobile?: boolean })[] = [
   },
 ];
 
-export function startTour() {
-  if (driverObj) {
-    driverObj.destroy();
-    driverObj = null;
-  }
-  const steps = TOUR_STEPS.map(({ mobile, ...s }) => s).filter((s) => s.element && document.querySelector(s.element as string));
-  const begin = () => {
-    driverObj = driver({
-      showProgress: true,
-      progressText: '{current} / {total}',
-      nextBtnText: 'Next',
-      prevBtnText: 'Back',
-      doneBtnText: 'Done',
-      allowClose: true,
-      stagePadding: 8,
-      stageRadius: 12,
-      overlayColor: 'rgba(4, 6, 12, 0.72)',
-      popoverClass: 'set-tour-popover',
-      onHighlightStarted: (element) => emitSidebar({ open: inSidebar(element) }),
-      onDestroyed: () => {
-        emitSidebar({ restore: true });
-        void api.put('/users/onboarding', { tourDone: true }).catch(() => {});
-      },
-      steps,
-    });
-    if ((driverObj.getConfig().steps ?? []).length) driverObj.drive();
-  };
-  // if the tour opens on a sidebar step, let the sidebar slide open before the first highlight lands
-  const first = steps[0]?.element ? document.querySelector(steps[0].element as string) : null;
-  if (inSidebar(first)) {
-    emitSidebar({ open: true });
-    setTimeout(begin, 300);
-  } else {
-    begin();
+/** Starts the walkthrough. Returns what actually happened so callers (the
+ * chat's start_tour tool card shows it verbatim) can see failures instead of
+ * silently no-oping: driver mounts nothing when the filtered step list is
+ * empty, and a throw inside the deferred begin() used to vanish. */
+export function startTour(): { started: boolean; steps: number; error?: string } {
+  try {
+    if (driverObj) {
+      driverObj.destroy();
+      driverObj = null;
+    }
+    const steps = TOUR_STEPS.map(({ mobile, ...s }) => s).filter((s) => s.element && document.querySelector(s.element as string));
+    if (!steps.length) {
+      return { started: false, steps: 0, error: 'no tour elements found on this screen' };
+    }
+    const begin = () => {
+      try {
+        driverObj = driver({
+          showProgress: true,
+          progressText: '{current} / {total}',
+          nextBtnText: 'Next',
+          prevBtnText: 'Back',
+          doneBtnText: 'Done',
+          allowClose: true,
+          stagePadding: 8,
+          stageRadius: 12,
+          overlayColor: 'rgba(4, 6, 12, 0.72)',
+          popoverClass: 'set-tour-popover',
+          onHighlightStarted: (element) => emitSidebar({ open: inSidebar(element) }),
+          onDestroyed: () => {
+            emitSidebar({ restore: true });
+            void api.put('/users/onboarding', { tourDone: true }).catch(() => {});
+          },
+          steps,
+        });
+        driverObj.drive();
+      } catch (e: any) {
+        console.error('[tour] drive failed', e);
+        driverObj = null;
+        throw e;
+      }
+    };
+    // if the tour opens on a sidebar step, let the sidebar slide open before the first highlight lands
+    const first = steps[0]?.element ? document.querySelector(steps[0].element as string) : null;
+    if (inSidebar(first)) {
+      emitSidebar({ open: true });
+      setTimeout(() => {
+        try {
+          begin();
+        } catch (e: any) {
+          console.error('[tour] start failed', e);
+        }
+      }, 300);
+    } else {
+      begin();
+    }
+    return { started: true, steps: steps.length };
+  } catch (e: any) {
+    return { started: false, steps: 0, error: e?.message ?? String(e) };
   }
 }

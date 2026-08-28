@@ -179,7 +179,13 @@ export class SetAgent extends AbstractAgent {
                     messageId: syntheticMessageId ?? `tc-${payload.callId}`,
                     toolCallId: payload.callId,
                     role: 'tool',
-                    content: JSON.stringify(payload.result ?? null).slice(0, 4000),
+                    // strings go out verbatim — CopilotKit's client matches the
+                    // delegated-tool placeholder "Forwarded to client" exactly,
+                    // and JSON-quoting would break that comparison
+                    content:
+                      typeof payload.result === 'string'
+                        ? payload.result
+                        : JSON.stringify(payload.result ?? null).slice(0, 4000),
                   } as BaseEvent);
                   break;
                 case 'CUSTOM':

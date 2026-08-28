@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { CopilotKit } from '@copilotkit/react-core/v2';
-import { useAgentContext } from '@copilotkit/react-core/v2';
+import { useAgentContext, useCopilotKit } from '@copilotkit/react-core/v2';
 import { getToken } from './api';
 import { uuid } from './utils';
 import { useApp } from '../stores/app';
@@ -36,6 +36,7 @@ export function SetCopilotProvider({ children }: { children: React.ReactNode }) 
       // Dev tooling only: never in production builds, and only on localhost.
       enableInspector={import.meta.env.DEV && window.location.hostname === 'localhost'}
     >
+      <CopilotCoreBridge />
       {children}
     </CopilotKit>
   );
@@ -91,10 +92,25 @@ export function useSetScreenContext() {
   });
 }
 
-/** Fire-and-forget message into an agent's chat (external triggers). */
+/** Module-level handle to the CopilotKit core so the non-React helper below
+ * can run agents with the same wiring the chat uses (tools, context, auth). */
+const copilotCoreRef: { current: any } = { current: null };
+
+/** Mounts once inside SetCopilotProvider; captures nothing visually. */
+export function CopilotCoreBridge() {
+  const { copilotkit } = useCopilotKit();
+  copilotCoreRef.current = copilotkit;
+  return null;
+}
+
+/** Fire-and-forget message into an agent's chat (welcome starters, external
+ * triggers like "Explain this actuator"). Adds the message to the agent's
+ * visible history and runs through the core: calling agent.runAgent({messages})
+ * directly streams a reply but never lands the user's message in the chat. */
 export async function askAgent(agent: any, text: string) {
   if (!agent) return;
-  await agent.runAgent({
-    messages: [...agent.messages, { id: uuid(), role: 'user', content: text }],
-  });
+  agent.addMessage({ id: uuid(), role: 'user', content: text });
+  const core = copilotCoreRef.current;
+  if (core) await core.runAgent({ agent });
+  else await agent.runAgent();
 }
