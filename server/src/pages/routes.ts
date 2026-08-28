@@ -262,7 +262,11 @@ export async function pageRoutes(app: FastifyInstance) {
     );
     const edges = await q<{ source: string; target: string }>(
       `SELECT l.source_id AS source, l.target_id AS target FROM links l
-       JOIN pages p ON p.id = l.source_id WHERE l.space_id = $1 AND p.deleted_at IS NULL`,
+       JOIN pages s ON s.id = l.source_id
+       JOIN pages t ON t.id = l.target_id
+       WHERE l.space_id = $1
+         AND s.deleted_at IS NULL AND s.is_template = false
+         AND t.deleted_at IS NULL AND t.is_template = false`,
       [spaceId]
     );
     return { nodes, edges };
