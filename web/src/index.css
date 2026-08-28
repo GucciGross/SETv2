@@ -219,21 +219,57 @@ h1, h2, h3, h4 {
   to { opacity: 1; transform: none; }
 }
 .login-rise { opacity: 0; animation: login-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-/* Floating knowledge sprites: parallax on the wrapper, drift on the sprite. */
-.login-float {
-  transform: translate3d(calc(var(--mx, 0) * var(--depth, 0) * 1px), calc(var(--my, 0) * var(--depth, 0) * 1px), 0);
-  transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
+/* Floating glass tiles — isocons-style 3D slabs. Position/tilt is written
+   per-frame by the physics loop in FloatingIcons.tsx; this block is the
+   material: dark glass face, extruded edge, top sheen, accent tick. */
+.icon-tile-dragger {
+  /* The tile owns its gesture completely — the page never scrolls out from
+     under a fling. Vertical swipes that start on a tile are detected in
+     FloatingIcons' pointer handlers and scroll the page by hand instead. */
+  touch-action: none;
 }
-@keyframes float-y {
-  from { transform: translateY(8px) rotate(-4deg); }
-  to { transform: translateY(-14px) rotate(4deg); }
+.icon-tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(155deg, rgb(58 66 86 / 0.92) 0%, rgb(25 30 44 / 0.96) 45%, rgb(12 15 24 / 0.98) 100%);
+  border: 1px solid rgb(255 255 255 / 0.07);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.16),
+    inset 0 -10px 16px -10px rgb(0 0 0 / 0.75),
+    0 8px 0 -4px rgb(3 5 10 / 0.92),
+    0 30px 48px -18px rgb(0 0 0 / 0.85);
+  transition: box-shadow 0.25s ease;
 }
-@keyframes appear { from { opacity: 0; } to { opacity: 1; } }
-.login-sprite {
-  animation: appear 1.1s ease-out both, float-y var(--dur, 6s) ease-in-out infinite alternate;
-  filter: saturate(1.2) drop-shadow(0 10px 22px rgb(108 140 255 / 0.3));
-  user-select: none;
+.icon-tile::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  background: radial-gradient(120% 90% at 22% 8%, rgb(255 255 255 / 0.15), transparent 55%);
+  pointer-events: none;
+}
+.icon-tile-dragger.icon-grabbed .icon-tile {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    inset 0 -10px 16px -10px rgb(0 0 0 / 0.6),
+    0 15px 0 -6px rgb(3 5 10 / 0.92),
+    0 44px 64px -20px rgb(0 0 0 / 0.9);
+}
+.icon-tick {
+  position: absolute;
+  left: 15%;
+  top: 50%;
+  width: 3px;
+  height: 34%;
+  border-radius: 2px;
+  transform: translateY(-50%);
+  opacity: 0.95;
+}
+.icon-glyph {
+  position: relative;
+  color: rgb(226 232 240 / 0.92);
+  filter: drop-shadow(0 3px 4px rgb(0 0 0 / 0.55));
 }
 /* Portal rings radiating from the emblem. */
 @keyframes ring-pulse {
@@ -271,7 +307,7 @@ h1, h2, h3, h4 {
 }
 .mascot-reject { animation: mascot-reject 0.5s ease-out; }
 @media (prefers-reduced-motion: reduce) {
-  .login-rise, .login-sprite, .login-ring, .login-orbit, .login-wordmark, .login-shake, .mascot-reject {
+  .login-rise, .login-ring, .login-orbit, .login-wordmark, .login-shake, .mascot-reject {
     animation: none !important;
     opacity: 1;
   }
@@ -757,22 +793,81 @@ html:has(body.set-sheet-dragging) { transition: none !important; }
   body.set-sheet-closing [data-copilot-popup] { transition: transform 0.3s cubic-bezier(0.5, 0, 0.75, 0) !important; }
 
   /* conversation started → the chat takes the whole screen, edge to edge;
-     the height transition above turns the growth into one glide. The
-     keyboard still claims the bottom via the height + padding pairing. */
+     the height transition above turns the growth into one glide. Height
+     resolves against the fixed wrapper (the real layout viewport) instead of
+     100dvh — on iOS Safari the two drift apart and left a dead band under
+     the sheet. The keyboard claims the bottom through the wrapper's padding:
+     top stays pinned at 0, the sheet's bottom edge lands exactly on the
+     keyboard's top. */
   body.set-chat-live div[data-copilotkit]:has(> [data-copilot-popup]) {
     padding: 0 !important;
+    padding-bottom: var(--set-kb, 0px) !important;
   }
   body.set-chat-live [data-copilot-popup][data-testid='copilot-popup'] {
-    height: calc(100dvh - var(--set-kb, 0px)) !important;
+    height: 100% !important;
     max-height: none !important;
     border-radius: 0 !important;
     border: 0 !important;
     box-shadow: none !important;
-    /* notch above the header, home-indicator clearance under the composer —
-       but both collapse as the keyboard rises, so it lands flush on it */
+    /* notch clearance above the header; nothing under the composer — the
+       sheet ends where the screen (or keyboard) ends */
     padding-top: env(safe-area-inset-top) !important;
-    padding-bottom: max(calc(env(safe-area-inset-bottom) - var(--set-kb, 0px)), 0px) !important;
+    padding-bottom: 0 !important;
   }
+  /* The composer floats over the feed (absolute overlay), and the vendor
+     undercuts the newest message with paddingBottom = composerHeight + 32 —
+      a permanent ~190px void between the last message and the input. The
+     pinner in GuideFab publishes the real composer height as
+     --set-composer-h; reserve that plus a hair so the newest message ends
+     flush at the composer's top edge. */
+  [data-testid='copilot-scroll-content'] {
+    padding-bottom: calc(var(--set-composer-h, 170px) + 8px) !important;
+  }
+  /* …and nothing may hold the composer off the sheet's bottom edge: the
+     input's root wrapper pads itself (and the device safe-area stacks on
+     top) — the card should end where the screen ends. The vendor also keeps
+     an empty disclaimer row (py-3) under the card even with the text
+     disabled — it's pure dead space on mobile. */
+  [data-popup-chat] div:has(> [data-testid='copilot-chat-input']) { padding-bottom: 0 !important; min-height: 0 !important; }
+  [data-popup-chat] [data-testid='copilot-chat-input'] ~ * { display: none !important; }
+  /* one-line composer on mobile: the vendor gives the textarea a 50px
+     min-height wrapper and lets it grow — a chat input should be a single
+     line that scrolls internally, with the toolbar row tucked in tight */
+  [data-popup-chat] div:has(> [data-testid='copilot-chat-textarea']) { min-height: 0 !important; }
+  [data-testid='copilot-chat-textarea'] {
+    height: 28px !important;
+    min-height: 28px !important;
+    max-height: 28px !important;
+    line-height: 20px !important;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+    overflow-y: auto !important;
+  }
+  [data-testid='copilot-chat-input'] > div:first-child {
+    row-gap: 4px !important;
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
+  }
+  /* Short conversations hug the composer (iMessage-style) instead of
+     floating at the top with dead space under them. use-stick-to-bottom
+     renders TWO divs — the real scroller and an inner content wrapper — so
+     both levels become columns and both first children get an auto top
+     margin. Auto = 0 whenever the feed overflows, so history stays fully
+     scrollable; the inner wrapper's own height is content-driven, so only
+     the scroller level (definite height) actually absorbs the free space. */
+  [data-popup-chat] div:has(> div > [data-testid='copilot-scroll-content']),
+  [data-popup-chat] div:has(> div > div > [data-testid='copilot-scroll-content']) {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  [data-popup-chat] div:has(> div > [data-testid='copilot-scroll-content']) > div:first-child,
+  [data-popup-chat] div:has(> div > div > [data-testid='copilot-scroll-content']) > div:first-child {
+    margin-top: auto !important;
+  }
+  /* the browser's scroll anchoring repositions the feed on container resizes
+     (keyboard open/close) and buries the newest messages — the pinner in
+     GuideFab owns that job instead */
+  [data-testid='copilot-message-list'] { overflow-anchor: none; }
 
   /* header = grab zone: visible pill + a tighter bar to buy the welcome room */
   [data-testid='copilot-modal-header'][data-slot='copilot-modal-header'] {

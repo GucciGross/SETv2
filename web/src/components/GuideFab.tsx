@@ -153,12 +153,17 @@ function SetChatHeader({ titleContent, closeButton }: { titleContent?: React.Rea
 
 /** The header must be passed in its object form: a component-type header slot
  * is invoked with NO props (renderSlot({})), so the vendor-bound title and
- * close button only exist through this children render-prop. */
+ * close button only exist through this children render-prop. ChatBottomPinner
+ * rides along because it needs the chat configuration context, which only
+ * exists inside the popup's subtree. */
 const SET_HEADER = {
   children: ({ titleContent, closeButton }: any) => (
-    <SheetDragZone>
-      <SetChatHeader titleContent={titleContent} closeButton={closeButton} />
-    </SheetDragZone>
+    <>
+      <ChatBottomPinner />
+      <SheetDragZone>
+        <SetChatHeader titleContent={titleContent} closeButton={closeButton} />
+      </SheetDragZone>
+    </>
   ),
 };
 
@@ -319,6 +324,120 @@ function SheetModeWatcher() {
   return null;
 }
 
+/** Keeps the newest messages on screen. Covers three moments: the keyboard
+ * opening/closing (the sheet resizes and browser scroll clamping strands the
+ * feed mid-history), streaming growth (the scroller's box doesn't change when
+ * content grows, so only the content wrapper's resize reveals it), and the
+ * vendor's stick-to-bottom giving up after a scroll jolt. Auto-scroll is on
+ * unless the user scrolls up to read — scrolling back to the very bottom
+ * re-engages it. */
+function ChatBottomPinner() {
+  const config = useCopilotChatConfiguration();
+  const isOpen = !!config?.isModalOpen;
+  useEffect(() => {
+    if (!isOpen || !window.matchMedia('(max-width: 767px)').matches) return;
+    const root = document.documentElement;
+    let list: HTMLElement | null = null;
+    let popup: Element | null = null;
+    let wasNearBottom = true;
+    let detached = false;
+    let prevPopupH = 0;
+    let raf = 0;
+    let sheetResized = false;
+    // the vendor's stick-to-bottom lib wraps the message list in ANOTHER div
+    // that is the real scroll container — [data-testid='copilot-message-list']
+    // itself never scrolls, so pinning it was a no-op. Walk up to the first
+    // element that actually scrolls.
+    const findScroller = (start: Element | null): HTMLElement | null => {
+      let cur: HTMLElement | null = start ? start.parentElement : null;
+      while (cur && cur !== document.body) {
+        const o = getComputedStyle(cur).overflowY;
+        if (o === "auto" || o === "scroll" || o === "overlay") return cur;
+        cur = cur.parentElement;
+      }
+      return null;
+    };
+    const onScroll = () => {
+      if (!list) return;
+      const dist = list.scrollHeight - list.scrollTop - list.clientHeight;
+      if (dist > 60) detached = true;
+      else if (detached && dist < 4) {
+        detached = false;
+        list.scrollTop = list.scrollHeight;
+      }
+      wasNearBottom = !detached;
+    };
+    const rebind = () => {
+      const listEl = document.querySelector("[data-testid='copilot-message-list']");
+      const scroller = findScroller(listEl);
+      if (scroller && scroller !== list) {
+        list?.removeEventListener('scroll', onScroll);
+        list = scroller;
+        list.addEventListener('scroll', onScroll, { passive: true });
+      }
+      if (!popup) {
+        popup = document.querySelector('[data-copilot-popup]');
+        if (popup) ro.observe(popup);
+      }
+      if (list && !bound.has(list)) {
+        bound.add(list);
+        ro.observe(list);
+      }
+      // the padded content div inside the scroller grows as messages stream —
+      // observing it is what keeps auto-scroll alive while the keyboard is
+      // open (the scroller's own box never changes then)
+      const scrollContent = document.querySelector('[data-testid="copilot-scroll-content"]');
+      if (scrollContent && !bound.has(scrollContent)) {
+        bound.add(scrollContent);
+        ro.observe(scrollContent);
+      }
+      // publish the floating composer's height so the feed's scroll padding
+      // (inline composerHeight + 32 from the vendor) can be overridden with
+      // just the real height + a hair — see index.css
+      const composer = document.querySelector<HTMLElement>('[data-testid="copilot-input-overlay"]');
+      if (composer) {
+        root.style.setProperty('--set-composer-h', `${Math.round(composer.getBoundingClientRect().height)}px`);
+      }
+    };
+    const ro = new ResizeObserver((entries) => {
+      // a sheet-height change is the keyboard opening/closing (or rotation):
+      // that is not the user scrolling, so re-engage auto-scroll — the feed
+      // must show the bottom of the conversation when the keyboard is up
+      const popupEntry = entries.find((e) => e.target === popup);
+      if (popupEntry) {
+        const h = popupEntry.borderBoxSize?.[0]?.blockSize ?? popupEntry.contentRect.height;
+        if (prevPopupH && Math.abs(h - prevPopupH) > 2) sheetResized = true;
+        prevPopupH = h;
+      }
+      // run after layout settles so scrollHeight reflects the new geometry
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        rebind();
+        // consumed here rather than in the RO callback: scroll events fired
+        // during the resize (scroll clamping marks the feed "detached") must
+        // not override the re-engage
+        if (sheetResized) {
+          sheetResized = false;
+          detached = false;
+          wasNearBottom = true;
+        }
+        if (wasNearBottom && list) list.scrollTop = list.scrollHeight;
+      });
+    });
+    const bound = new WeakSet<Element>();
+    rebind();
+    // the list mounts after the welcome → messages swap; catch it lazily
+    const iv = window.setInterval(rebind, 400);
+    return () => {
+      ro.disconnect();
+      window.clearInterval(iv);
+      window.cancelAnimationFrame(raf);
+      list?.removeEventListener('scroll', onScroll);
+    };
+  }, [isOpen]);
+  return null;
+}
+
 /**
  * Assistant messages: keep ALL of CopilotKit's message machinery (markdown,
  * tool-call view, hover toolbar) by composing the stock component with its
@@ -381,6 +500,11 @@ export default function GuideFab() {
   // the only reliable source on iOS. Updates are debounced — the raw events
   // fire many times during the keyboard animation and each one snapped the
   // sheet around; debounced + a CSS transition it does one smooth glide.
+  // The same events carry iOS's pan: when the input focuses, Safari shoves
+  // the visual viewport up to reveal the caret, which drags our fixed sheet
+  // with it and pushes the header off-screen. While the copilot owns the
+  // focused element we push straight back — the sheet manages the keyboard
+  // itself via --set-kb and must stay pinned to the real viewport.
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
@@ -390,17 +514,28 @@ export default function GuideFab() {
       const kb = Math.max(0, Math.round(window.innerHeight - vv.height));
       root.style.setProperty('--set-kb', `${kb < 40 ? 0 : kb}px`);
     };
+    const copilotOwnsFocus = () =>
+      !!(document.activeElement as Element | null)?.closest?.('[data-copilot-popup]');
+    const onVV = () => {
+      schedule();
+      if (copilotOwnsFocus()) {
+        window.scrollTo(0, 0);
+        document.scrollingElement?.scrollTo(0, 0);
+      }
+    };
     const schedule = () => {
       window.clearTimeout(timer);
       timer = window.setTimeout(update, 120);
     };
     update();
-    vv.addEventListener('resize', schedule);
-    vv.addEventListener('scroll', schedule);
+    vv.addEventListener('resize', onVV);
+    vv.addEventListener('scroll', onVV);
+    window.addEventListener('scroll', onVV);
     return () => {
       window.clearTimeout(timer);
-      vv.removeEventListener('resize', schedule);
-      vv.removeEventListener('scroll', schedule);
+      vv.removeEventListener('resize', onVV);
+      vv.removeEventListener('scroll', onVV);
+      window.removeEventListener('scroll', onVV);
     };
   }, []);
 
