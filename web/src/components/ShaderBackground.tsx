@@ -9,11 +9,20 @@ import { useEffect, useRef } from 'react';
 const VERT = `attribute vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }`;
 
 const FRAG = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 uniform vec2 u_res;
 uniform float u_time;
 
-float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }
+// mediump-safe hash — no huge sin() arguments (half-float GPUs overflow to white)
+float hash(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * .1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
 float noise(vec2 p){
   vec2 i=floor(p), f=fract(p);
   vec2 u=f*f*(3.-2.*f);
@@ -76,6 +85,11 @@ export default function ShaderBackground({ className = '' }: { className?: strin
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
+    // ?noshader forces the CSS fallback — for debugging GL issues.
+    if (new URLSearchParams(window.location.search).has('noshader')) {
+      canvas.style.display = 'none';
+      return;
+    }
     const gl = canvas.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'low-power' });
     if (!gl) return; // CSS gradient fallback behind us
 
@@ -106,6 +120,20 @@ export default function ShaderBackground({ className = '' }: { className?: strin
     const start = performance.now();
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+    // Some GL stacks (software rasterizers, buggy mobile drivers) shade the
+    // nebula to blown-out garbage. The vignette forces the corner near-black,
+    // so a white corner means the frame is junk — drop the canvas and let the
+    // CSS gradient + dither fallback carry the background.
+    const frameIsGarbage = () => {
+      try {
+        const px = new Uint8Array(4);
+        gl.readPixels(2, 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        return px[0] > 200 && px[1] > 200 && px[2] > 200;
+      } catch {
+        return false; // can't probe — keep the canvas, same as before
+      }
+    };
+
     const frame = () => {
       if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
         canvas.width = canvas.clientWidth;
@@ -115,6 +143,10 @@ export default function ShaderBackground({ className = '' }: { className?: strin
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform1f(uTime, (performance.now() - start) / 1000);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+      if (frameIsGarbage()) {
+        canvas.style.display = 'none';
+        return;
+      }
       if (!reduced) raf = requestAnimationFrame(frame);
     };
     frame(); // first frame always (also the only one when reduced-motion)
@@ -126,7 +158,7 @@ export default function ShaderBackground({ className = '' }: { className?: strin
   }, []);
 
   return (
-    <div className={`absolute inset-0 overflow-hidden bg-gradient-to-br from-[#05070f] via-[#0a0f22] to-[#0d0a1a] ${className}`} aria-hidden>
+    <div className={`pointer-events-none absolute inset-0 overflow-hidden bg-gradient-to-br from-[#05070f] via-[#0a0f22] to-[#0d0a1a] ${className}`} aria-hidden>
       <canvas ref={ref} className="absolute inset-0 w-full h-full" />
       {/* the dither language, over the nebula — one texture system everywhere */}
       <div className="absolute inset-0 tex-dither opacity-70" />
