@@ -5,8 +5,9 @@ import { api, sse } from '../lib/api';
 import { useAgentContext } from '@copilotkit/react-core/v2';
 import {
   Upload, Link as LinkIcon, ClipboardPaste, RefreshCw, Trash2, Layers, MessageSquare,
-  Network, Clock, BookOpen, GraduationCap, ChevronDown,
+  Network, Clock, BookOpen, GraduationCap, ChevronDown, Mic,
 } from 'lucide-react';
+import RecorderModal from '../components/Recorder';
 
 const md = (s: string) => ({ __html: marked.parse(s ?? '', { async: false }) as string });
 
@@ -31,6 +32,12 @@ export default function NotebookView() {
   const [textInput, setTextInput] = useState('');
   const [showPaste, setShowPaste] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [subjects, setSubjects] = useState<any[]>([]);
+
+  useEffect(() => {
+    api.get(`/spaces/${spaceId}/subjects`).then((r) => setSubjects(r.subjects)).catch(() => {});
+  }, [spaceId]);
 
   useAgentContext({
     description: 'The research notebook on screen',
@@ -119,6 +126,22 @@ export default function NotebookView() {
               onBlur={() => api.patch(`/notebooks/${nbId}`, { title: notebook.title }).catch(() => {})}
             />
             <div className="text-xs text-set-dim">{sources.length} sources · citation-grade grounded research</div>
+            {subjects.length > 0 && (
+              <select
+                className="set-input text-xs mt-1.5 w-44"
+                value={notebook.subject_id ?? ''}
+                onChange={async (e) => {
+                  const subjectId = e.target.value || null;
+                  setNotebook({ ...notebook, subject_id: subjectId });
+                  await api.patch(`/notebooks/${nbId}`, { subjectId }).catch(() => {});
+                }}
+              >
+                <option value="">No subject</option>
+                {subjects.map((s) => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
         <div className="flex flex-wrap gap-1 mt-3">
@@ -140,6 +163,9 @@ export default function NotebookView() {
             <div className="set-card p-4 mb-4">
               <div className="text-sm font-medium text-white mb-3">Add sources</div>
               <div className="flex flex-wrap items-center gap-2">
+                <button className="set-btn-primary flex items-center gap-1.5" onClick={() => setRecording(true)} disabled={busy}>
+                  <Mic size={14} /> Record
+                </button>
                 <label className="set-btn cursor-pointer flex items-center gap-1.5">
                   <Upload size={14} /> Upload files
                   <input type="file" multiple hidden accept=".pdf,.md,.markdown,.txt" onChange={(e) => uploadFiles(e.target.files)} disabled={busy} />
@@ -164,13 +190,22 @@ export default function NotebookView() {
             <div className="space-y-2">
               {sources.map((s) => (
                 <div key={s.id} className="set-card p-3 flex items-center gap-3">
-                  <span className="text-lg">{s.kind === 'pdf' ? '' : s.kind === 'web' ? '' : s.kind === 'md' ? '' : ''}</span>
+                  <span className="text-lg">{s.kind === 'recording' ? '🎙' : s.kind === 'pdf' ? '' : s.kind === 'web' ? '' : s.kind === 'md' ? '' : ''}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm text-white truncate">{s.name}</div>
                     <div className="text-xs text-set-dim">
                       {s.chunk_count} chunks · {s.status === 'ready' ? <span className="text-green-400">ready</span> : s.status === 'error' ? <span className="text-red-400" title={s.error}>error</span> : <span className="text-amber-300 animate-pulse">{s.status}…</span>}
                     </div>
                   </div>
+                  {s.meta?.notes_page_id && (
+                    <button
+                      className="set-btn-ghost text-xs text-blue-200"
+                      title="Open the auto-generated notes page"
+                      onClick={() => navigate(`/app/space/${spaceId}/page/${s.meta.notes_page_id}`)}
+                    >
+                      notes
+                    </button>
+                  )}
                   {s.status === 'ready' && (
                     <button className="set-btn-ghost" title="Re-ingest" onClick={async () => {
                       await api.post(`/chunks/${(await api.get(`/sources/${s.id}/chunks`)).chunks[0]?.id}/reembed`).catch(() => {});
@@ -194,6 +229,19 @@ export default function NotebookView() {
         {tab === 'views' && <KnowledgeViews notebookId={nbId!} spaceId={spaceId!} />}
         {tab === 'study' && <StudyGenerator notebookId={nbId!} spaceId={spaceId!} />}
       </div>
+
+      {recording && nbId && (
+        <RecorderModal
+          spaceId={spaceId!}
+          notebookId={nbId}
+          onClose={() => setRecording(false)}
+          onSaved={() => {
+            setRecording(false);
+            load();
+            setTab('sources');
+          }}
+        />
+      )}
     </div>
   );
 }

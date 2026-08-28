@@ -32,6 +32,10 @@ interface AppState {
   presence: { userId: string; name: string; pageId?: string }[];
   copilotOpen: boolean;
   surfaces: Record<string, boolean>;
+  /** Shell density: 'simple' shows a task-shaped nav (Home/Subjects/Ask),
+   *  'studio' exposes every surface. Persisted locally. */
+  shellMode: 'simple' | 'studio';
+  setShellMode: (m: 'simple' | 'studio') => void;
   loadSpaces: () => Promise<void>;
   loadPages: (spaceId: string) => Promise<void>;
   loadSurfaces: (spaceId: string) => Promise<void>;
@@ -61,6 +65,12 @@ export const useApp = create<AppState>((set, get) => ({
   presence: [],
   copilotOpen: typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,
   surfaces: DEFAULT_SURFACES,
+  shellMode: (typeof window !== 'undefined' && localStorage.getItem('set_shell_mode') === 'simple' ? 'simple' : 'studio'),
+
+  setShellMode: (m) => {
+    set({ shellMode: m });
+    localStorage.setItem('set_shell_mode', m);
+  },
 
   loadSpaces: async () => {
     const { spaces } = await api.get('/spaces');

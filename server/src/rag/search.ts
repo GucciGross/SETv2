@@ -80,6 +80,9 @@ export async function ingestSource(sourceId: string, provider: Provider | null):
       );
     }
     await q(`UPDATE sources SET status = 'ready', error = NULL WHERE id = $1`, [sourceId]);
+    // capture → notes loop: fire-and-forget, best-effort (see autonotes.ts)
+    const { maybeAutoNotes } = await import('./autonotes.js');
+    void maybeAutoNotes(sourceId);
   } catch (e: any) {
     await q(`UPDATE sources SET status = 'error', error = $2 WHERE id = $1`, [sourceId, e.message ?? String(e)]);
   }

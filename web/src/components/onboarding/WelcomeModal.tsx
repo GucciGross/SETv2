@@ -51,6 +51,11 @@ export default function WelcomeModal({ onDone }: { onDone: (persona?: string) =>
       if (persona && spaceId) {
         await api.post(`/spaces/${spaceId}/onboarding/seed`, { persona }).catch(() => {});
       }
+      // persona picks the shell: learners and personal users get the Simple
+      // nav (Home / Subjects / Ask), teams and builders get the full Studio.
+      if (persona) {
+        useApp.getState().setShellMode(persona === 'study' || persona === 'personal' ? 'simple' : 'studio');
+      }
       useApp.setState({ user: { ...(user as any), onboarding: { ...(user as any)?.onboarding, welcomed: true, persona } } });
       onDone(persona);
       if (spaceId) navigate(`/app/space/${spaceId}`);

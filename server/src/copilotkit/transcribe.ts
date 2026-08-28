@@ -15,6 +15,29 @@ export function transcriptionConfigured(): boolean {
   return !!config.transcribe.baseUrl;
 }
 
+/** One-shot STT for uploaded recordings (recorder mode). Throws on failure. */
+export async function transcribeBuffer(buf: Buffer, filename: string): Promise<string> {
+  const { baseUrl, apiKey, model } = config.transcribe;
+  if (!baseUrl) throw new Error('No transcription provider configured (api key missing): set TRANSCRIBE_BASE_URL or LLM_BASE_URL');
+  const form = new FormData();
+  form.append('file', new Blob([buf as unknown as BlobPart]), filename || 'audio.webm');
+  form.append('model', model);
+  const res = await fetch(`${baseUrl.replace(/\/$/, '')}/audio/transcriptions`, {
+    method: 'POST',
+    headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    if (res.status === 401 || res.status === 403) throw new Error(`Transcription provider rejected credentials (api key invalid): ${text.slice(0, 200)}`);
+    throw new Error(`Transcription error ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const json: any = await res.json();
+  const { telemetry } = await import('../telemetry/index.js');
+  telemetry.track('transcription');
+  return json.text ?? '';
+}
+
 export class SetTranscriptionService extends TranscriptionService {
   async transcribeFile(options: TranscribeFileOptions): Promise<string> {
     const { baseUrl, apiKey, model } = config.transcribe;

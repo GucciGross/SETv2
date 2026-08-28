@@ -8,6 +8,7 @@ import { config } from '../config.js';
 import { getProvider, chatCompletionStream, ensureBootstrapProvider } from '../llm/router.js';
 import { ingestSource, buildGroundedPrompt, type SearchHit } from './search.js';
 import { recordActivity } from '../team/activity.js';
+import { transcriptionConfigured, transcribeBuffer } from '../copilotkit/transcribe.js';
 import { retrieve } from './provider.js';
 import { extractDates } from './chunker.js';
 
@@ -56,10 +57,16 @@ export async function ragRoutes(app: FastifyInstance) {
   app.post('/spaces/:spaceId/notebooks', async (req, reply) => {
     const spaceId = (req.params as any).spaceId;
     if (!(await requireSpace(req, reply, spaceId, 'editor'))) return;
-    const body = z.object({ title: z.string().min(1), description: z.string().optional() }).parse(req.body);
+    const body = z
+      .object({
+        title: z.string().min(1),
+        description: z.string().optional(),
+        subjectId: z.string().nullable().optional(),
+      })
+      .parse(req.body);
     const nb = await one<any>(
-      `INSERT INTO notebooks (space_id, title, description) VALUES ($1, $2, $3) RETURNING *`,
-      [spaceId, body.title, body.description ?? '']
+      `INSERT INTO notebooks (space_id, title, description, subject_id) VALUES ($1, $2, $3, $4) RETURNING *`,
+      [spaceId, body.title, body.description ?? '', body.subjectId ?? null]
     );
     return { notebook: nb };
   });
@@ -78,12 +85,84 @@ export async function ragRoutes(app: FastifyInstance) {
     return { notebook, sources };
   });
 
+  app.patch('/notebooks/:id', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'notebooks', id, 'editor');
+    if (!ctx) return;
+    const body = z
+      .object({
+        title: z.string().min(1).optional(),
+        description: z.string().optional(),
+        subjectId: z.string().nullable().optional(),
+      })
+      .parse(req.body);
+    const sets: string[] = [];
+    const vals: any[] = [id];
+    if (body.title !== undefined) { vals.push(body.title); sets.push(`title = $${vals.length}`); }
+    if (body.description !== undefined) { vals.push(body.description); sets.push(`description = $${vals.length}`); }
+    if (body.subjectId !== undefined) {
+      vals.push(body.subjectId);
+      sets.push(`subject_id = $${vals.length}::uuid`);
+    }
+    if (!sets.length) return reply.code(400).send({ error: 'Nothing to update' });
+    const notebook = await one<any>(`UPDATE notebooks SET ${sets.join(', ')} WHERE id = $1 RETURNING *`, vals);
+    return { notebook };
+  });
+
   app.delete('/notebooks/:id', async (req, reply) => {
     const id = rid((req.params as any).id);
     const ctx = await requireResourceSpace(req, reply, 'notebooks', id, 'editor');
     if (!ctx) return;
     await q(`DELETE FROM notebooks WHERE id = $1`, [id]);
     return { ok: true };
+  });
+
+  // Whether server-side STT is configured (recorder mode UI checks this)
+  app.get('/transcribe/available', async () => {
+    return { available: transcriptionConfigured() };
+  });
+
+  // Recorder mode: multipart audio → STT → transcript source → auto-ingest.
+  // Fields: audio (file), title (optional text field).
+  app.post('/notebooks/:id/transcribe', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'notebooks', id, 'editor');
+    if (!ctx) return;
+    if (!transcriptionConfigured()) {
+      return reply.code(400).send({
+        error: 'Voice transcription is not configured on this server. Set TRANSCRIBE_BASE_URL (any Whisper-compatible /audio/transcriptions endpoint) and restart.',
+      });
+    }
+    let audio: { buf: Buffer; filename: string } | null = null;
+    let title = '';
+    for await (const part of req.parts()) {
+      if (part.type === 'file') {
+        audio = { buf: await part.toBuffer(), filename: part.filename || 'audio.webm' };
+      } else if (part.fieldname === 'title') {
+        title = String(part.value ?? '');
+      }
+    }
+    if (!audio) return reply.code(400).send({ error: 'No audio received' });
+
+    let transcript: string;
+    try {
+      transcript = await transcribeBuffer(audio.buf, audio.filename);
+    } catch (e: any) {
+      return reply.code(502).send({ error: e.message ?? 'Transcription failed' });
+    }
+    if (!transcript.trim()) return reply.code(502).send({ error: 'Transcription came back empty — was the recording audible?' });
+
+    await ensureBootstrapProvider(ctx.spaceId);
+    const provider = await getProvider(ctx.spaceId);
+    const name = title.trim() || `Recording — ${new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`;
+    const src = await one<any>(
+      `INSERT INTO sources (notebook_id, kind, name, mime, size_bytes, text_content, meta, status)
+       VALUES ($1, 'recording', $2, $3, $4, $5, $6, 'pending') RETURNING *`,
+      [id, name, audio.filename, audio.buf.length, transcript, JSON.stringify({ recorded: true })]
+    );
+    void ingestSource(src!.id, provider);
+    void recordActivity(id, req.user!.id, 'source_added', { count: 1, names: [name] });
+    return { source: { ...src, text_content: undefined }, transcriptLength: transcript.length };
   });
 
   // Upload a source: multipart file (pdf/md/txt), JSON {url}, or JSON {text}

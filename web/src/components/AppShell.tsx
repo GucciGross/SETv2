@@ -5,6 +5,7 @@ import {
   LogOut, ChevronRight, ChevronDown, Trash2, Import, PenLine,
   Code2, SquareTerminal, LibraryBig, Database as DatabaseIcon, Menu, X, ListTodo, Activity as ActivityIcon,
   ChevronsLeft, ChevronsRight, FileText, LayoutDashboard, Telescope,
+  Mic, Sparkles, Wrench, MessageCircle,
 } from 'lucide-react';
 import { useApp, type PageMeta } from '../stores/app';
 import { api } from '../lib/api';
@@ -15,6 +16,7 @@ import WelcomeModal from './onboarding/WelcomeModal';
 import GuideFab from './GuideFab';
 import Notifications from './Notifications';
 import CommandPalette from './CommandPalette';
+import RecorderModal from './Recorder';
 
 function NavList({ title, defaultOpen, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(!!defaultOpen);
@@ -27,6 +29,61 @@ function NavList({ title, defaultOpen, children }: { title: string; defaultOpen?
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />} {title}
       </button>
       {open && <div className="space-y-0.5">{children}</div>}
+    </div>
+  );
+}
+
+interface NavItem {
+  icon: React.ReactNode;
+  label: string;
+  to: string;
+  surface: string | null;
+  exact?: boolean;
+}
+
+/** One collapsible group of nav links. Extracted as a component so group count
+ *  can vary between renders (Simple vs Studio shell) without breaking hooks. */
+function NavGroup({ label, items, surfaces, railMode, onNavigate }: { label: string | null; items: NavItem[]; surfaces: Record<string, boolean>; railMode: boolean; onNavigate: () => void }) {
+  const location = useLocation();
+  const storageKey = label ? `set_navgroup_${label}` : null;
+  const [expanded, setExpanded] = useState(() => (storageKey ? localStorage.getItem(storageKey) !== '0' : true));
+  const toggleGroup = () => {
+    setExpanded((o) => {
+      if (storageKey) localStorage.setItem(storageKey, o ? '0' : '1');
+      return !o;
+    });
+  };
+  const visible = items.filter((item) => !item.surface || surfaces[item.surface]);
+  if (!visible.length) return null;
+  return (
+    <div>
+      {label && !railMode && (
+        <button
+          className="set-mono set-mono-dim flex w-full items-center gap-1 px-1 pt-2 pb-1 hover:text-set-text"
+          onClick={toggleGroup}
+        >
+          {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />} {label}
+        </button>
+      )}
+      {(expanded || railMode || !label) && visible.map((item) => {
+        const active = item.exact
+          ? location.pathname === item.to
+          : location.pathname.startsWith(item.to);
+        return (
+          <Link
+            key={item.label}
+            to={item.to}
+            onClick={onNavigate}
+            className={`relative flex items-center gap-2 px-2 py-1.5 rounded-md text-set-text transition-colors ${active ? 'bg-set-panel2 text-white' : 'hover:bg-set-panel2/70'}`}
+            title={railMode ? item.label : undefined}
+          >
+            {active && (
+              <span className="absolute -left-2 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-full bg-set-accent shadow-[0_0_8px_rgb(108_140_255/0.8)]" />
+            )}
+            <span className={active ? 'text-set-accent' : 'text-set-dim'}>{item.icon}</span> {item.label}
+          </Link>
+        );
+      })}
     </div>
   );
 }
@@ -163,11 +220,13 @@ function AppShellInner() {
   useSetScreenContext();
   const { spaceId } = useParams();
   const location = useLocation();
-  const { spaces, currentSpaceId, setCurrentSpace, user, presence, logout, createPage, surfaces, loadSurfaces, pages } = useApp();
+  const { spaces, currentSpaceId, setCurrentSpace, user, presence, logout, createPage, surfaces, loadSurfaces, pages, shellMode, setShellMode } = useApp();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dbs, setDbs] = useState<any[]>([]);
   const [nbs, setNbs] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [recordOpen, setRecordOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [trash, setTrash] = useState<any[]>([]);
   const [mobileNav, setMobileNav] = useState(false);
@@ -177,6 +236,7 @@ function AppShellInner() {
   const [newSpaceName, setNewSpaceName] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const onboarding = (user as any)?.onboarding;
+  const simple = shellMode === 'simple';
 
   useEffect(() => {
     if (spaceId && spaceId !== currentSpaceId) setCurrentSpace(spaceId);
@@ -194,7 +254,22 @@ function AppShellInner() {
     if (!currentSpaceId) return;
     api.get(`/spaces/${currentSpaceId}/databases`).then((r) => setDbs(r.databases)).catch(() => {});
     api.get(`/spaces/${currentSpaceId}/notebooks`).then((r) => setNbs(r.notebooks)).catch(() => {});
+    api.get(`/spaces/${currentSpaceId}/subjects`).then((r) => setSubjects(r.subjects)).catch(() => {});
   }, [currentSpaceId, spaceId]);
+
+  // notebook → subject grouping for the sidebar
+  const nbsBySubject = useMemo(() => {
+    const bySubject = new Map<string, any[]>();
+    const unfiled: any[] = [];
+    for (const n of nbs) {
+      const sid = typeof n.subject_id === 'string' ? n.subject_id : null;
+      if (sid && subjects.some((s) => s.id === sid)) {
+        if (!bySubject.has(sid)) bySubject.set(sid, []);
+        bySubject.get(sid)!.push(n);
+      } else unfiled.push(n);
+    }
+    return { bySubject, unfiled };
+  }, [nbs, subjects]);
 
   // first run: welcome + persona + tour (once per user, re-openable from the checklist)
   useEffect(() => {
@@ -253,6 +328,23 @@ function AppShellInner() {
   };
 
   const link = (sub: string) => `/app/space/${currentSpaceId}${sub}`;
+
+  const openCopilot = () => {
+    const btn = document.querySelector<HTMLButtonElement>("[data-slot='chat-toggle-button']");
+    if (btn && btn.getAttribute('aria-expanded') !== 'true') btn.click();
+  };
+
+  const nbLink = (n: any) => (
+    <Link
+      key={n.id}
+      to={link(`/notebook/${n.id}`)}
+      className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-set-panel2"
+      onClick={() => setMobileNav(false)}
+    >
+      <BookOpen size={13} className="text-set-dim shrink-0" /><span className="truncate">{n.title}</span>
+      <span className="ml-auto text-xs text-set-dim">{n.source_count}</span>
+    </Link>
+  );
 
   return (
     <div className="app-shell flex overflow-hidden">
@@ -330,79 +422,66 @@ function AppShellInner() {
               <CalendarDays size={14} /> {!railMode && 'Today'}
             </button>
           </div>
+          <button
+            className="set-btn w-full flex items-center gap-1.5 justify-center"
+            title="Record audio — it becomes a transcript, notes and study material"
+            onClick={() => setRecordOpen(true)}
+          >
+            <Mic size={14} className="text-set-accent" /> {!railMode && 'Record'}
+          </button>
 
-          {/* Grouped, progressive-disclosure nav: essentials stay visible,
-              everything else folds away. Collapse state persists per user. */}
+          {/* Simple shell: three task-shaped destinations. Studio shell: everything. */}
+          {simple && (
+            <button
+              className="set-btn-primary w-full flex items-center gap-2 justify-center py-2.5"
+              onClick={openCopilot}
+            >
+              <MessageCircle size={15} /> Ask SET
+            </button>
+          )}
           <nav className="space-y-0.5 text-sm" data-tour="nav">
             {[
-              { label: null, items: [
+              { label: null, items: simple ? [
+                { icon: <LayoutDashboard size={15} />, label: 'Home', to: link(''), surface: null, exact: true },
+                { icon: <BookOpen size={15} />, label: 'Subjects', to: link('/notebooks'), surface: null },
+                { icon: <ListTodo size={15} />, label: 'My Tasks', to: link('/tasks'), surface: null },
+              ] : [
                 { icon: <LayoutDashboard size={15} />, label: 'Dashboard', to: link(''), surface: null, exact: true },
                 { icon: <FileText size={15} />, label: 'Pages', to: link('/pages'), surface: null },
                 { icon: <BookOpen size={15} />, label: 'Notebooks', to: link('/notebooks'), surface: null },
                 { icon: <Telescope size={15} />, label: 'Deep Research', to: link('/research'), surface: null },
               ]},
-              { label: 'Knowledge', items: [
-                { icon: <Network size={15} />, label: 'Graph', to: link('/graph'), surface: null },
-                { icon: <Database size={15} />, label: 'Databases', to: link('/databases'), surface: null },
-                { icon: <ListTodo size={15} />, label: 'My Tasks', to: link('/tasks'), surface: null },
-                { icon: <ActivityIcon size={15} />, label: 'Activity', to: link('/activity'), surface: null },
-              ]},
-              { label: 'Surfaces', items: [
-                { icon: <Code2 size={15} />, label: 'Coding', to: link('/coding'), surface: 'coding' },
-                { icon: <SquareTerminal size={15} />, label: 'Terminal', to: link('/terminal'), surface: 'terminal' },
-                { icon: <Route size={15} />, label: 'Learning Paths', to: link('/paths'), surface: 'paths' },
-                { icon: <Boxes size={15} />, label: '3D & CAD', to: link('/models'), surface: 'threeD' },
-                { icon: <LibraryBig size={15} />, label: 'Library', to: link('/library'), surface: 'library' },
-                { icon: <PenLine size={15} />, label: 'Canvas', to: link('/canvas'), surface: 'canvas' },
-              ]},
-            ].map((group: any) => {
-              const items = (group.items as any[]).filter((item: any) => !item.surface || surfaces[item.surface]);
-              if (!items.length) return null;
-              const storageKey = group.label ? `set_navgroup_${group.label}` : null;
-              const open = storageKey ? localStorage.getItem(storageKey) !== '0' : true;
-              const [expanded, setExpanded] = useState(open);
-              const toggleGroup = () => {
-                setExpanded((o) => {
-                  if (storageKey) localStorage.setItem(storageKey, o ? '0' : '1');
-                  return !o;
-                });
-              };
-              return (
-                <div key={group.label ?? 'main'}>
-                  {group.label && !railMode && (
-                    <button
-                      className="set-mono set-mono-dim flex w-full items-center gap-1 px-1 pt-2 pb-1 hover:text-set-text"
-                      onClick={toggleGroup}
-                    >
-                      {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />} {group.label}
-                    </button>
-                  )}
-                  {(expanded || railMode || !group.label) && items.map((item: any) => {
-                    const active = item.exact
-                      ? location.pathname === item.to
-                      : location.pathname.startsWith(item.to);
-                    return (
-                      <Link
-                        key={item.label}
-                        to={item.to}
-                        onClick={() => setMobileNav(false)}
-                        className={`relative flex items-center gap-2 px-2 py-1.5 rounded-md text-set-text transition-colors ${active ? 'bg-set-panel2 text-white' : 'hover:bg-set-panel2/70'}`}
-                        title={railMode ? item.label : undefined}
-                      >
-                        {active && (
-                          <span className="absolute -left-2 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-full bg-set-accent shadow-[0_0_8px_rgb(108_140_255/0.8)]" />
-                        )}
-                        <span className={active ? 'text-set-accent' : 'text-set-dim'}>{item.icon}</span> {item.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              );
-            })}
+              ...(!simple ? [
+                { label: 'Knowledge', items: [
+                  { icon: <Network size={15} />, label: 'Graph', to: link('/graph'), surface: null },
+                  { icon: <Database size={15} />, label: 'Databases', to: link('/databases'), surface: null },
+                  { icon: <ListTodo size={15} />, label: 'My Tasks', to: link('/tasks'), surface: null },
+                  { icon: <ActivityIcon size={15} />, label: 'Activity', to: link('/activity'), surface: null },
+                ]},
+                { label: 'Surfaces', items: [
+                  { icon: <Code2 size={15} />, label: 'Coding', to: link('/coding'), surface: 'coding' },
+                  { icon: <SquareTerminal size={15} />, label: 'Terminal', to: link('/terminal'), surface: 'terminal' },
+                  { icon: <Route size={15} />, label: 'Learning Paths', to: link('/paths'), surface: 'paths' },
+                  { icon: <Boxes size={15} />, label: '3D & CAD', to: link('/models'), surface: 'threeD' },
+                  { icon: <LibraryBig size={15} />, label: 'Library', to: link('/library'), surface: 'library' },
+                  { icon: <PenLine size={15} />, label: 'Canvas', to: link('/canvas'), surface: 'canvas' },
+                ]},
+              ] : []),
+            ].map((group: any) => (
+              <NavGroup
+                key={group.label ?? 'main'}
+                label={group.label}
+                items={group.items}
+                surfaces={surfaces}
+                railMode={railMode}
+                onNavigate={() => setMobileNav(false)}
+              />
+            ))}
           </nav>
 
           {/* database + notebook lists fold under compact headers (collapsed by default) */}
-          {!railMode && dbs.length > 0 && (
+          {/* databases stay a studio-mode concept */}
+          {!railMode && !simple && dbs.length > 0 && (
             <NavList title="Databases" defaultOpen={false}>
               {dbs.map((d) => (
                 <Link key={d.id} to={link(`/db/${d.id}`)} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-set-panel2">
@@ -412,18 +491,26 @@ function AppShellInner() {
               ))}
             </NavList>
           )}
-          {!railMode && nbs.length > 0 && (
-            <NavList title="Notebooks" defaultOpen={false}>
-              {nbs.map((n) => (
-                <Link key={n.id} to={link(`/notebook/${n.id}`)} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-set-panel2">
-                  <BookOpen size={13} className="text-set-dim shrink-0" /><span className="truncate">{n.title}</span>
-                  <span className="ml-auto text-xs text-set-dim">{n.source_count}</span>
-                </Link>
+          {!railMode && (nbs.length > 0 || subjects.length > 0) && (
+            <NavList title={simple ? 'Subjects' : 'Notebooks'} defaultOpen={simple}>
+              {subjects.map((s) => (
+                <div key={s.id}>
+                  <div className="flex items-center gap-1.5 px-2 pt-1.5 pb-0.5 text-[11px] font-medium text-set-dim">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} />
+                    <span className="truncate">{s.title}</span>
+                  </div>
+                  {(nbsBySubject.bySubject.get(s.id) ?? []).map(nbLink)}
+                </div>
               ))}
+              {subjects.length > 0 && nbsBySubject.unfiled.length > 0 && (
+                <div className="px-2 pt-2 pb-0.5 text-[11px] set-mono text-set-dim/60">unfiled</div>
+              )}
+              {nbsBySubject.unfiled.map(nbLink)}
             </NavList>
           )}
 
-          {!railMode && (
+          {/* the pages tree is a studio-mode power tool; simple mode goes through Subjects */}
+          {!railMode && !simple && (
             <button
               className="set-mono set-mono-dim flex w-full items-center gap-1 px-1 py-1 hover:text-set-text"
               onClick={() => setPagesOpen((o) => !o)}
@@ -436,26 +523,35 @@ function AppShellInner() {
               <FileText size={15} />
             </div>
           )}
-          {pagesOpen && !railMode && (
+          {pagesOpen && !railMode && !simple && (
             <div onClick={() => mobileNav && setMobileNav(false)}>
               <PageTree />
             </div>
           )}
 
-          <div className="flex items-center gap-2 pt-2 text-xs text-set-dim">
-            <button className="set-btn-ghost flex items-center gap-1" onClick={() => fileRef.current?.click()}>
-              <Import size={13} /> {!railMode && 'Import .md'}
-            </button>
-            <input ref={fileRef} type="file" accept=".md,.markdown" multiple hidden onChange={(e) => importMd(e.target.files)} />
-            <button className="set-btn-ghost flex items-center gap-1" onClick={openTrash}>
-              <Trash2 size={13} /> {!railMode && 'Trash'}
-            </button>
-          </div>
+          {!simple && (
+            <div className="flex items-center gap-2 pt-2 text-xs text-set-dim">
+              <button className="set-btn-ghost flex items-center gap-1" onClick={() => fileRef.current?.click()}>
+                <Import size={13} /> {!railMode && 'Import .md'}
+              </button>
+              <input ref={fileRef} type="file" accept=".md,.markdown" multiple hidden onChange={(e) => importMd(e.target.files)} />
+              <button className="set-btn-ghost flex items-center gap-1" onClick={openTrash}>
+                <Trash2 size={13} /> {!railMode && 'Trash'}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="p-3 border-t border-set-border flex items-center justify-between text-sm">
           {!railMode && <span className="truncate text-set-dim">{user?.name}</span>}
           <div className="flex items-center gap-1">
+            <button
+              className="set-btn-ghost flex items-center gap-1"
+              title={simple ? 'Studio mode — every surface, tree and tool' : 'Simple mode — just the essentials'}
+              onClick={() => setShellMode(simple ? 'studio' : 'simple')}
+            >
+              {simple ? <Wrench size={15} /> : <Sparkles size={15} />} {!railMode && (simple ? 'Studio' : 'Simple')}
+            </button>
             <button className="md:hidden set-btn-ghost" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={15} /></button>
             <button className="set-btn-ghost" title="Sign out" onClick={logout}><LogOut size={15} /></button>
           </div>
@@ -536,6 +632,18 @@ function AppShellInner() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Recorder: mic → transcript → notes (also reachable from inside a notebook) */}
+      {recordOpen && currentSpaceId && (
+        <RecorderModal
+          spaceId={currentSpaceId}
+          onClose={() => setRecordOpen(false)}
+          onSaved={(nbId) => {
+            setRecordOpen(false);
+            navigate(`/app/space/${currentSpaceId}/notebook/${nbId}`);
+          }}
+        />
       )}
 
       {/* First-run welcome */}
