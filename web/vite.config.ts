@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { resolve as pathResolve } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import basicSsl from '@vitejs/plugin-basic-ssl';
@@ -12,20 +13,26 @@ const nodeRequire = createRequire(import.meta.url);
 // injects it as a <style> tag at runtime.
 function copilotkitRawStyles() {
   const pkgDir = nodeRequire.resolve('@copilotkit/react-core/package.json').replace(/package\.json$/, '');
+  const pkgCss = `${pkgDir}dist/v2/index.css`;
   return {
     name: 'copilotkit-raw-styles',
     enforce: 'pre' as const,
     resolveId(source: string, importer?: string) {
       if (source === 'virtual:copilotkit-v2-styles') return '\0virtual:copilotkit-v2-styles';
-      // the package's JS self-imports its stylesheet — redirect that too
-      if (source === './index.css' && importer?.includes('@copilotkit/react-core/dist/v2/')) {
-        return '\0virtual:copilotkit-v2-styles';
-      }
+      // Match the stylesheet however it arrives: the package's own relative
+      // self-import ("./index.css" from dist/v2/), or the ABSOLUTE path the
+      // dep optimizer rewrites it to after pre-bundling — without the second
+      // form, dep-optimized dev runs push the v4 css into vite:css → postcss
+      // explodes on @layer. Compare resolved paths, not specifier strings.
+      const candidate = source.startsWith('.') && importer
+        ? pathResolve(importer, '..', source)
+        : source;
+      if (candidate === pkgCss) return '\0virtual:copilotkit-v2-styles';
       return null;
     },
     load(id: string) {
       if (id === '\0virtual:copilotkit-v2-styles') {
-        const css = readFileSync(`${pkgDir}dist/v2/index.css`, 'utf8');
+        const css = readFileSync(pkgCss, 'utf8');
         return `export default ${JSON.stringify(css)}`;
       }
       return null;

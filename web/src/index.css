@@ -199,6 +199,84 @@ h1, h2, h3, h4 {
 }
 .fadein { animation: fadein 0.18s ease-out; }
 
+/* ---------- Login: the orbit gate ----------
+   Entrance choreography + ambient motion for the login page. Everything
+   degrades to static under prefers-reduced-motion. */
+.login-input {
+  @apply w-full rounded-xl px-3.5 py-3 text-[15px] text-set-text transition-colors;
+  background: rgb(9 13 24 / 0.72);
+  border: 1px solid rgb(148 163 184 / 0.16);
+  backdrop-filter: blur(8px);
+}
+.login-input::placeholder { color: rgb(148 163 184 / 0.55); }
+.login-input:focus {
+  outline: none;
+  border-color: rgb(108 140 255 / 0.8);
+  box-shadow: 0 0 0 1px rgb(108 140 255 / 0.5), 0 0 24px -6px rgb(108 140 255 / 0.55);
+}
+@keyframes login-rise {
+  from { opacity: 0; transform: translateY(18px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.login-rise { opacity: 0; animation: login-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+/* Floating knowledge sprites: parallax on the wrapper, drift on the sprite. */
+.login-float {
+  transform: translate3d(calc(var(--mx, 0) * var(--depth, 0) * 1px), calc(var(--my, 0) * var(--depth, 0) * 1px), 0);
+  transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+@keyframes float-y {
+  from { transform: translateY(8px) rotate(-4deg); }
+  to { transform: translateY(-14px) rotate(4deg); }
+}
+@keyframes appear { from { opacity: 0; } to { opacity: 1; } }
+.login-sprite {
+  animation: appear 1.1s ease-out both, float-y var(--dur, 6s) ease-in-out infinite alternate;
+  filter: saturate(1.2) drop-shadow(0 10px 22px rgb(108 140 255 / 0.3));
+  user-select: none;
+}
+/* Portal rings radiating from the emblem. */
+@keyframes ring-pulse {
+  0% { transform: scale(0.62); opacity: 0; }
+  35% { opacity: 0.55; }
+  100% { transform: scale(1.32); opacity: 0; }
+}
+.login-ring { animation: ring-pulse 3.4s cubic-bezier(0.22, 1, 0.36, 1) infinite; }
+/* Satellite dot circling the emblem. */
+@keyframes orbit { to { transform: rotate(360deg); } }
+.login-orbit { animation: orbit 8s linear infinite; }
+/* Wordmark: gradient sheen sweeping through the letters. */
+.login-wordmark {
+  background: linear-gradient(100deg, #f4f6ff 18%, #6c8cff 40%, #8b5cf6 58%, #f4f6ff 82%);
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: sheen 7s linear infinite;
+}
+@keyframes sheen { to { background-position: 220% center; } }
+/* Reject wobble for a failed sign-in. */
+@keyframes login-shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+.login-shake { animation: login-shake 0.45s ease-out; }
+/* Mascot reject kick — a quick disappointed dip, paired with the shake. */
+@keyframes mascot-reject {
+  0%, 100% { transform: none; }
+  30% { transform: translateY(5%) rotate(-5deg); }
+  65% { transform: translateY(3%) rotate(4deg); }
+}
+.mascot-reject { animation: mascot-reject 0.5s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .login-rise, .login-sprite, .login-ring, .login-orbit, .login-wordmark, .login-shake, .mascot-reject {
+    animation: none !important;
+    opacity: 1;
+  }
+}
+
 /* Mascot (OpenMausBot / desk-pet inspired) */
 .mascot-idle { animation: mascot-bob 3.2s ease-in-out infinite; transform-origin: 50% 90%; }
 .mascot-talk { animation: mascot-talk 0.55s ease-in-out infinite; transform-origin: 50% 90%; }
@@ -393,9 +471,11 @@ h1, h2, h3, h4 {
     linear-gradient(315deg, rgba(108, 140, 255, 0.13), rgba(16, 18, 27, 0) 48%) !important;
   background-size: 6px 6px, 6px 6px, 100% 100%, 100% 100% !important;
   background-position: 0 0, 3px 3px, 0 0, 0 0 !important;
-  background-color: rgba(13, 15, 22, 0.66) !important;
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
-  backdrop-filter: blur(22px) saturate(150%);
+  /* the smoke glass — lighter tint + heavy blur, so the page glows through
+     like a frosted pane instead of reading as a black slab */
+  background-color: rgba(13, 15, 22, 0.45) !important;
+  -webkit-backdrop-filter: blur(30px) saturate(170%);
+  backdrop-filter: blur(30px) saturate(170%);
   border: 1px solid rgba(150, 165, 200, 0.18) !important;
   border-radius: 1.15rem !important;
   box-shadow:
@@ -422,11 +502,18 @@ h1, h2, h3, h4 {
 
 /* composer — CopilotKit hardcodes bg-white / dark #303030; frost it */
 [data-testid='copilot-chat-input'] {
-  background: rgba(24, 28, 38, 0.52) !important;
+  background: rgba(24, 28, 38, 0.42) !important;
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
   border: 1px solid rgba(150, 165, 200, 0.2) !important;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4) !important;
+}
+/* the composer container is the field: the textarea gets no box of its own
+   (the global focus ring would draw a second, inner "blue box" on focus) */
+[data-testid='copilot-chat-textarea'] {
+  outline: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
 }
 [data-testid='copilot-chat-input'] textarea,
 [data-testid='copilot-chat-input'] input {
@@ -442,6 +529,27 @@ h1, h2, h3, h4 {
 }
 
 /* welcome screen + suggestion pills */
+/* The mobile welcome must fit the compact sheet with zero scrolling — these
+   hooks let the media query tighten every block (see the mobile section). */
+.set-welcome {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem 1rem;
+  text-align: center;
+  overflow-y: auto;
+}
+.set-welcome-plate { padding: 1rem 1.25rem 0.75rem; }
+.set-welcome-starters { width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 6px; }
+.set-welcome-input { width: 100%; max-width: 340px; margin-top: 4px; }
+
+/* swipe-to-dismiss: the grab pill on the sheet's header (mobile only) */
+.set-sheet-grabber { display: none; }
+
 .set-suggestion-pill {
   border: 1px solid rgba(150, 165, 200, 0.2) !important;
   background: rgba(24, 28, 38, 0.42) !important;
@@ -466,6 +574,94 @@ h1, h2, h3, h4 {
   border-color: rgba(150, 165, 200, 0.16);
 }
 
+/* ---- Chat feed: the SET operator-console look ----
+   Assistant messages sit straight on the glass with the mascot on a dithered
+   plate; user messages are a single accent-tinted plate with one tight corner.
+   Tightened rhythm (vendor spaces messages with pt-10). */
+[data-copilot-popup] .copilotKitUserMessage {
+  padding-top: 16px !important;
+  /* scoping the shadcn var recolors the vendor's bg-muted bubble only here */
+  --muted: rgb(108 140 255 / 0.14);
+}
+[data-copilot-popup] .copilotKitUserMessage [class*='rounded-[18px]'] {
+  border: 1px solid rgb(108 140 255 / 0.3) !important;
+  border-radius: 12px 12px 4px 12px !important;
+  color: #e6ebf7 !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+.set-chat-assistant { margin-top: 10px; }
+
+/* assistant prose — quiet, editor-grade text straight on the glass */
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: rgb(222 228 240 / 0.95);
+  max-width: 100%;
+}
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] p { margin: 0.3em 0; }
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] p:first-child { margin-top: 0; }
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] p:last-child { margin-bottom: 0; }
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] strong { color: #fff; }
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] a { color: rgb(139 168 255); text-decoration: underline; text-underline-offset: 2px; }
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] code {
+  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: rgb(21 26 38 / 0.85);
+  border: 1px solid rgb(36 44 62 / 0.8);
+  border-radius: 4px;
+  padding: 0.5px 4px;
+  color: rgb(196 181 253);
+}
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] pre {
+  background: rgb(10 12 17 / 0.8) !important;
+  border: 1px solid rgb(36 44 62 / 0.9);
+  border-radius: 10px;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] pre code { background: transparent; border: 0; padding: 0; color: rgb(215 220 230); }
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] ul,
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] ol { margin: 0.4em 0; padding-left: 1.25em; }
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] li { margin: 0.15em 0; }
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] table { border-collapse: collapse; margin: 0.5em 0; font-size: 12.5px; }
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] th,
+[data-copilot-popup] .copilotKitAssistantMessage [class*='cpk:prose'] td { border-bottom: 1px solid rgb(36 44 62 / 0.9); padding: 3px 8px 3px 0; text-align: left; }
+
+/* streaming cursor: the violet AI register, not stock gray */
+[data-copilot-popup] [class*='animate-pulse-cursor'] { background: rgb(139 92 246 / 0.9) !important; }
+
+/* message feed dissolves into the glass at its top edge (stepped-dither fade) */
+[data-testid='copilot-message-list'] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 20px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 20px);
+}
+/* short conversations hug the composer (like iMessage) instead of floating
+   in a void; auto-margin is 0 once content overflows, so long chats are
+   unaffected — and this survives the vendor's message virtualization */
+[data-testid='copilot-message-list'] > *:first-child {
+  margin-top: auto !important;
+}
+
+/* composer: accent focus ring; send button re-machined as the primary action */
+[data-testid='copilot-chat-input']:focus-within {
+  border-color: rgb(108 140 255 / 0.55) !important;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.4), 0 0 0 3px rgb(108 140 255 / 0.14) !important;
+}
+[data-testid='copilot-send-button'] {
+  background: rgb(108 140 255 / 0.92) !important;
+  color: #fff !important;
+  border-radius: 10px !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 2px 10px -2px rgb(108 140 255 / 0.5) !important;
+  transition: filter 0.15s ease, transform 0.15s ease !important;
+}
+[data-testid='copilot-send-button']:hover { filter: brightness(1.12); }
+[data-testid='copilot-send-button']:active { transform: translateY(1px); }
+[data-testid='copilot-send-button']:disabled {
+  background: rgb(108 140 255 / 0.22) !important;
+  color: rgb(255 255 255 / 0.35) !important;
+  box-shadow: none !important;
+}
+
 /* scrollbar */
 [data-testid='copilot-message-list']::-webkit-scrollbar,
 [data-copilot-popup] ::-webkit-scrollbar {
@@ -487,9 +683,177 @@ div[data-copilotkit] {
   --copilot-popup-height: 480px !important;
   --copilot-popup-max-height: min(76vh, 640px) !important;
 }
-@media (max-width: 768px) {
-  [data-copilot-popup] {
-    --copilot-popup-height: min(60dvh, 520px) !important;
+/* Mobile: a compact bottom sheet (the page stays visible, dimmed by a scrim,
+   above a ~62%-height sheet). The welcome screen is tuned to fit it with
+   zero scrolling; once the conversation starts (body.set-chat-live, set by
+   SheetModeWatcher in GuideFab) the sheet grows to full screen. The header is
+   a grab zone: dragging translates the sheet via --set-dy and the scrim fades
+   via --set-drag-p (GuideFab's SheetDragZone writes both); releasing past the
+   threshold slides the sheet out and closes it, otherwise it springs back.
+   --set-kb (set in GuideFab, debounced) keeps the sheet on top of the
+   software keyboard; the transitions make each state change one smooth glide. */
+
+/* Registered so --set-drag-p interpolates (scrim fades with the drag) instead
+   of snapping. Browsers without @property just get a discrete fade. */
+@property --set-drag-p {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+/* Release paths let the scrim var glide; the active drag must stay raw (the
+   JS writes it every frame). Declared on <html> because that's where the
+   property value changes. */
+html:has(body.set-sheet-closing) { transition: --set-drag-p 0.3s cubic-bezier(0.5, 0, 0.75, 0); }
+html:has(body.set-sheet-release) { transition: --set-drag-p 0.45s cubic-bezier(0.22, 1.2, 0.36, 1); }
+html:has(body.set-sheet-dragging) { transition: none !important; }
+
+@media (max-width: 767px) {
+  div[data-copilotkit]:has(> [data-copilot-popup]) {
+    justify-content: flex-end;
+    background: linear-gradient(
+      to top,
+      rgb(4 6 10 / calc(0.6 * (1 - var(--set-drag-p, 0)))),
+      rgb(4 6 10 / calc(0.28 * (1 - var(--set-drag-p, 0)))) 55%,
+      rgb(4 6 10 / calc(0.12 * (1 - var(--set-drag-p, 0))))
+    ) !important;
+    -webkit-backdrop-filter: blur(calc(3px * (1 - var(--set-drag-p, 0))));
+    backdrop-filter: blur(calc(3px * (1 - var(--set-drag-p, 0))));
+    padding: 0.6rem !important;
+    padding-top: calc(0.6rem + env(safe-area-inset-top)) !important;
+    /* flush: just a breathing gap under the sheet — no safe-area stacking.
+       Once the keyboard is up (--set-kb > the gap) the sheet rides exactly
+       on the keyboard's top edge. */
+    padding-bottom: max(0.6rem, var(--set-kb, 0px)) !important;
+    padding-left: calc(0.6rem + env(safe-area-inset-left)) !important;
+    padding-right: calc(0.6rem + env(safe-area-inset-right)) !important;
+    transition: padding-bottom 0.3s cubic-bezier(0.32, 0.72, 0.35, 1);
+  }
+  /* The double test-id selector is deliberate: it out-specifies the vendor's
+     single-class utilities regardless of stylesheet order. */
+  [data-copilot-popup][data-testid='copilot-popup'] {
+    /* compact on the full screen; capped to the space above the keyboard */
+    height: clamp(340px, 62dvh, 640px) !important;
+    max-height: calc(100dvh - var(--set-kb, 0px) - 0.4rem) !important;
+    /* the vendor inlines env(safe-area-inset-*) paddings on this element;
+       the wrapper already owns the insets, and the popup's own bottom one
+       read as a dead band under the composer */
+    padding: 0 !important;
+    border-radius: 1.25rem !important;
+    border: 1px solid rgb(150 165 200 / 0.18) !important;
+    box-shadow:
+      0 24px 70px rgba(0, 0, 0, 0.6),
+      0 2px 10px rgba(0, 0, 0, 0.35) !important;
+    /* the sheet rides the finger via --set-dy; spring back on release.
+       translate/opacity stay on the vendor's own open/close animation. */
+    transform: translateY(var(--set-dy, 0px));
+    transition:
+      transform 0.45s cubic-bezier(0.22, 1.35, 0.36, 1),
+      height 0.32s cubic-bezier(0.32, 0.72, 0.35, 1),
+      max-height 0.32s cubic-bezier(0.32, 0.72, 0.35, 1),
+      translate 0.2s ease-out,
+      opacity 0.2s ease-out;
+  }
+  body.set-sheet-dragging [data-copilot-popup] { transition: none !important; }
+  body.set-sheet-closing [data-copilot-popup] { transition: transform 0.3s cubic-bezier(0.5, 0, 0.75, 0) !important; }
+
+  /* conversation started → the chat takes the whole screen, edge to edge;
+     the height transition above turns the growth into one glide. The
+     keyboard still claims the bottom via the height + padding pairing. */
+  body.set-chat-live div[data-copilotkit]:has(> [data-copilot-popup]) {
+    padding: 0 !important;
+  }
+  body.set-chat-live [data-copilot-popup][data-testid='copilot-popup'] {
+    height: calc(100dvh - var(--set-kb, 0px)) !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    /* notch above the header, home-indicator clearance under the composer —
+       but both collapse as the keyboard rises, so it lands flush on it */
+    padding-top: env(safe-area-inset-top) !important;
+    padding-bottom: max(calc(env(safe-area-inset-bottom) - var(--set-kb, 0px)), 0px) !important;
+  }
+
+  /* header = grab zone: visible pill + a tighter bar to buy the welcome room */
+  [data-testid='copilot-modal-header'][data-slot='copilot-modal-header'] {
+    padding-top: 1.05rem;
+    padding-bottom: 0.45rem;
+  }
+  .set-drag-zone { touch-action: none; user-select: none; -webkit-user-select: none; }
+  .set-drag-zone .set-sheet-grabber {
+    display: block;
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    width: 42px;
+    height: 4px;
+    margin-left: -21px;
+    border-radius: 9999px;
+    background: rgb(150 165 200 / 0.38);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  }
+
+  /* the sheet already rides the keyboard — the vendor's own composer lift
+     would double-compensate and leave dead space below the input */
+  [data-copilot-popup] div[data-copilotkit] {
+    transform: none !important;
+    transition: none !important;
+  }
+  /* the launcher floats above the scrim so it stays visible + tappable
+     while the sheet is open (tapping it closes the sheet) */
+  button[data-slot='chat-toggle-button'] {
+    z-index: 1250 !important;
+  }
+
+  /* Welcome in the compact sheet: every block tightened so the whole thing —
+     mascot, identity, starters, input — fits without scrolling. On very
+     short screens the tagline steps aside instead of forcing a scroll. */
+  .set-welcome-m { gap: 0.55rem; padding: 0.4rem 1.1rem 0.3rem; }
+  .set-welcome-m .set-welcome-plate { padding: 0.35rem 0.7rem 0.3rem; }
+  .set-welcome-m .set-welcome-name { font-size: 0.9rem; }
+  .set-welcome-m .set-welcome-blurb { font-size: 11px; max-width: 250px; }
+  .set-welcome-m .set-welcome-starters { gap: 4px; }
+  .set-welcome-m .set-suggestion-pill {
+    padding: 0.3rem 0.7rem !important;
+    font-size: 11.5px !important;
+  }
+}
+@media (max-width: 767px) and (max-height: 600px) {
+  .set-welcome-m .set-welcome-blurb { display: none; }
+}
+
+/* ---- Desktop docked panel (body.copilot-docked, toggled in the header) ----
+   The floating window becomes a full-height right rail; the app's main column
+   gives up the width while the panel is open, VS Code style. Same mounted
+   chat, so the conversation survives dock/undock. */
+@media (min-width: 768px) {
+  .app-shell > main {
+    transition: margin-right 0.28s cubic-bezier(0.32, 0.72, 0.35, 1);
+  }
+  body.copilot-docked div[data-copilotkit]:has(> [data-copilot-popup]) {
+    inset: 0 0 0 auto !important;
+    height: 100dvh !important;
+    width: auto !important;
+    padding: 0 !important;
+    background: transparent !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  body.copilot-docked [data-copilot-popup] {
+    width: clamp(320px, 28vw, 460px) !important;
+    height: 100% !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    border: 0 !important;
+    border-left: 1px solid rgb(150 165 200 / 0.16) !important;
+    box-shadow: -30px 0 80px rgb(0 0 0 / 0.45) !important;
+  }
+  body.copilot-docked:has([data-copilot-popup]) .app-shell > main {
+    margin-right: clamp(320px, 28vw, 460px);
+  }
+  /* the launcher steps left of the panel while it is docked-open */
+  body.copilot-docked:has([data-copilot-popup]) button[data-slot='chat-toggle-button'] {
+    right: calc(clamp(320px, 28vw, 460px) + 1.25rem) !important;
   }
 }
 
