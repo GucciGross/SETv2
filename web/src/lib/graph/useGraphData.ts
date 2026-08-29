@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../../stores/app';
+import { detectCliques, type CliqueResult } from './cliques';
 import type { GraphData, GraphNode } from './types';
 
 /**
@@ -54,5 +55,7 @@ export function useGraphData(spaceId: string | undefined) {
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
 
-  return { data, error, loading, refresh };
+  const cliques = useMemo<CliqueResult | null>(() => (data ? detectCliques(data) : null), [data]);
+
+  return { data, error, loading, refresh, cliques };
 }

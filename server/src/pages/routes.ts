@@ -257,7 +257,7 @@ export async function pageRoutes(app: FastifyInstance) {
     const spaceId = (req.params as any).spaceId;
     if (!(await requireSpace(req, reply, spaceId))) return;
     const nodes = await q(
-      `SELECT id, title, icon, is_daily FROM pages WHERE space_id = $1 AND deleted_at IS NULL AND is_template = false`,
+      `SELECT id, title, icon, is_daily, updated_at FROM pages WHERE space_id = $1 AND deleted_at IS NULL AND is_template = false`,
       [spaceId]
     );
     const edges = await q<{ source: string; target: string }>(
