@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence } from 'motion/react';
-import { Frame, Network, RefreshCw, RotateCcw, X } from 'lucide-react';
+import { Frame, Link2Off, Network, Pause, Play, RefreshCw, RotateCcw, X } from 'lucide-react';
 import GraphCanvas, { type FlyToRequest, type GraphColorMode } from '../components/graph/GraphCanvas';
 import NodeCard from '../components/graph/NodeCard';
 import { filterGraph } from '../lib/graph/filter';
@@ -29,6 +29,66 @@ export default function GraphView() {
   const [resetSignal, setResetSignal] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const searchWrapRef = useRef<HTMLDivElement>(null);
+
+  // — new since your last visit —
+  // read the previous visit stamp once, then stamp this visit; pages edited in
+  // between get a ripple wave when the map opens
+  const seenAtRef = useRef<number | null>(null);
+  if (seenAtRef.current === null) {
+    const key = `set-graph-seen:${spaceId ?? 'none'}`;
+    seenAtRef.current = Number(localStorage.getItem(key) ?? 0);
+    try {
+      localStorage.setItem(key, String(Date.now()));
+    } catch {
+      /* ignore */
+    }
+  }
+  const pulseIds = useMemo(() => {
+    const seen = seenAtRef.current ?? 0;
+    if (!seen || !data) return [];
+    const fresh = data.nodes
+      .filter((n) => n.updated_at && new Date(n.updated_at).getTime() > seen)
+      .map((n) => n.id);
+    return fresh.length > 20 ? [] : fresh; // a wave, not a fireworks show
+  }, [data]);
+
+  // — growth playback —
+  const births = useMemo(
+    () => (data ? data.nodes.map((n) => (n.created_at ? new Date(n.created_at).getTime() : 0)) : []),
+    [data]
+  );
+  const range = useMemo(() => {
+    if (births.length === 0) return null;
+    const t0 = Math.min(...births);
+    const t1 = Date.now();
+    return t1 - t0 < 1000 ? null : { t0, t1 }; // a graph born in one moment has no story
+  }, [births]);
+  const [playhead, setPlayhead] = useState<number | null>(null); // null = living in the present
+  const [playing, setPlaying] = useState(false);
+  const playheadRef = useRef<number | null>(null);
+  playheadRef.current = playhead;
+
+  useEffect(() => {
+    if (!playing || !range) return;
+    const dur = 12000;
+    const start = performance.now();
+    const from = playheadRef.current ?? range.t0;
+    let raf = 0;
+    const step = (now: number) => {
+      const p = Math.min(1, (now - start) / dur);
+      setPlayhead(from + (range.t1 - from) * p);
+      if (p < 1) raf = requestAnimationFrame(step);
+      else setPlaying(false);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, range]);
+
+  // — loose pages —
+  const loose = useMemo(() => data?.nodes.filter((n) => (n.deg ?? 0) === 0) ?? [], [data]);
+  const [looseOpen, setLooseOpen] = useState(false);
+  const revealedCount =
+    playhead == null ? (data?.nodes.length ?? 0) : births.filter((b) => b <= playhead).length;
 
   const pickColorMode = (m: GraphColorMode) => {
     setColorMode(m);
@@ -281,6 +341,100 @@ export default function GraphView() {
           <RotateCcw size={16} />
         </button>
       </div>
+      {/* loose pages: on the map but connected to nothing */}
+      {loose.length > 0 && playhead == null && (
+        <div className="absolute bottom-3 left-3 z-10 md:bottom-[8.25rem]">
+          <button
+            className="flex items-center gap-1.5 rounded-xl border border-set-border bg-set-panel/95 px-2.5 py-1.5 text-xs text-set-dim shadow-pop backdrop-blur hover:text-set-text"
+            onClick={() => setLooseOpen((o) => !o)}
+            title="Pages nothing links to yet"
+          >
+            <Link2Off size={13} /> Loose pages · {loose.length}
+          </button>
+          {looseOpen && (
+            <div className="absolute bottom-full left-0 mb-1 w-60 overflow-hidden rounded-xl border border-set-border bg-set-panel shadow-pop">
+              <div className="px-3 pt-2 pb-1 text-[10px] tracking-[0.15em] text-set-dim uppercase">
+                Not linked to anything yet
+              </div>
+              {loose.map((n) => (
+                <button
+                  key={n.id}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-set-dim hover:bg-set-panel2 hover:text-set-text"
+                  onClick={() => {
+                    flyToNode(n.id);
+                    setLooseOpen(false);
+                  }}
+                >
+                  <span>{n.icon || '📄'}</span>
+                  <span className="truncate">{n.title}</span>
+                </button>
+              ))}
+              <p className="px-3 py-2 text-[10px] leading-relaxed text-set-dim opacity-80">
+                Mention them with <code className="rounded bg-set-panel2 px-1 py-0.5">[[their title]]</code> anywhere
+                to pull them into the map.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+      {/* growth playback: watch the space build itself */}
+      {range && (
+        <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2">
+          {playhead == null ? (
+            <button
+              className="set-btn-primary rounded-full px-4 py-2 shadow-pop"
+              onClick={() => {
+                setPlayhead(range.t0);
+                setPlaying(true);
+              }}
+              title="Replay how this space was built, page by page"
+            >
+              <span className="inline-flex items-center gap-2">
+                <Play size={14} /> Watch it grow
+              </span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 rounded-full border border-set-border bg-set-panel/95 px-3 py-2 shadow-pop backdrop-blur">
+              <button
+                className="rounded-full p-1 text-set-dim hover:text-set-text"
+                onClick={() => setPlaying((p) => !p)}
+                aria-label={playing ? 'Pause' : 'Play'}
+              >
+                {playing ? <Pause size={14} /> : <Play size={14} />}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={1000}
+                value={Math.round(((playhead ?? range.t0) - range.t0) / Math.max(1, range.t1 - range.t0) * 1000)}
+                onChange={(e) => {
+                  setPlaying(false);
+                  setPlayhead(range.t0 + ((range.t1 - range.t0) * Number(e.target.value)) / 1000);
+                }}
+                className="w-40 accent-[#8c8cff]"
+                aria-label="Scrub through time"
+              />
+              <span className="w-36 text-center text-[11px] whitespace-nowrap text-set-dim">
+                {revealedCount} pages ·{' '}
+                {playhead != null
+                  ? new Date(playhead).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                  : ''}
+              </span>
+              <button
+                className="rounded-full p-1 text-set-dim hover:text-set-text"
+                onClick={() => {
+                  setPlaying(false);
+                  setPlayhead(null);
+                }}
+                aria-label="Back to today"
+                title="Back to today"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <GraphCanvas
         data={data!}
         visibleIds={visibleIds}
@@ -290,6 +444,8 @@ export default function GraphView() {
         flyTo={flyTo}
         pinsKey={spaceId ? `set-graph-pins:${spaceId}` : undefined}
         resetSignal={resetSignal}
+        reveal={playhead}
+        pulseIds={playhead == null ? pulseIds : []}
         onSelect={setSelectedId}
         onOpen={openPage}
       />

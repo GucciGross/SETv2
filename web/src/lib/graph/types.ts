@@ -8,6 +8,8 @@ export interface GraphNode extends SimulationNodeDatum {
   is_daily?: boolean;
   /** Last edit time (ISO) — powers the recency color mode. */
   updated_at?: string;
+  /** Birth time (ISO) — powers the growth playback. */
+  created_at?: string;
   /** Link count, computed client-side from the edge list. */
   deg?: number;
 }

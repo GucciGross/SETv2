@@ -35,6 +35,10 @@ interface GraphCanvasProps {
   pinsKey?: string;
   /** Bump to unpin everything, reheat the layout and fly back out. */
   resetSignal: number;
+  /** Growth playback: epoch-ms cutoff — pages born after this are hidden. null = show everything. */
+  reveal: number | null;
+  /** Node ids to ripple ("new since your last visit"); ripples run once for ~8s. */
+  pulseIds: string[];
   onSelect: (id: string | null) => void;
   onOpen: (id: string) => void;
 }
@@ -90,6 +94,8 @@ export default function GraphCanvas({
   flyTo,
   pinsKey,
   resetSignal,
+  reveal,
+  pulseIds,
   onSelect,
   onOpen,
 }: GraphCanvasProps) {
@@ -105,6 +111,8 @@ export default function GraphCanvas({
   const prevByIdRef = useRef<Map<string, GraphNode>>(new Map());
   /** Minimap world mapping, refreshed on every draw so pointer handlers can use it. */
   const miniMapRef = useRef<{ minX: number; minY: number; scale: number } | null>(null);
+  /** Active ripple state for the pulse rings (component-level: survives dataset swaps). */
+  const pulseRef = useRef<{ ids: Set<string>; start: number; end: number } | null>(null);
 
   // refs mirroring props so the main effect never needs to re-bind listeners
   const visibleRef = useRef(visibleIds);
@@ -119,6 +127,8 @@ export default function GraphCanvas({
   dataRef.current = data;
   const pinsKeyRef = useRef(pinsKey);
   pinsKeyRef.current = pinsKey;
+  const revealRef = useRef(reveal);
+  revealRef.current = reveal;
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
   const onOpenRef = useRef(onOpen);
@@ -178,11 +188,19 @@ export default function GraphCanvas({
       return (n.deg ?? 0) > 0 ? '#6c8cff' : '#8b93a5';
     };
 
+    /** Growth playback: a page exists on the map only if it was born before the playhead. */
+    const born = (n: GraphNode): boolean => {
+      const cutoff = revealRef.current;
+      if (cutoff == null) return true;
+      if (!n.created_at) return true; // undated pages have always been here
+      return new Date(n.created_at).getTime() <= cutoff;
+    };
+
     /** The current visible world bounds — the minimap's frame. */
     const worldBounds = () => {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const n of data.nodes) {
-        if (!visibleRef.current.has(n.id) || n.x == null || n.y == null) continue;
+        if (!visibleRef.current.has(n.id) || !born(n) || n.x == null || n.y == null) continue;
         if (n.x < minX) minX = n.x;
         if (n.y < minY) minY = n.y;
         if (n.x > maxX) maxX = n.x;
@@ -238,7 +256,7 @@ export default function GraphCanvas({
       mctx.stroke();
 
       for (const n of data.nodes) {
-        if (!visibleRef.current.has(n.id) || n.x == null || n.y == null) continue;
+        if (!visibleRef.current.has(n.id) || !born(n) || n.x == null || n.y == null) continue;
         const [mx, my] = toMini(n.x, n.y);
         mctx.beginPath();
         mctx.arc(mx, my, 1.6 + Math.min((n.deg ?? 0) * 0.25, 1.8), 0, Math.PI * 2);
@@ -268,7 +286,7 @@ export default function GraphCanvas({
         const s = e.source as GraphNode;
         const t = e.target as GraphNode;
         if (typeof e.source === 'string' || typeof e.target === 'string') continue; // sim not started yet
-        if (!vis.has(s.id) || !vis.has(t.id) || s.x == null || t.x == null) continue;
+        if (!vis.has(s.id) || !vis.has(t.id) || !born(s) || !born(t) || s.x == null || t.x == null) continue;
         const incident = hoverId === s.id || hoverId === t.id || selectedIdNow === s.id || selectedIdNow === t.id;
         const dx = t.x! - s.x!;
         const dy = t.y! - s.y!;
@@ -312,7 +330,7 @@ export default function GraphCanvas({
       ctx.globalAlpha = 1;
 
       for (const n of data.nodes) {
-        if (!vis.has(n.id) || n.x == null || n.y == null) continue;
+        if (!vis.has(n.id) || !born(n) || n.x == null || n.y == null) continue;
         const r = radius(n);
         const hovered = hoverId === n.id;
         const selected = selectedIdNow === n.id;
@@ -342,6 +360,24 @@ export default function GraphCanvas({
         }
       }
       ctx.globalAlpha = 1;
+
+      // "new since your last visit" ripples: soft rings radiating from each
+      // fresh page, staggered so they arrive like a wave
+      const pulse = pulseRef.current;
+      if (pulse && pulse.ids.size > 0) {
+        const now = performance.now();
+        if (now < pulse.end) {
+          for (const n of data.nodes) {
+            if (!pulse.ids.has(n.id) || !vis.has(n.id) || !born(n) || n.x == null || n.y == null) continue;
+            const phase = ((now - pulse.start) / 1300 + (n.x + n.y) * 0.0009) % 1;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, radius(n) + 3 + phase * 15, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(138,255,193,${(1 - phase) * 0.6})`;
+            ctx.lineWidth = 2 / k;
+            ctx.stroke();
+          }
+        }
+      }
       ctx.restore();
       drawMini();
     };
@@ -363,7 +399,7 @@ export default function GraphCanvas({
         let best: GraphNode | null = null;
         let bestD = Infinity;
         for (const n of data.nodes) {
-          if (!visibleRef.current.has(n.id) || n.x == null || n.y == null) continue;
+          if (!visibleRef.current.has(n.id) || !born(n) || n.x == null || n.y == null) continue;
           const d = Math.hypot(n.x - wx, n.y - wy);
           // generous minimum so taps land: ~20px on screen even when zoomed out
           const reach = Math.max(radius(n) + 4, 20 / k);
@@ -526,10 +562,11 @@ export default function GraphCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  // redraw when any purely-visual input changes — no sim work
+  // redraw when any purely-visual input changes — no sim work. `reveal` rides
+  // along so the playback (which fires while the sim is asleep) redraws live.
   useEffect(() => {
     drawRef.current();
-  }, [visibleIds, selectedId, colorMode, cliques]);
+  }, [visibleIds, selectedId, colorMode, cliques, reveal]);
 
   // external camera requests (search pick, clique legend, fit button)
   const flyNonce = flyTo?.nonce ?? 0;
@@ -557,6 +594,32 @@ export default function GraphCanvas({
     const all = dataRef.current.nodes.map((n) => n.id);
     window.setTimeout(() => flyFnRef.current(all), 900); // once the layout has spread again
   }, [resetSignal, pinsKey]);
+
+  // drive the ripple animation with its own rAF heartbeat — the sim's tick
+  // loop is asleep once the layout settles, so nothing else would redraw
+  const pulseKey = pulseIds.join(',');
+  useEffect(() => {
+    if (!pulseIds.length) return;
+    const start = performance.now();
+    pulseRef.current = { ids: new Set(pulseIds), start, end: start + 8000 };
+    let raf = 0;
+    const loop = () => {
+      drawRef.current();
+      if (pulseRef.current && performance.now() < pulseRef.current.end) raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    const stop = window.setTimeout(() => {
+      cancelAnimationFrame(raf);
+      pulseRef.current = null;
+      drawRef.current();
+    }, 8200);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(stop);
+      pulseRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pulseKey]);
 
   return (
     <>
