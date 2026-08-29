@@ -374,6 +374,19 @@ export default function GraphView() {
         >
           <RotateCcw size={16} />
         </button>
+        {range && playhead == null && (
+          <button
+            className="rounded-xl border border-set-border bg-set-panel/95 p-2 text-set-dim shadow-pop backdrop-blur hover:text-set-text"
+            onClick={() => {
+              setPlayhead(range.t0);
+              setPlaying(true);
+            }}
+            title="Watch it grow — replay how this space was built, page by page"
+            aria-label="Watch it grow"
+          >
+            <Play size={16} />
+          </button>
+        )}
       </div>
       {/* loose pages: on the map but connected to nothing */}
       {loose.length > 0 && playhead == null && (
@@ -411,22 +424,10 @@ export default function GraphView() {
           )}
         </div>
       )}
-      {/* growth playback: watch the space build itself */}
-      {range && (
+      {/* growth playback bar (the corner play button opens it) */}
+      {range && playhead != null && (
         <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2">
-          {playhead == null ? (
-            <button
-              className="flex items-center gap-1.5 rounded-full border border-set-border bg-set-panel/95 px-3 py-1.5 text-xs text-set-dim shadow-pop backdrop-blur transition-colors hover:text-set-text"
-              onClick={() => {
-                setPlayhead(range.t0);
-                setPlaying(true);
-              }}
-              title="Replay how this space was built, page by page"
-            >
-              <Play size={12} /> Watch it grow
-            </button>
-          ) : (
-            <div className="flex items-center gap-2 rounded-full border border-set-border bg-set-panel/95 px-3 py-2 shadow-pop backdrop-blur">
+          <div className="flex items-center gap-2 rounded-full border border-set-border bg-set-panel/95 px-3 py-2 shadow-pop backdrop-blur">
               <button
                 className="rounded-full p-1 text-set-dim hover:text-set-text"
                 onClick={() => setPlaying((p) => !p)}
@@ -463,8 +464,7 @@ export default function GraphView() {
               >
                 <X size={14} />
               </button>
-            </div>
-          )}
+          </div>
         </div>
       )}
       {celebrate && (
