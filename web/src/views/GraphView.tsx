@@ -416,16 +416,14 @@ export default function GraphView() {
         <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2">
           {playhead == null ? (
             <button
-              className="set-btn-primary rounded-full px-4 py-2 shadow-pop"
+              className="flex items-center gap-1.5 rounded-full border border-set-border bg-set-panel/95 px-3 py-1.5 text-xs text-set-dim shadow-pop backdrop-blur transition-colors hover:text-set-text"
               onClick={() => {
                 setPlayhead(range.t0);
                 setPlaying(true);
               }}
               title="Replay how this space was built, page by page"
             >
-              <span className="inline-flex items-center gap-2">
-                <Play size={14} /> Watch it grow
-              </span>
+              <Play size={12} /> Watch it grow
             </button>
           ) : (
             <div className="flex items-center gap-2 rounded-full border border-set-border bg-set-panel/95 px-3 py-2 shadow-pop backdrop-blur">
