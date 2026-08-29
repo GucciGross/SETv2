@@ -52,6 +52,40 @@ export default function GraphView() {
     return fresh.length > 20 ? [] : fresh; // a wave, not a fireworks show
   }, [data]);
 
+  // — a brand-new neighborhood forms: celebrate it once —
+  // clique ids are stable across sessions, so localStorage tells us which
+  // community the map has never shown before
+  const [celebrate, setCelebrate] = useState<{ ids: string[]; name: string } | null>(null);
+  const cliquesSeenKey = `set-graph-cliques:${spaceId ?? 'none'}`;
+  const cliquesSig = cliques ? cliques.cliques.map((c) => c.id).join(',') : '';
+  useEffect(() => {
+    if (!cliques) return;
+    let prev: string[] = [];
+    try {
+      prev = JSON.parse(localStorage.getItem(cliquesSeenKey) ?? '[]');
+    } catch {
+      /* ignore */
+    }
+    const prevSet = new Set(prev);
+    const fresh = prev.length ? cliques.cliques.find((c) => !prevSet.has(c.id)) : null;
+    try {
+      localStorage.setItem(cliquesSeenKey, JSON.stringify(cliques.cliques.map((c) => c.id)));
+    } catch {
+      /* ignore */
+    }
+    if (fresh) {
+      setCelebrate({ ids: fresh.memberIds, name: fresh.name });
+      setFlyTo({ ids: fresh.memberIds, nonce: Date.now() });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cliquesSig]);
+
+  useEffect(() => {
+    if (!celebrate) return;
+    const t = window.setTimeout(() => setCelebrate(null), 9000);
+    return () => window.clearTimeout(t);
+  }, [celebrate]);
+
   // — growth playback —
   const births = useMemo(
     () => (data ? data.nodes.map((n) => (n.created_at ? new Date(n.created_at).getTime() : 0)) : []),
@@ -435,6 +469,13 @@ export default function GraphView() {
           )}
         </div>
       )}
+      {celebrate && (
+        <div className="absolute bottom-[4.25rem] left-1/2 z-20 -translate-x-1/2">
+          <div className="rounded-full border border-set-accent/40 bg-set-panel/95 px-3.5 py-1.5 text-xs text-set-text shadow-pop backdrop-blur">
+            ✦ New neighborhood formed — <span className="font-medium">{celebrate.name}</span>
+          </div>
+        </div>
+      )}
       <GraphCanvas
         data={data!}
         visibleIds={visibleIds}
@@ -445,7 +486,7 @@ export default function GraphView() {
         pinsKey={spaceId ? `set-graph-pins:${spaceId}` : undefined}
         resetSignal={resetSignal}
         reveal={playhead}
-        pulseIds={playhead == null ? pulseIds : []}
+        pulseIds={playhead == null ? celebrate?.ids ?? pulseIds : []}
         onSelect={setSelectedId}
         onOpen={openPage}
       />

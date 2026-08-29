@@ -159,7 +159,7 @@ export const TOOLS: ToolDef2[] = [
     write: false,
     async run(_args, ctx) {
       const nodes = await q<any>(
-        `SELECT id, title, updated_at FROM pages WHERE space_id = $1 AND deleted_at IS NULL AND is_template = false`,
+        `SELECT id, title, updated_at, created_at FROM pages WHERE space_id = $1 AND deleted_at IS NULL AND is_template = false`,
         [ctx.spaceId]
       );
       const edges = await q<any>(
@@ -179,6 +179,7 @@ export const TOOLS: ToolDef2[] = [
       const { cliques, strays } = detectCliques(g);
       const titles = new Map<string, string>(nodes.map((n: any) => [String(n.id), n.title]));
       const updated = new Map<string, number>(nodes.map((n: any) => [String(n.id), n.updated_at ? new Date(n.updated_at).getTime() : 0]));
+      const created = new Map<string, number>(nodes.map((n: any) => [String(n.id), n.created_at ? new Date(n.created_at).getTime() : 0]));
       const now = Date.now();
       const day = 86_400_000;
 
@@ -194,6 +195,22 @@ export const TOOLS: ToolDef2[] = [
         };
       });
 
+      // the neighborhood whose OLDEST member is the youngest — the map's latest arrival
+      let newest: { c: (typeof cliques)[number]; born: number } | null = null;
+      for (const c of cliques) {
+        const born = Math.max(...c.memberIds.map((id) => created.get(id) ?? 0));
+        if (!born) continue;
+        if (!newest || born > newest.born) newest = { c, born };
+      }
+      const newestNeighborhood = newest
+        ? {
+            name: newest.c.name,
+            hub: titles.get(newest.c.hubId) ?? '?',
+            pages: newest.c.memberIds.length,
+            bornDaysAgo: Math.round((now - newest.born) / day),
+          }
+        : null;
+
       const deg = new Map<string, number>();
       for (const e of g.edges) {
         deg.set(e.source, (deg.get(e.source) ?? 0) + 1);
@@ -205,14 +222,23 @@ export const TOOLS: ToolDef2[] = [
         .map(([id, d]) => ({ title: titles.get(id) ?? '?', links: d }));
 
       const looseIds = [...strays].filter((id) => (deg.get(id) ?? 0) === 0);
+      // oldest loose pages first — the ones that have been drifting the longest
+      const looseSorted = [...looseIds].sort((x, y) => (created.get(x) ?? 0) - (created.get(y) ?? 0));
       return {
         ok: true,
         result: {
           pages: nodes.length,
           links: edges.length,
           neighborhoods,
+          newestNeighborhood,
           hubs,
-          loosePages: { count: looseIds.length, sample: looseIds.slice(0, 10).map((id) => titles.get(id) ?? '?') },
+          loosePages: {
+            count: looseIds.length,
+            sample: looseSorted.slice(0, 10).map((id) => ({
+              title: titles.get(id) ?? '?',
+              daysOld: created.get(id) ? Math.round((now - (created.get(id) ?? 0)) / day) : null,
+            })),
+          },
         },
       };
     },
