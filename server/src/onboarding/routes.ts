@@ -5,6 +5,8 @@ import { one, q } from '../db.js';
 import { requireUser, requireSpace } from '../lib/http.js';
 import { getProvider } from '../llm/router.js';
 import { ingestSource } from '../rag/search.js';
+import { syncLinks } from '../pages/routes.js';
+import { mdToDoc } from '../lib/markdown.js';
 
 /**
  * First-run onboarding: persona capture, an activation checklist whose
@@ -98,10 +100,13 @@ export async function onboardingRoutes(app: FastifyInstance) {
 
     const mkPage = async (title: string, markdown: string) => {
       const p = await one<{ id: string }>(
-        `INSERT INTO pages (space_id, title, created_by) VALUES ($1, $2, $3) RETURNING id`,
-        [spaceId, title, user.id]
+        `INSERT INTO pages (space_id, title, content, created_by) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [spaceId, title, JSON.stringify(mdToDoc(markdown)), user.id]
       );
       await q(`UPDATE pages SET markdown = $2, updated_at = now() WHERE id = $1`, [p!.id, markdown]);
+      // the seeded pages carry [[wiki links]] on purpose — without this the
+      // graph (and the 'link' checklist item) stays empty on day one
+      await syncLinks(p!.id, spaceId, markdown);
       return p!.id;
     };
     const mkDb = async (name: string, schema: any[]) =>
@@ -145,8 +150,8 @@ export async function onboardingRoutes(app: FastifyInstance) {
 
     if (persona === 'personal') {
       const home = await mkPage('Home', `# Home\n\nYour second brain starts here.\n\n- Capture ideas in [[Reading Notes]]\n- Track what you are working on in the Projects database below\n- Link anything with double brackets and it appears in the graph\n`);
-      await mkPage('Reading Notes', `# Reading Notes\n\n**Source:** _title_ · **Author:** _name_\n\n## Summary\n\nThree sentences in your own words.\n\n## Highlights\n\n> Quote that stuck with you.\n\n## What changes?\n\n- [ ] One action from this reading\n\nSee also [[Home]]\n`);
-      await mkPage('Ideas', `# Ideas\n\nA parking lot for half-formed thoughts.\n\n- Idea one — what it is, who it is for\n- Idea two\n\nRefine the good ones into [[Home]] projects.\n`);
+      await mkPage('Reading Notes', `# Reading Notes\n\n**Source:** _title_ · **Author:** _name_\n\n## Summary\n\nThree sentences in your own words.\n\n## Highlights\n\n> Quote that stuck with you.\n\n## What changes?\n\n- [ ] One action from this reading\n\nSee also [[Home]] and [[Ideas]]\n`);
+      await mkPage('Ideas', `# Ideas\n\nA parking lot for half-formed thoughts.\n\n- Idea one — what it is, who it is for\n- Idea two\n\nRefine the good ones into [[Home]] projects, or feed them from [[Reading Notes]].\n`);
       void home;
       const db = await mkDb('Projects', [col('Name', 'text'), col('Status', 'select', ['Idea', 'Active', 'Done']), col('Due', 'date')]);
       await mkRow(db, { Name: 'Set up my workspace', Status: 'Active' }, 0);
@@ -154,21 +159,23 @@ export async function onboardingRoutes(app: FastifyInstance) {
     } else if (persona === 'team') {
       await mkPage('Team Home', `# Team Home\n\nThe front door for the team.\n\n- New here? Follow [[Onboarding Path]]\n- How we work: [[SOPs]]\n- Weekly sync notes live under this page as subpages\n`);
       await mkPage('Onboarding Path', `# Onboarding Path\n\nDay one:\n\n- [ ] Read the [[SOPs]]\n- [ ] Get access to the tools\n- [ ] Meet your onboarding buddy\n\nWeek one:\n\n- [ ] Ship something small\n- [ ] Skim the [[Team Home]] notes\n`);
-      await mkPage('SOPs', `# SOPs\n\n## How we release\n\n1. Branch from main\n2. Review, approve, merge\n3. Tag and ship\n\n## How we write docs\n\nEvery doc links back to [[Team Home]]. Keep it short.\n`);
+      await mkPage('SOPs', `# SOPs\n\n## How we release\n\n1. Branch from main\n2. Review, approve, merge\n3. Tag and ship\n\n## How we write docs\nEvery doc links back to [[Team Home]]. Keep it short.\n\n## Who follows these\nEveryone starting [[Onboarding Path]], and anyone touching production.\n`);
       const db = await mkDb('Team Tasks', [col('Name', 'text'), col('Owner', 'text'), col('Status', 'select', ['Todo', 'Doing', 'Done'])]);
       await mkRow(db, { Name: 'Invite the team', Owner: 'you', Status: 'Doing' }, 0);
       await mkRow(db, { Name: 'Import existing docs', Status: 'Todo' }, 1);
     } else if (persona === 'study') {
-      await mkPage('Study Home', `# Study Home\n\n- Current subjects live in notebooks (sidebar)\n- Make flashcards from any notebook with one click\n- Daily plan: review due cards, then one new source\n\nNotes on method: [[How I Study]]\n`);
-      await mkPage('How I Study', `# How I Study\n\n1. Skim the source, note questions\n2. Read actively — summarize each section in one line\n3. Generate flashcards, review daily\n4. Teach it: write an explainer page from memory\n\nTrack it all from [[Study Home]].\n`);
+      await mkPage('Study Home', `# Study Home\n\n- Current subjects live in notebooks (sidebar)\n- Make flashcards from any notebook with one click\n- Daily plan: review due cards, then one new source\n\nNotes on method: [[How I Study]] · keep a [[Learning Log]]\n`);
+      await mkPage('How I Study', `# How I Study\n\n1. Skim the source, note questions\n2. Read actively — summarize each section in one line\n3. Generate flashcards, review daily\n4. Teach it: write an explainer page from memory\n\nTrack it all from [[Study Home]], and log every session in the [[Learning Log]].\n`);
+      await mkPage('Learning Log', `# Learning Log\n\nOne line per session. Small and honest beats long and rare.\n\n| Date | What I studied | One thing I learned |\n| --- | --- | --- |\n|  |  |  |\n\nMethod refresher: [[How I Study]] · overview: [[Study Home]]\n`);
       await mkNotebookSource(
         'Sample Notebook — Getting Started',
         'What is SET\n\nSET is a Knowledge and Learning OS. You upload sources to notebooks, ask grounded questions with citations, and turn any notebook into flashcards and quizzes. This sample source exists so you can try search and citations immediately. Ask the copilot: what is SET?\n\nWhy notebooks\n\nEvery answer the copilot gives in a notebook cites the exact chunk it came from, so you can verify anything in one click. Sources can be PDFs, markdown, plain text, web pages or transcripts.'
       );
     } else {
       // builder
-      await mkPage('Engineering Home', `# Engineering Home\n\n- Enable work surfaces in Settings: Coding, Terminal, Library\n- Keep runbooks under this page\n- The copilot can search, read and write pages for you\n\nStart with [[Runbook Template]]\n`);
-      await mkPage('Runbook Template', `# Runbook: _task_\n\n**Owner:** · **Last tested:**\n\n## Symptoms\n\nWhat the user sees.\n\n## Diagnosis\n\nCommands and queries that narrow it down.\n\n## Fix\n\nSteps, in order, verified.\n\n## Post-incident\n\n- [ ] File follow-up\n\nLinked from [[Engineering Home]]\n`);
+      await mkPage('Engineering Home', `# Engineering Home\n\n- Enable work surfaces in Settings: Coding, Terminal, Library\n- Keep runbooks under this page\n- The copilot can search, read and write pages for you\n\nStart with [[Runbook Template]], and record big calls in [[Architecture Decisions]]\n`);
+      await mkPage('Runbook Template', `# Runbook: _task_\n\n**Owner:** · **Last tested:**\n\n## Symptoms\nWhat the user sees.\n\n## Diagnosis\nCommands and queries that narrow it down.\n\n## Fix\nSteps, in order, verified.\n\n## Post-incident\n- [ ] File follow-up\n\nLinked from [[Engineering Home]]. For bigger calls see [[Architecture Decisions]].\n`);
+      await mkPage('Architecture Decisions', `# Architecture Decisions\n\nOne ADR per decision: context, options, choice, consequences.\n\n| # | Decision | Status |\n| --- | --- | --- |\n| 1 |  |  |\n\nEscalation and incident steps live in [[Runbook Template]]. Overview: [[Engineering Home]].\n`);
       const db = await mkDb('Services', [col('Name', 'text'), col('Tier', 'select', ['1', '2', '3']), col('Repo', 'text')]);
       await mkRow(db, { Name: 'set-api', Tier: '1', Repo: 'SETv2/server' }, 0);
       await mkRow(db, { Name: 'set-web', Tier: '1', Repo: 'SETv2/web' }, 1);
