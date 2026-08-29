@@ -9,6 +9,44 @@ import { config } from '../config.js';
 export async function llmRoutes(app: FastifyInstance) {
   app.get('/providers/presets', async () => ({ presets: PROVIDER_PRESETS }));
 
+  // Zero-config brain: probe the usual suspects for LLM servers running on
+  // the host machine or alongside the compose stack. Ollama speaks /api/tags,
+  // LM Studio speaks OpenAI's /v1/models. First responder per kind wins.
+  const LOCAL_CANDIDATES: { kind: 'ollama' | 'lmstudio'; base: string }[] = [
+    { kind: 'ollama', base: 'http://ollama:11434' }, // compose --profile ollama
+    { kind: 'ollama', base: 'http://host.docker.internal:11434' },
+    { kind: 'ollama', base: 'http://172.17.0.1:11434' }, // docker0 gateway (Linux)
+    { kind: 'ollama', base: 'http://localhost:11434' }, // bare-metal server
+    { kind: 'lmstudio', base: 'http://host.docker.internal:1234' },
+    { kind: 'lmstudio', base: 'http://172.17.0.1:1234' },
+    { kind: 'lmstudio', base: 'http://localhost:1234' },
+  ];
+
+  async function probeLocal(kind: 'ollama' | 'lmstudio', base: string): Promise<{ kind: string; baseUrl: string; models: string[] } | null> {
+    try {
+      const url = kind === 'ollama' ? `${base}/api/tags` : `${base}/v1/models`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
+      if (!res.ok) return null;
+      const j: any = await res.json();
+      const models: string[] = (kind === 'ollama' ? j?.models?.map((m: any) => m?.name) : j?.data?.map((m: any) => m?.id)) ?? [];
+      if (!models.length) return null;
+      return { kind, baseUrl: base, models: models.slice(0, 24) };
+    } catch {
+      return null;
+    }
+  }
+
+  app.get('/spaces/:spaceId/ai/detect-local', async (req, reply) => {
+    const spaceId = (req.params as any).spaceId;
+    if (!(await requireSpace(req, reply, spaceId))) return;
+    const found = await Promise.all(LOCAL_CANDIDATES.map((c) => probeLocal(c.kind, c.base)));
+    const servers: { kind: string; baseUrl: string; models: string[] }[] = [];
+    for (const s of found) {
+      if (s && !servers.some((x) => x.kind === s.kind)) servers.push(s);
+    }
+    return { servers };
+  });
+
   app.get('/spaces/:spaceId/providers', async (req, reply) => {
     const spaceId = (req.params as any).spaceId;
     if (!(await requireSpace(req, reply, spaceId))) return;

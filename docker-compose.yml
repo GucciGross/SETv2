@@ -53,6 +53,10 @@ services:
       SEED_DEMO: ${SEED_DEMO:-0}
     volumes:
       - server_data:/app/data
+    extra_hosts:
+      # lets the server probe LLM servers on the host machine (Ollama :11434,
+      # LM Studio :1234) during first-run "connect the brain" detection
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
