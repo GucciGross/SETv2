@@ -152,6 +152,72 @@ const CUA_TARGET_PROPS = {
 
 export const TOOLS: ToolDef2[] = [
   {
+    name: 'map_overview',
+    description:
+      'Summarize the workspace knowledge graph: page and link counts, the named page communities (neighborhoods) with how fresh or quiet each one is, the most-connected hub pages, and loose pages nothing links to. Use this whenever the user asks about the map, the graph, how the workspace is organized, neighborhoods, or what has gone quiet.',
+    parameters: { type: 'object', properties: {} },
+    write: false,
+    async run(_args, ctx) {
+      const nodes = await q<any>(
+        `SELECT id, title, updated_at FROM pages WHERE space_id = $1 AND deleted_at IS NULL AND is_template = false`,
+        [ctx.spaceId]
+      );
+      const edges = await q<any>(
+        `SELECT l.source_id AS source, l.target_id AS target FROM links l
+         JOIN pages s ON s.id = l.source_id
+         JOIN pages t ON t.id = l.target_id
+         WHERE l.space_id = $1
+           AND s.deleted_at IS NULL AND s.is_template = false
+           AND t.deleted_at IS NULL AND t.is_template = false`,
+        [ctx.spaceId]
+      );
+      const g = {
+        nodes: nodes.map((n: any) => ({ id: String(n.id) })),
+        edges: edges.map((e: any) => ({ source: String(e.source), target: String(e.target) })),
+      };
+      const { detectCliques } = await import('./cliques.js');
+      const { cliques, strays } = detectCliques(g);
+      const titles = new Map<string, string>(nodes.map((n: any) => [String(n.id), n.title]));
+      const updated = new Map<string, number>(nodes.map((n: any) => [String(n.id), n.updated_at ? new Date(n.updated_at).getTime() : 0]));
+      const now = Date.now();
+      const day = 86_400_000;
+
+      // freshness of a neighborhood = the NEWEST edit among its members
+      const neighborhoods = cliques.slice(0, 8).map((c) => {
+        const lastTouch = Math.max(...c.memberIds.map((id) => updated.get(id) ?? 0));
+        return {
+          name: c.name,
+          pages: c.memberIds.length,
+          hub: titles.get(c.hubId) ?? '?',
+          sample: c.memberIds.slice(0, 5).map((id) => titles.get(id) ?? '?'),
+          lastTouchDaysAgo: Number.isFinite(lastTouch) && lastTouch > 0 ? Math.round((now - lastTouch) / day) : null,
+        };
+      });
+
+      const deg = new Map<string, number>();
+      for (const e of g.edges) {
+        deg.set(e.source, (deg.get(e.source) ?? 0) + 1);
+        deg.set(e.target, (deg.get(e.target) ?? 0) + 1);
+      }
+      const hubs = [...deg.entries()]
+        .sort((x, y) => y[1] - x[1])
+        .slice(0, 3)
+        .map(([id, d]) => ({ title: titles.get(id) ?? '?', links: d }));
+
+      const looseIds = [...strays].filter((id) => (deg.get(id) ?? 0) === 0);
+      return {
+        ok: true,
+        result: {
+          pages: nodes.length,
+          links: edges.length,
+          neighborhoods,
+          hubs,
+          loosePages: { count: looseIds.length, sample: looseIds.slice(0, 10).map((id) => titles.get(id) ?? '?') },
+        },
+      };
+    },
+  },
+  {
     name: 'search_workspace',
     description: 'Search the workspace pages, databases and notebooks by keyword. Use this before reading or creating pages.',
     parameters: { type: 'object', properties: { query: { type: 'string', description: 'Search keywords' } }, required: ['query'] },
