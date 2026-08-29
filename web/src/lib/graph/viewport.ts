@@ -12,14 +12,24 @@ export interface ViewTransform {
   k: number;
 }
 
+/** An edge under the cursor: its two endpoint objects, in link direction. */
+export interface EdgeHit<T> {
+  source: T;
+  target: T;
+}
+
 export interface ViewportHooks<T> {
   /** Return the object under a world-space point, or null. */
   hitTest: (wx: number, wy: number) => T | null;
+  /** Optional: the edge under a world-space point (asked only when no node was hit). */
+  hitEdgeTest?: (wx: number, wy: number) => EdgeHit<T> | null;
   /** Move a dragged object to a world-space point. */
   onDragObject: (obj: T, wx: number, wy: number) => void;
   /** Called once when a dragged object is released. */
   onDragEnd: (obj: T) => void;
   onHover: (obj: T | null) => void;
+  /** Optional mouse-only edge hover; client coords accompany it for tooltips. */
+  onEdgeHover?: (e: EdgeHit<T> | null, clientX: number, clientY: number) => void;
   onClick: (obj: T | null) => void;
   onDoubleClick: (obj: T | null) => void;
   /** Called after any transform/hover change that needs a redraw. */
@@ -44,6 +54,7 @@ export class Viewport<T> {
   private slop = 5;
   private pinchDist = 0;
   private lastHover: T | null = null;
+  private lastEdge: EdgeHit<T> | null = null;
 
   constructor(private canvas: HTMLCanvasElement, private hooks: ViewportHooks<T>) {}
 
@@ -159,9 +170,30 @@ export class Viewport<T> {
     if (e.buttons === 0 && e.pointerType === 'mouse') {
       const w = this.toWorld(e.clientX, e.clientY);
       const hit = this.hooks.hitTest(w.x, w.y);
-      if ((hit as unknown) !== (this.lastHover as unknown)) {
-        this.lastHover = hit;
-        this.hooks.onHover(hit);
+      if (hit || !this.hooks.hitEdgeTest) {
+        if (this.lastEdge) {
+          this.lastEdge = null;
+          this.hooks.onEdgeHover?.(null, e.clientX, e.clientY);
+        }
+        if ((hit as unknown) !== (this.lastHover as unknown)) {
+          this.lastHover = hit;
+          this.hooks.onHover(hit);
+          this.hooks.onChange();
+        }
+        return;
+      }
+      // edge hover: first drop any node hover, then compare edges
+      if (this.lastHover) {
+        this.lastHover = null;
+        this.hooks.onHover(null);
+      }
+      const edge = this.hooks.hitEdgeTest(w.x, w.y);
+      const changed =
+        (edge === null) !== (this.lastEdge === null) ||
+        (edge !== null && this.lastEdge !== null && (edge.source !== this.lastEdge.source || edge.target !== this.lastEdge.target));
+      this.lastEdge = edge;
+      if (changed) {
+        this.hooks.onEdgeHover?.(edge, e.clientX, e.clientY);
         this.hooks.onChange();
       }
     }

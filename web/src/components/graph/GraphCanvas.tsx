@@ -7,7 +7,7 @@ import {
   forceSimulation,
   type Simulation,
 } from 'd3-force';
-import { Viewport } from '../../lib/graph/viewport';
+import { Viewport, type EdgeHit } from '../../lib/graph/viewport';
 import type { CliqueResult } from '../../lib/graph/cliques';
 import { edgeIds, type GraphData, type GraphEdge, type GraphNode } from '../../lib/graph/types';
 
@@ -105,6 +105,9 @@ export default function GraphCanvas({
   const viewportRef = useRef<Viewport<GraphNode> | null>(null);
   /** Hovered node + its neighbor set, for the focus-dimming effect. */
   const hoverRef = useRef<{ id: string; neighbors: Set<string> } | null>(null);
+  /** Hovered edge (mouse only) — highlights the relationship + drives the tooltip. */
+  const edgeHoverRef = useRef<EdgeHit<GraphNode> | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const drawRef = useRef<() => void>(() => {});
   /** Camera flight starter, rebuilt with each dataset; used by flyTo and reset. */
   const flyFnRef = useRef<(ids: string[]) => void>(() => {});
@@ -274,7 +277,11 @@ export default function GraphCanvas({
       ctx.translate(x, y);
       ctx.scale(k, k);
       const vis = visibleRef.current;
-      const focus = hoverRef.current;
+      const hoverNode = hoverRef.current;
+      const hEdge = edgeHoverRef.current;
+      // focus = hovered node's neighborhood, or a hovered edge's two endpoints
+      let focus = hoverNode;
+      if (!focus && hEdge) focus = { id: hEdge.source.id, neighbors: new Set([hEdge.source.id, hEdge.target.id]) };
       const hoverId = focus?.id ?? null;
       const selectedIdNow = selectedRef.current;
 
@@ -287,7 +294,12 @@ export default function GraphCanvas({
         const t = e.target as GraphNode;
         if (typeof e.source === 'string' || typeof e.target === 'string') continue; // sim not started yet
         if (!vis.has(s.id) || !vis.has(t.id) || !born(s) || !born(t) || s.x == null || t.x == null) continue;
-        const incident = hoverId === s.id || hoverId === t.id || selectedIdNow === s.id || selectedIdNow === t.id;
+        const incident =
+          hoverId === s.id ||
+          hoverId === t.id ||
+          selectedIdNow === s.id ||
+          selectedIdNow === t.id ||
+          (!!hEdge && ((s.id === hEdge.source.id && t.id === hEdge.target.id) || (s.id === hEdge.target.id && t.id === hEdge.source.id)));
         const dx = t.x! - s.x!;
         const dy = t.y! - s.y!;
         const dist = Math.hypot(dx, dy) || 1;
@@ -332,7 +344,8 @@ export default function GraphCanvas({
       for (const n of data.nodes) {
         if (!vis.has(n.id) || !born(n) || n.x == null || n.y == null) continue;
         const r = radius(n);
-        const hovered = hoverId === n.id;
+        const hovered =
+          hoverId === n.id || (!!hEdge && (n.id === hEdge.source.id || n.id === hEdge.target.id));
         const selected = selectedIdNow === n.id;
         const dimmed = focus !== null && !focus.neighbors.has(n.id) && !selected;
         ctx.globalAlpha = dimmed ? 0.18 : 1;
@@ -410,6 +423,40 @@ export default function GraphCanvas({
         }
         return best;
       },
+      /** The edge under a world point: bbox prefilter, then sample the curve. */
+      hitEdgeTest: (wx, wy) => {
+        const k = viewport.transform.k;
+        const reach = 6 / k;
+        const vis = visibleRef.current;
+        for (const e of data.edges) {
+          const s = e.source as GraphNode;
+          const t = e.target as GraphNode;
+          if (typeof e.source === 'string' || typeof e.target === 'string') continue;
+          if (!vis.has(s.id) || !vis.has(t.id) || !born(s) || !born(t)) continue;
+          if (s.x == null || s.y == null || t.x == null || t.y == null) continue;
+          if (wx < Math.min(s.x, t.x) - 24 || wx > Math.max(s.x, t.x) + 24) continue;
+          if (wy < Math.min(s.y, t.y) - 24 || wy > Math.max(s.y, t.y) + 24) continue;
+          const dx = t.x! - s.x!;
+          const dy = t.y! - s.y!;
+          const dist = Math.hypot(dx, dy) || 1;
+          const ux = dx / dist;
+          const uy = dy / dist;
+          const sx = s.x! + ux * radius(s);
+          const sy = s.y! + uy * radius(s);
+          const txp = t.x! - ux * radius(t);
+          const typ = t.y! - uy * radius(t);
+          const bend = dist * 0.12;
+          const cxp = (sx + txp) / 2 - uy * bend;
+          const cyp = (sy + typ) / 2 + ux * bend;
+          for (let i = 0; i <= 14; i++) {
+            const u = i / 14;
+            const px = (1 - u) * (1 - u) * sx + 2 * u * (1 - u) * cxp + u * u * txp;
+            const py = (1 - u) * (1 - u) * sy + 2 * u * (1 - u) * cyp + u * u * typ;
+            if (Math.hypot(px - wx, py - wy) < reach) return { source: s, target: t };
+          }
+        }
+        return null;
+      },
       onDragObject: (n, wx, wy) => {
         n.fx = wx;
         n.fy = wy;
@@ -438,6 +485,23 @@ export default function GraphCanvas({
           hoverRef.current = null;
         }
         canvas.style.cursor = n ? 'pointer' : 'grab';
+      },
+      onEdgeHover: (hit, clientX, clientY) => {
+        edgeHoverRef.current = hit;
+        const tip = tooltipRef.current;
+        if (tip) {
+          if (hit) {
+            const rect = canvas.getBoundingClientRect();
+            const clip = (s: string) => (s.length > 24 ? s.slice(0, 23) + '…' : s);
+            tip.textContent = `${clip(hit.source.title)} → ${clip(hit.target.title)}`;
+            tip.style.display = 'block';
+            tip.style.left = `${clientX - rect.left + 14}px`;
+            tip.style.top = `${clientY - rect.top + 12}px`;
+          } else {
+            tip.style.display = 'none';
+          }
+        }
+        canvas.style.cursor = hit ? 'pointer' : 'grab';
       },
       onClick: (n) => onSelectRef.current(n ? n.id : null),
       onDoubleClick: (n) => {
@@ -542,6 +606,7 @@ export default function GraphCanvas({
     (canvas as any).__graphDraw = draw;
     (canvas as any).__graphNodes = data.nodes;
     (canvas as any).__graphFly = flyToIds;
+    (canvas as any).__graphViewport = viewport;
 
     return () => {
       sim.stop();
@@ -633,6 +698,12 @@ export default function GraphCanvas({
         className="absolute bottom-3 left-3 z-10 hidden cursor-pointer rounded-xl border border-set-border bg-set-panel/85 shadow-pop md:block"
         style={{ width: MINI_W, height: MINI_H, touchAction: 'none' }}
         title="Map — click to jump"
+      />
+      {/* relationship tooltip — positioned imperatively on edge hover */}
+      <div
+        ref={tooltipRef}
+        className="pointer-events-none absolute z-20 max-w-72 truncate rounded-lg border border-set-border bg-set-panel px-2 py-1 text-[11px] text-set-text shadow-pop"
+        style={{ display: 'none' }}
       />
     </>
   );
