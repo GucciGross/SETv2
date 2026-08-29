@@ -1,12 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence } from 'motion/react';
-import { Frame, Link2Off, Network, Pause, Play, RefreshCw, RotateCcw, X } from 'lucide-react';
+import { Frame, Link2Off, Network, Pause, Play, RefreshCw, RotateCcw, Sparkles, X } from 'lucide-react';
 import GraphCanvas, { type FlyToRequest, type GraphColorMode } from '../components/graph/GraphCanvas';
 import NodeCard from '../components/graph/NodeCard';
 import { filterGraph } from '../lib/graph/filter';
 import { edgeIds } from '../lib/graph/types';
 import { useGraphData } from '../lib/graph/useGraphData';
+import { api } from '../lib/api';
+
+interface LinkSuggestion {
+  sourceId: string;
+  sourceTitle: string;
+  targetId: string;
+  targetTitle: string;
+}
 
 const COLOR_KEY = 'set-graph-color';
 const COLOR_MODES: { id: GraphColorMode; label: string }[] = [
@@ -121,6 +129,39 @@ export default function GraphView() {
   // — loose pages —
   const loose = useMemo(() => data?.nodes.filter((n) => (n.deg ?? 0) === 0) ?? [], [data]);
   const [looseOpen, setLooseOpen] = useState(false);
+
+  // — link suggestions: the map can grow itself —
+  const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [applying, setApplying] = useState<string | null>(null);
+  const loadSuggestions = useCallback(async () => {
+    if (!spaceId) return;
+    try {
+      const r = await api.get<{ suggestions: LinkSuggestion[] }>(`/spaces/${spaceId}/link-suggestions`);
+      setSuggestions(r.suggestions ?? []);
+    } catch {
+      /* suggestions are garnish — never block the map on them */
+    }
+  }, [spaceId]);
+  useEffect(() => {
+    loadSuggestions();
+  }, [loadSuggestions]);
+
+  const applySuggestion = async (s: LinkSuggestion) => {
+    if (!spaceId) return;
+    const key = `${s.sourceId}→${s.targetId}`;
+    setApplying(key);
+    try {
+      await api.post(`/spaces/${spaceId}/link-suggestions/apply`, { sourceId: s.sourceId, targetId: s.targetId });
+      setSuggestions((list) => list.filter((x) => !(x.sourceId === s.sourceId && x.targetId === s.targetId)));
+      refresh(); // the new edge lands on the map immediately
+    } catch {
+      /* leave the row; the user can retry */
+    } finally {
+      setApplying(null);
+    }
+  };
+
   const revealedCount =
     playhead == null ? (data?.nodes.length ?? 0) : births.filter((b) => b <= playhead).length;
 
@@ -388,6 +429,47 @@ export default function GraphView() {
           </button>
         )}
       </div>
+      {/* link suggestions: pages that mention other pages, one tap to connect */}
+      {suggestions.length > 0 && playhead == null && (
+        <div className="absolute bottom-[3.25rem] left-3 z-10 md:bottom-[11.75rem]">
+          <button
+            className="flex items-center gap-1.5 rounded-xl border border-set-border bg-set-panel/95 px-2.5 py-1.5 text-xs text-set-dim shadow-pop backdrop-blur hover:text-set-text"
+            onClick={() => setSuggestOpen((o) => !o)}
+            title="Pages that mention other pages — connect them in one tap"
+          >
+            <Sparkles size={13} /> Suggestions · {suggestions.length}
+          </button>
+          {suggestOpen && (
+            <div className="absolute bottom-full left-0 mb-1 w-72 overflow-hidden rounded-xl border border-set-border bg-set-panel shadow-pop">
+              <div className="px-3 pt-2 pb-1 text-[10px] tracking-[0.15em] text-set-dim uppercase">
+                The map can grow itself
+              </div>
+              {suggestions.map((s) => {
+                const key = `${s.sourceId}→${s.targetId}`;
+                return (
+                  <div key={key} className="flex items-center gap-2 px-3 py-2 text-xs text-set-dim">
+                    <span className="min-w-0 flex-1 truncate" title={`${s.sourceTitle} mentions ${s.targetTitle}`}>
+                      <span className="text-set-text">{s.sourceTitle}</span> mentions {s.targetTitle}
+                    </span>
+                    <button
+                      className="shrink-0 rounded-md border border-set-border px-1.5 py-0.5 text-[10px] text-set-dim hover:bg-set-panel2 hover:text-set-text disabled:opacity-50"
+                      disabled={applying === key}
+                      onClick={() => void applySuggestion(s)}
+                    >
+                      {applying === key ? '…' : 'Link'}
+                    </button>
+                  </div>
+                );
+              })}
+              <p className="px-3 py-2 text-[10px] leading-relaxed text-set-dim opacity-80">
+                Linking wraps the mention in{' '}
+                <code className="rounded bg-set-panel2 px-1 py-0.5">[[brackets]]</code> — the map draws the connection
+                instantly.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
       {/* loose pages: on the map but connected to nothing */}
       {loose.length > 0 && playhead == null && (
         <div className="absolute bottom-3 left-3 z-10 md:bottom-[8.25rem]">

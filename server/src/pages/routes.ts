@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { one, q } from '../db.js';
 import { requireResourceSpace, requireSpace, rid } from '../lib/http.js';
 import { docToMd, extractWikiTargets, mdToDoc, nodeToMd, type TNode } from '../lib/markdown.js';
+import { applySuggestion, findSuggestions } from './suggest.js';
 import { bus } from '../lib/events.js';
 import { recordActivity } from '../team/activity.js';
 
@@ -227,6 +228,53 @@ export async function pageRoutes(app: FastifyInstance) {
       [ctx.spaceId, id, page.title]
     );
     return { mentions: rows };
+  });
+
+  /**
+   * Self-assembling map: pages that mention another page's title in plain
+   * text become one-tap link suggestions. Read-only; applying is a separate,
+   * editor-gated call that edits the source page in one small way (wrapping
+   * the mention in [[brackets]]).
+   */
+  app.get('/spaces/:spaceId/link-suggestions', async (req, reply) => {
+    const spaceId = (req.params as any).spaceId;
+    if (!(await requireSpace(req, reply, spaceId))) return;
+    const [pages, links] = await Promise.all([
+      q<any>(`SELECT id, title, markdown FROM pages WHERE space_id = $1 AND deleted_at IS NULL AND is_template = false`, [spaceId]),
+      q<any>(`SELECT source_id, target_id FROM links WHERE space_id = $1`, [spaceId]),
+    ]);
+    const linkedPairs = new Set(links.map((l: any) => `${String(l.source_id)}→${String(l.target_id)}`));
+    const suggestions = findSuggestions(
+      pages.map((p: any) => ({ id: String(p.id), title: p.title, markdown: p.markdown ?? '' })),
+      linkedPairs
+    );
+    return { suggestions };
+  });
+
+  app.post('/spaces/:spaceId/link-suggestions/apply', async (req, reply) => {
+    const spaceId = (req.params as any).spaceId;
+    if (!(await requireSpace(req, reply, spaceId, 'editor'))) return;
+    const { sourceId, targetId } = z
+      .object({ sourceId: z.string().uuid(), targetId: z.string().uuid() })
+      .parse(req.body);
+    const src = await one<{ id: string; markdown: string }>(
+      `SELECT id, markdown FROM pages WHERE id::text = $1 AND space_id = $2 AND deleted_at IS NULL`,
+      [sourceId, spaceId]
+    );
+    const tgt = await one<{ title: string }>(
+      `SELECT title FROM pages WHERE id::text = $1 AND space_id = $2 AND deleted_at IS NULL`,
+      [targetId, spaceId]
+    );
+    if (!src || !tgt) return { ok: false, error: 'Page not found' };
+    const next = applySuggestion(src.markdown ?? '', tgt.title);
+    if (next === null) return { ok: false, error: 'No plain mention left to link' };
+    await q(`UPDATE pages SET markdown = $2, content = $3, updated_at = now() WHERE id = $1`, [
+      src.id,
+      next,
+      JSON.stringify(mdToDoc(next)),
+    ]);
+    await syncLinks(src.id, spaceId, next);
+    return { ok: true, sourceId: src.id, targetId };
   });
 
   app.post('/spaces/:spaceId/daily', async (req, reply) => {
