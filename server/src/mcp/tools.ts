@@ -1,11 +1,17 @@
 import { q, one } from '../db.js';
+import crypto from 'node:crypto';
 import { mdToDoc } from '../lib/markdown.js';
-import { syncLinks, relinkSpace } from '../pages/routes.js';
+import { syncLinks, relinkSpace, savePageContent } from '../pages/routes.js';
 import { retrieve } from '../rag/provider.js';
 import { getProvider } from '../llm/router.js';
 import { generateDeck, createDeckRecord } from '../study/generate.js';
 import { getSurfaces } from '../surfaces.js';
 import { recordActivity } from '../team/activity.js';
+import { config } from '../config.js';
+import { extractWebText } from '../rag/routes.js';
+import { buildGradebookCsv } from '../study/routes.js';
+import { gradeAttempt, normalizeQuizItems } from '../study/quiz.js';
+import { ingestSource } from '../rag/search.js';
 
 /**
  * MCP tool catalog — feature parity with the SET API.
@@ -38,6 +44,12 @@ const pageByRef = async (ctx: ToolCtx, ref: string) =>
   ));
 
 const canWrite = (ctx: ToolCtx) => ctx.role !== 'viewer';
+const isOwner = (ctx: ToolCtx) => ctx.role === 'owner';
+
+/** Resolve a quiz deck by id or title within the space. */
+const deckByRef = async (ctx: ToolCtx, ref: string) =>
+  (await one<any>(`SELECT * FROM decks WHERE id::text = $2 AND space_id = $1`, [ctx.spaceId, ref])) ??
+  (await one<any>(`SELECT * FROM decks WHERE space_id = $1 AND lower(title) = lower($2) LIMIT 1`, [ctx.spaceId, ref]));
 
 export const TOOLS: ToolDef[] = [
   {
@@ -567,6 +579,321 @@ export const TOOLS: ToolDef[] = [
         [ctx.spaceId, args.title, args.markdown ?? '', JSON.stringify(mdToDoc(args.markdown ?? '')), ctx.userId]
       );
       return { templateId: tpl!.id };
+    },
+  },
+
+  // ---- tools for version history, sharing, clipping, assessment, billing, roster ----
+
+  {
+    name: 'list_page_versions',
+    title: 'List page versions',
+    description: 'List the version history of a page (every save snapshots the prior state). Each entry has an id you can read or restore.',
+    inputSchema: { type: 'object', properties: { ref: { type: 'string', description: 'Page id or exact title' } }, required: ['ref'] },
+    annotations: { readOnlyHint: true },
+    scope: 'mcp:read',
+    async run(args, ctx) {
+      const page = await pageByRef(ctx, args.ref);
+      if (!page) throw new Error(`Page not found: ${args.ref}`);
+      const versions = await q(
+        `SELECT v.id, v.title, v.created_at, length(v.markdown) AS size, COALESCE(u.name, '') AS edited_by_name
+         FROM page_versions v LEFT JOIN users u ON u.id = v.edited_by
+         WHERE v.page_id = $1 ORDER BY v.created_at DESC LIMIT 50`,
+        [page.id]
+      );
+      return { versions };
+    },
+  },
+  {
+    name: 'get_page_version',
+    title: 'Get page version content',
+    description: 'Read the full Markdown of a specific historical version of a page.',
+    inputSchema: {
+      type: 'object',
+      properties: { ref: { type: 'string', description: 'Page id or exact title' }, versionId: { type: 'string', description: 'Version id from list_page_versions' } },
+      required: ['ref', 'versionId'],
+    },
+    annotations: { readOnlyHint: true },
+    scope: 'mcp:read',
+    async run(args, ctx) {
+      const page = await pageByRef(ctx, args.ref);
+      if (!page) throw new Error(`Page not found: ${args.ref}`);
+      const v = await one<any>(`SELECT id, title, markdown, created_at FROM page_versions WHERE id::text = $2 AND page_id = $1`, [page.id, args.versionId]);
+      if (!v) throw new Error('Version not found');
+      return v;
+    },
+  },
+  {
+    name: 'restore_page_version',
+    title: 'Restore page version',
+    description: 'Restore a page to a previous version. The current content is snapshotted to history first, so the restore itself is undoable.',
+    inputSchema: {
+      type: 'object',
+      properties: { ref: { type: 'string', description: 'Page id or exact title' }, versionId: { type: 'string', description: 'Version id from list_page_versions' } },
+      required: ['ref', 'versionId'],
+    },
+    scope: 'mcp:write',
+    async run(args, ctx) {
+      if (!canWrite(ctx)) throw new Error('Viewer role cannot write');
+      const page = await pageByRef(ctx, args.ref);
+      if (!page) throw new Error(`Page not found: ${args.ref}`);
+      const v = await one<{ markdown: string }>(`SELECT markdown FROM page_versions WHERE id::text = $2 AND page_id = $1`, [page.id, args.versionId]);
+      if (!v) throw new Error('Version not found');
+      await savePageContent(page.id, ctx.spaceId, { markdown: v.markdown }, ctx.userId);
+      void recordActivity(ctx.spaceId, ctx.userId, 'page_restored', { pageId: page.id, title: page.title, via: 'mcp' });
+      return { pageId: page.id, restored: true };
+    },
+  },
+  {
+    name: 'create_share_link',
+    title: 'Create public share link',
+    description: 'Publish a page to a public read-only URL anyone can open without an account. Returns the shareable link.',
+    inputSchema: { type: 'object', properties: { ref: { type: 'string', description: 'Page id or exact title' } }, required: ['ref'] },
+    scope: 'mcp:write',
+    async run(args, ctx) {
+      if (!canWrite(ctx)) throw new Error('Viewer role cannot write');
+      const page = await pageByRef(ctx, args.ref);
+      if (!page) throw new Error(`Page not found: ${args.ref}`);
+      const token = crypto.randomBytes(18).toString('base64url');
+      const link = await one<any>(
+        `INSERT INTO share_links (space_id, page_id, token, created_by) VALUES ($1, $2, $3, $4) RETURNING id, token`,
+        [ctx.spaceId, page.id, token, ctx.userId]
+      );
+      void recordActivity(ctx.spaceId, ctx.userId, 'share_created', { pageId: page.id, title: page.title, via: 'mcp' });
+      return { linkId: link!.id, url: `${config.appUrl.replace(/\/+$/, '')}/share/${link!.token}` };
+    },
+  },
+  {
+    name: 'list_share_links',
+    title: 'List share links',
+    description: 'List public share links for a page with view counts and revocation state.',
+    inputSchema: { type: 'object', properties: { ref: { type: 'string', description: 'Page id or exact title' } }, required: ['ref'] },
+    annotations: { readOnlyHint: true },
+    scope: 'mcp:read',
+    async run(args, ctx) {
+      const page = await pageByRef(ctx, args.ref);
+      if (!page) throw new Error(`Page not found: ${args.ref}`);
+      const links = await q(
+        `SELECT id, token, created_at, revoked_at, view_count, last_viewed_at FROM share_links WHERE page_id = $1 ORDER BY created_at DESC`,
+        [page.id]
+      );
+      return { links: links.map((l: any) => ({ ...l, url: `${config.appUrl.replace(/\/+$/, '')}/share/${l.token}` })) };
+    },
+  },
+  {
+    name: 'revoke_share_link',
+    title: 'Revoke share link',
+    description: 'Revoke a public share link. The URL immediately stops working. This cannot be undone for that link (create a new one instead).',
+    inputSchema: { type: 'object', properties: { linkId: { type: 'string', description: 'Link id from list_share_links' } }, required: ['linkId'] },
+    annotations: { destructiveHint: true, idempotentHint: true },
+    scope: 'mcp:write',
+    async run(args, ctx) {
+      if (!canWrite(ctx)) throw new Error('Viewer role cannot write');
+      const link = await one<any>(`UPDATE share_links SET revoked_at = now() WHERE id::text = $2 AND space_id = $1 AND revoked_at IS NULL RETURNING page_id`, [ctx.spaceId, args.linkId]);
+      if (link) void recordActivity(ctx.spaceId, ctx.userId, 'share_revoked', { pageId: link.page_id, via: 'mcp' });
+      return { revoked: !!link };
+    },
+  },
+  {
+    name: 'clip_web_page',
+    title: 'Clip web page to notebook',
+    description: 'Fetch a web page, extract its readable text, and add it as an indexed, citable source in a notebook (defaults to the Clips notebook, created if missing).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Full URL to clip' },
+        notebookRef: { type: 'string', description: 'Optional notebook id or title (default: Clips)' },
+      },
+      required: ['url'],
+    },
+    scope: 'mcp:write',
+    async run(args, ctx) {
+      if (!canWrite(ctx)) throw new Error('Viewer role cannot write');
+      let notebook = args.notebookRef
+        ? ((await one<any>(`SELECT id, title FROM notebooks WHERE id::text = $2 AND space_id = $1`, [ctx.spaceId, args.notebookRef])) ??
+          (await one<any>(`SELECT id, title FROM notebooks WHERE space_id = $1 AND lower(title) = lower($2)`, [ctx.spaceId, args.notebookRef])))
+        : (await one<any>(`SELECT id, title FROM notebooks WHERE space_id = $1 AND title = 'Clips' LIMIT 1`, [ctx.spaceId]));
+      if (!notebook) {
+        notebook = await one<any>(`INSERT INTO notebooks (space_id, title, description) VALUES ($1, 'Clips', 'Web clips') RETURNING id, title`, [ctx.spaceId]);
+      }
+      if (!notebook) throw new Error('Notebook not found');
+      const { title, text } = await extractWebText(args.url);
+      const src = await one<any>(
+        `INSERT INTO sources (notebook_id, kind, name, uri, mime, size_bytes, text_content, meta, status)
+         VALUES ($1, 'web', $2, $3, 'text/html', $4, $5, $6, 'pending') RETURNING id`,
+        [notebook.id, title.slice(0, 300), args.url, text.length, text, JSON.stringify({ clip: true, via: 'mcp' })]
+      );
+      const provider = await getProvider(ctx.spaceId);
+      void ingestSource(src!.id, provider).catch(() => {
+        void q(`UPDATE sources SET status = 'error' WHERE id = $1`, [src!.id]);
+      });
+      void recordActivity(ctx.spaceId, ctx.userId, 'web_clipped', { url: args.url, title: title.slice(0, 100), via: 'mcp' });
+      return { notebookId: notebook.id, sourceId: src!.id, title, characters: text.length };
+    },
+  },
+  {
+    name: 'clone_learning_path',
+    title: 'Clone learning path',
+    description: 'Duplicate a learning path (items and description) for a new cohort. Assignments and due dates are reset on the copy.',
+    inputSchema: { type: 'object', properties: { ref: { type: 'string', description: 'Path id or title' } }, required: ['ref'] },
+    scope: 'mcp:write',
+    async run(args, ctx) {
+      if (!canWrite(ctx)) throw new Error('Viewer role cannot write');
+      const src = (await one<any>(`SELECT * FROM learning_paths WHERE id::text = $2 AND space_id = $1`, [ctx.spaceId, args.ref])) ??
+        (await one<any>(`SELECT * FROM learning_paths WHERE space_id = $1 AND lower(title) = lower($2) LIMIT 1`, [ctx.spaceId, args.ref]));
+      if (!src) throw new Error(`Path not found: ${args.ref}`);
+      const clone = await one<any>(
+        `INSERT INTO learning_paths (space_id, title, description, items) VALUES ($1, $2, $3, $4) RETURNING id, title`,
+        [ctx.spaceId, `${src.title} (copy)`, src.description ?? '', JSON.stringify(src.items ?? [])]
+      );
+      void recordActivity(ctx.spaceId, ctx.userId, 'path_cloned', { pathId: clone!.id, title: clone!.title, via: 'mcp' });
+      return { pathId: clone!.id, title: clone!.title };
+    },
+  },
+  {
+    name: 'list_quiz_attempts',
+    title: 'List quiz attempts',
+    description: 'List all student attempts for a quiz deck with scores, statuses and late flags — the grading queue.',
+    inputSchema: { type: 'object', properties: { deckRef: { type: 'string', description: 'Deck id or title' } }, required: ['deckRef'] },
+    annotations: { readOnlyHint: true },
+    scope: 'mcp:read',
+    async run(args, ctx) {
+      const deck = await deckByRef(ctx, args.deckRef);
+      if (!deck) throw new Error(`Quiz deck not found: ${args.deckRef}`);
+      const attempts = await q(
+        `SELECT a.id, a.status, a.total_points, a.auto_score, a.final_score, a.late, a.started_at, a.submitted_at,
+                u.name AS student_name, u.email AS student_email
+         FROM quiz_attempts a JOIN users u ON u.id = a.user_id
+         WHERE a.deck_id = $1 ORDER BY a.started_at DESC`,
+        [deck.id]
+      );
+      return { deck: { id: deck.id, title: deck.title }, attempts };
+    },
+  },
+  {
+    name: 'grade_quiz_attempt',
+    title: 'Grade quiz attempt',
+    description: 'Grade the open-answer questions of a submitted quiz attempt. Multiple-choice is scored automatically; this finalizes the total.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        attemptId: { type: 'string', description: 'Attempt id from list_quiz_attempts' },
+        grades: {
+          type: 'array',
+          description: 'One entry per open question you graded',
+          items: {
+            type: 'object',
+            properties: { index: { type: 'number', description: 'Question index in the attempt' }, score: { type: 'number', description: 'Points awarded (clamped to the question max)' }, feedback: { type: 'string', description: 'Optional feedback for the student' } },
+            required: ['index', 'score'],
+          },
+        },
+      },
+      required: ['attemptId', 'grades'],
+    },
+    scope: 'mcp:write',
+    async run(args, ctx) {
+      if (!canWrite(ctx)) throw new Error('Viewer role cannot write');
+      const a = await one<any>(`SELECT * FROM quiz_attempts WHERE id::text = $2 AND space_id = $1`, [ctx.spaceId, args.attemptId]);
+      if (!a) throw new Error('Attempt not found');
+      if (a.status === 'in_progress') throw new Error('Attempt has not been submitted yet');
+      const items = normalizeQuizItems(a.items_snapshot);
+      const graded = gradeAttempt(items, a.answers ?? {}, args.grades ?? []);
+      await q(
+        `UPDATE quiz_attempts SET manual = $2, status = $3, final_score = $4, graded_at = now(), graded_by = $5 WHERE id = $1`,
+        [a.id, JSON.stringify(graded.manual), graded.complete ? 'graded' : 'submitted', graded.complete ? graded.finalScore : null, ctx.userId]
+      );
+      return { attemptId: a.id, status: graded.complete ? 'graded' : 'submitted', finalScore: graded.complete ? graded.finalScore : null, awaitingGrading: graded.openCount - graded.manual.filter((m) => items[m.index]?.type === 'open').length };
+    },
+  },
+  {
+    name: 'get_gradebook',
+    title: 'Get gradebook',
+    description: 'The full gradebook as CSV: members × quiz best-score percentages × learning-path progress, with overdue and at-risk flags.',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true },
+    scope: 'mcp:read',
+    async run(_a, ctx) {
+      const { csv, memberCount, deckCount, pathCount } = await buildGradebookCsv(ctx.spaceId);
+      void recordActivity(ctx.spaceId, ctx.userId, 'gradebook_exported', { members: memberCount, decks: deckCount, paths: pathCount, via: 'mcp' });
+      return { csv };
+    },
+  },
+  {
+    name: 'get_audit_log',
+    title: 'Get audit log',
+    description: 'The workspace audit trail: who did what, when. Filter by event type (share_created, member_role_changed, gradebook_exported, web_clipped, page_restored, …).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: 'Optional event type filter' },
+        limit: { type: 'number', description: 'Max entries (default 50, max 200)' },
+      },
+    },
+    annotations: { readOnlyHint: true },
+    scope: 'mcp:read',
+    async run(args, ctx) {
+      const limit = Math.min(Number(args.limit ?? 50), 200);
+      const events = await q(
+        `SELECT a.type, a.payload, a.created_at, u.name AS actor_name, u.email AS actor_email
+         FROM activities a JOIN users u ON u.id = a.user_id
+         WHERE a.space_id = $1 AND ($2::text IS NULL OR a.type = $2)
+         ORDER BY a.created_at DESC LIMIT $3`,
+        [ctx.spaceId, args.type ?? null, limit]
+      );
+      return { events };
+    },
+  },
+  {
+    name: 'import_roster',
+    title: 'Import roster',
+    description: 'Bulk-invite members from CSV text (email column required, optional role column, header row tolerated). Existing users join instantly; others get invite emails. Owner only.',
+    inputSchema: {
+      type: 'object',
+      properties: { csv: { type: 'string', description: 'CSV text, one member per line' }, defaultRole: { type: 'string', enum: ['editor', 'viewer'], description: 'Role when the row has none (default editor)' } },
+      required: ['csv'],
+    },
+    scope: 'mcp:write',
+    async run(args, ctx) {
+      if (!isOwner(ctx)) throw new Error('Owner role required');
+      const me = await one<{ name: string }>(`SELECT name FROM users WHERE id = $1`, [ctx.userId]);
+      const { inviteBulk } = await import('../spaces/invite.js');
+      return inviteBulk(ctx.spaceId, { id: ctx.userId, name: me?.name ?? 'SET agent' }, String(args.csv ?? ''), args.defaultRole === 'viewer' ? 'viewer' : 'editor');
+    },
+  },
+  {
+    name: 'get_credit_balance',
+    title: 'Get credit balance',
+    description: 'The workspace SET Cloud credit balance (prepaid LLM credit) plus recent ledger activity.',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true },
+    scope: 'mcp:read',
+    async run(_a, ctx) {
+      const row = await one<{ balance: string }>(`SELECT COALESCE(SUM(amount_cents), 0)::text AS balance FROM credit_ledger WHERE space_id = $1`, [ctx.spaceId]);
+      const history = await q(
+        `SELECT kind, amount_cents, note, created_at FROM credit_ledger WHERE space_id = $1 ORDER BY created_at DESC LIMIT 20`,
+        [ctx.spaceId]
+      );
+      return { balanceUsd: Number(row?.balance ?? 0) / 100, history };
+    },
+  },
+  {
+    name: 'grant_credits',
+    title: 'Grant credits',
+    description: 'Manually add SET Cloud credit to the workspace (support, refunds, comps). Owner only; recorded in the audit trail.',
+    inputSchema: {
+      type: 'object',
+      properties: { amountUsd: { type: 'number', description: 'Amount to grant in USD (e.g. 20)' }, note: { type: 'string', description: 'Why (shown in the ledger)' } },
+      required: ['amountUsd'],
+    },
+    scope: 'mcp:write',
+    async run(args, ctx) {
+      if (!isOwner(ctx)) throw new Error('Owner role required');
+      const cents = Math.round(Number(args.amountUsd) * 100);
+      if (!(cents >= 1 && cents <= 100_000_00)) throw new Error('amountUsd must be between 0.01 and 10000');
+      await q(`INSERT INTO credit_ledger (space_id, kind, amount_cents, ref, note) VALUES ($1, 'grant', $2, $3, $4)`, [
+        ctx.spaceId, cents, `grant:${Date.now()}`, args.note ?? 'manual grant (mcp)',
+      ]);
+      void recordActivity(ctx.spaceId, ctx.userId, 'credits_granted', { amountCents: cents, via: 'mcp' });
+      return { grantedUsd: cents / 100 };
     },
   },
 ];

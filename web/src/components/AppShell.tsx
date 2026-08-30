@@ -5,7 +5,7 @@ import {
   LogOut, ChevronRight, ChevronDown, Trash2, Import, PenLine,
   Code2, SquareTerminal, LibraryBig, Database as DatabaseIcon, Menu, X, ListTodo, Activity as ActivityIcon,
   ChevronsLeft, ChevronsRight, FileText, LayoutDashboard, Telescope,
-  Mic, Sparkles, Wrench, MessageCircle,
+  Mic, Sparkles, Wrench, MessageCircle, Zap,
 } from 'lucide-react';
 import { useApp, type PageMeta } from '../stores/app';
 import { api } from '../lib/api';
@@ -236,12 +236,19 @@ function AppShellInner() {
   const [newSpaceName, setNewSpaceName] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [captureOpen, setCaptureOpen] = useState(false);
   const onboarding = (user as any)?.onboarding;
   const simple = shellMode === 'simple';
 
-  // "?" anywhere (outside a text field) opens the keyboard cheat sheet
+  // "?" anywhere (outside a text field) opens the keyboard cheat sheet;
+  // Ctrl/Cmd+Shift+N opens quick capture from anywhere in the app
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        setCaptureOpen((o) => !o);
+        return;
+      }
       if (e.key !== '?' || e.metaKey || e.ctrlKey || e.altKey) return;
       const el = document.activeElement as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
@@ -618,6 +625,9 @@ function AppShellInner() {
       {/* Copilot */}
       <CommandPalette />
 
+      {/* Quick capture (Ctrl/Cmd+Shift+N) — dump a thought into the Inbox page */}
+      {captureOpen && <QuickCapture onClose={() => setCaptureOpen(false)} spaceId={spaceId ?? currentSpaceId} />}
+
       {/* Keyboard cheat sheet (press ?) */}
       {helpOpen && (
         <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setHelpOpen(false)}>
@@ -626,6 +636,7 @@ function AppShellInner() {
             <div className="space-y-2 text-sm">
               {([
                 ['Ctrl / ⌘ K', 'Command palette — jump to any page, notebook or action'],
+                ['Ctrl / ⌘ ⇧ N', 'Quick capture — save a thought to the Inbox page'],
                 ['?', 'This cheat sheet'],
                 ['Esc', 'Close dialogs and overlays'],
                 ['Ctrl / ⌘ ⏎', 'Submit a comment'],
@@ -694,6 +705,71 @@ function AppShellInner() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+/** Quick capture: one keystroke, one thought, straight into the Inbox page. */
+function QuickCapture({ onClose, spaceId }: { onClose: () => void; spaceId: string | null }) {
+  const [text, setText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+  const { loadPages, pages } = useApp();
+
+  const save = async () => {
+    if (!text.trim() || !spaceId || saving) return;
+    setSaving(true);
+    try {
+      const inbox = pages.find((p) => p.title.toLowerCase() === 'inbox');
+      if (inbox) {
+        const { page } = await api.get(`/pages/${inbox.id}`);
+        await api.patch(`/pages/${inbox.id}`, {
+          markdown: `${page.markdown ?? ''}\n\n- ${new Date().toLocaleString()} — ${text.trim()}\n`,
+        });
+      } else {
+        await api.post('/pages', { spaceId, title: 'Inbox', markdown: `# Inbox\n\n- ${new Date().toLocaleString()} — ${text.trim()}\n` });
+        await loadPages(spaceId);
+      }
+      setDone(true);
+      setTimeout(onClose, 500);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[95] bg-black/70 backdrop-blur-sm flex items-start justify-center pt-[15vh] p-4" onClick={onClose}>
+      <div className="set-card bg-set-panel w-full max-w-lg p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-2">
+          <Zap size={14} className="text-set-accent" />
+          <span className="text-sm font-semibold text-white">Quick capture</span>
+          <span className="ml-auto text-[10px] text-set-dim">lands in the Inbox page · Esc to close</span>
+        </div>
+        {done ? (
+          <div className="text-sm text-green-400 py-2">Saved to Inbox ✓</div>
+        ) : (
+          <>
+            <textarea
+              autoFocus
+              className="set-input text-sm w-full"
+              rows={3}
+              placeholder="A thought, a link, a task…"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') onClose();
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) save();
+              }}
+            />
+            <div className="flex justify-between items-center mt-2">
+              <span className="text-[10px] text-set-dim">Ctrl/⌘ ⏎ to save</span>
+              <button className="set-btn-primary text-sm" onClick={save} disabled={!text.trim() || saving}>
+                {saving ? 'Saving…' : 'Save to Inbox'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

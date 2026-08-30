@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import {
   Activity as ActivityIcon, FileText, MessageSquare, Users, BookOpen, Boxes, GraduationCap, UserPlus,
-  Share2, Ban, Scissors, Download, ClipboardList, RotateCcw, Shield, Copy,
+  Share2, Ban, Scissors, Download, ClipboardList, RotateCcw, Shield, Copy, Coins,
 } from 'lucide-react';
 
 const ICONS: Record<string, any> = {
@@ -23,6 +23,8 @@ const ICONS: Record<string, any> = {
   gradebook_exported: ClipboardList,
   path_cloned: Copy,
   roster_imported: UserPlus,
+  credits_purchased: Coins,
+  credits_granted: Coins,
 };
 
 const FILTERS: [string, string][] = [
@@ -58,6 +60,8 @@ function describe(a: any): string {
     case 'gradebook_exported': return `exported the gradebook (${p.members} members, ${p.decks} quizzes, ${p.paths} paths)`;
     case 'path_cloned': return `cloned the learning path "${p.title}"`;
     case 'roster_imported': return `imported a roster (${p.added} added, ${p.invited} invited, ${p.already ?? 0} already members)`;
+    case 'credits_purchased': return `bought $${(p.amountCents / 100).toFixed(0)} of SET Cloud credit`;
+    case 'credits_granted': return `granted $${(p.amountCents / 100).toFixed(2)} of SET Cloud credit`;
     default: return a.type;
   }
 }

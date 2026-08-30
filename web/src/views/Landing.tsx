@@ -106,7 +106,7 @@ function SpecPlate() {
     ['LICENSE', 'AGPL-3.0'],
     ['RUNTIME', 'Docker Compose'],
     ['STORAGE', 'Your Postgres'],
-    ['AGENT I/O', 'MCP · 26 tools'],
+    ['AGENT I/O', 'MCP · 40 tools'],
     ['LLM', 'Bring your own'],
     ['TELEMETRY', 'Opt-out'],
   ];
@@ -272,7 +272,7 @@ export default function Landing() {
             <div className="relative flex-1">
               <h3 className="text-lg font-bold text-white">Built for agents, not just humans</h3>
               <p className="text-sm text-set-dim mt-1">
-                SET speaks the Model Context Protocol natively — 26 tools, grounded citations, OAuth 2.1 consent.
+                SET speaks the Model Context Protocol natively — 40 tools, grounded citations, OAuth 2.1 consent.
                 Connect Claude, ChatGPT, Cursor or any MCP client in under a minute.
               </p>
             </div>

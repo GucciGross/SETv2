@@ -5,7 +5,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-34D399?style=flat-square)](./LICENSE)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-docker--compose-6C8CFF?style=flat-square&logo=docker&logoColor=white)](#-quick-start)
 [![BYOK](https://img.shields.io/badge/LLM-bring--your--own--key-8B5CF6?style=flat-square)](#connect-an-llm-byok)
-[![MCP](https://img.shields.io/badge/MCP-native-×26_tools-A78BFA?style=flat-square)](#-built-for-agents-not-just-humans)
+[![MCP](https://img.shields.io/badge/MCP-native-×40_tools-A78BFA?style=flat-square)](#-built-for-agents-not-just-humans)
 
 *Your notes. Your graph. Your research. Your models. Your machine.*
 
@@ -111,7 +111,7 @@ own effects instead of trusting them.
 
 ## ▛ Built for agents, not just humans
 
-SET speaks the **Model Context Protocol** natively — 26 tools, grounded
+SET speaks the **Model Context Protocol** natively — 40 tools, grounded
 citations, OAuth 2.1 consent. Connect Claude, ChatGPT, Cursor or any MCP client
 in under a minute from `/agents`. The same engine backs the built-in copilot:
 `search_workspace`, `read_page`, `create_page`, `append_to_page`,
@@ -276,6 +276,13 @@ docker-compose.yml single-command self-host
 Self-hosting is **free forever** (AGPL-3.0) — that's the promise. An optional
 hosted cloud runs the same core for teams that want zero ops, plus an optional
 bundled LLM API. Same export-anytime guarantee everywhere.
+
+**Credits are live (v1):** the metered gateway now sells prepaid credit via
+Stripe Checkout — Settings → Billing in any workspace. Owners buy $10/$20/$50
+packs; metered SET Cloud usage draws the balance down (exact token costs), and
+an exhausted balance cuts off model calls until topped up. Existing per-space
+caps still apply on top. Bring-your-own-key providers are untouched and always
+free of gateway billing.
 
 ## License
 

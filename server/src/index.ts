@@ -37,6 +37,7 @@ import { onboardingRoutes } from './onboarding/routes.js';
 import { copilotKitRoutes } from './copilotkit/route.js';
 import { channelRoutes } from './channels/routes.js';
 import { clipRoutes } from './clip/routes.js';
+import { billingRoutes } from './billing/routes.js';
 import { seed } from './seed.js';
 
 async function main() {
@@ -62,15 +63,18 @@ async function main() {
   await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024 } });
   await app.register(websocket);
 
-  // tolerate POSTs with a JSON content-type but no body (e.g. curl without -d)
-  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+  // tolerate POSTs with a JSON content-type but no body (e.g. curl without -d).
+  // The raw string is stashed on the request — Stripe webhook signature
+  // verification needs the exact bytes the sender signed.
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
     const text = body as string;
+    (req as any).rawBody = text ?? '';
     if (!text?.trim()) return done(null, undefined);
     try {
       done(null, JSON.parse(text));
     } catch (err: any) {
       err.statusCode = 400;
-      done(err, undefined);
+      done(err);
     }
   });
 
@@ -131,6 +135,7 @@ async function main() {
     await activityRoutes(api);
     await importZipRoutes(api);
     await mcpRoutes(api);
+    await billingRoutes(api);
     await skillsRoutes(api);
     await copilotKitRoutes(api);
     await channelRoutes(api);

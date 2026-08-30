@@ -190,4 +190,66 @@ export async function importZipRoutes(app: FastifyInstance) {
     void recordActivity(spaceId, req.user!.id, 'page_created', { title: `imported ${created.length} pages${databases.length ? `, ${databases.length} databases` : ''} from zip`, pageId: created[0]?.id });
     return { pages: created.length, databases: databases.length, images: imageByBase.size };
   });
+
+  /** Full workspace export: everything as plain files in one zip. */
+  app.get('/spaces/:spaceId/export.zip', async (req, reply) => {
+    const spaceId = (req.params as any).spaceId;
+    if (!(await requireSpace(req, reply, spaceId))) return;
+
+    const zip = new AdmZip();
+    const safe = (s: string) => (s || 'untitled').replace(/[\\/:*?"<>|]/g, '_').slice(0, 120);
+
+    // pages as markdown — [[wiki links]] stay intact, so a re-import round-trips
+    const pages = await q<{ title: string; markdown: string; is_daily: boolean; daily_date: string | null }>(
+      `SELECT title, markdown, is_daily, daily_date FROM pages WHERE space_id = $1 AND deleted_at IS NULL AND is_template = false ORDER BY created_at`,
+      [spaceId]
+    );
+    const used = new Set<string>();
+    for (const p of pages) {
+      let name = safe(p.title);
+      let n = 2;
+      while (used.has(name.toLowerCase())) name = `${safe(p.title)} (${n++})`;
+      used.add(name.toLowerCase());
+      const front = p.is_daily ? `daily: ${p.daily_date ?? ''}\n\n` : '';
+      zip.addFile(`pages/${name}.md`, Buffer.from(front + (p.markdown ?? '') + '\n'));
+    }
+
+    // databases as CSV (schema order preserved)
+    const databases = await q<{ id: string; name: string; schema: any }>(
+      `SELECT id, name, schema FROM databases WHERE space_id = $1 ORDER BY created_at`,
+      [spaceId]
+    );
+    const csvCell = (v: unknown) => {
+      const s = v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    for (const db of databases) {
+      const columns: any[] = Array.isArray(db.schema) ? db.schema : [];
+      const rows = await q<{ cells: any }>(`SELECT cells FROM db_rows WHERE database_id = $1 ORDER BY created_at`, [db.id]);
+      const lines = [columns.map((c) => csvCell(c.name)).join(',')];
+      for (const r of rows) lines.push(columns.map((c) => csvCell(r.cells?.[c.id])).join(','));
+      zip.addFile(`databases/${safe(db.name)}.csv`, Buffer.from(lines.join('\n') + '\n'));
+    }
+
+    // notebooks: source texts + a .bib for citations
+    const { sourcesToBibTeX } = await import('../rag/cite.js');
+    const notebooks = await q<{ id: string; title: string }>(`SELECT id, title FROM notebooks WHERE space_id = $1 ORDER BY created_at`, [spaceId]);
+    for (const nb of notebooks) {
+      const sources = await q<{ id: string; name: string; uri: string | null; kind: string; text_content: string; created_at: Date }>(
+        `SELECT id, name, uri, kind, text_content, created_at FROM sources WHERE notebook_id = $1 ORDER BY created_at`,
+        [nb.id]
+      );
+      const dir = `notebooks/${safe(nb.title)}`;
+      for (const s of sources) {
+        zip.addFile(`${dir}/sources/${safe(s.name)}.txt`, Buffer.from(s.text_content ?? ''));
+      }
+      if (sources.length) zip.addFile(`${dir}/sources.bib`, Buffer.from(sourcesToBibTeX(sources as any)));
+    }
+
+    const space = await one<{ name: string }>(`SELECT name FROM spaces WHERE id = $1`, [spaceId]);
+    reply.header('content-type', 'application/zip');
+    reply.header('content-disposition', `attachment; filename="set-export-${safe(space?.name ?? spaceId.slice(0, 8))}.zip"`);
+    void recordActivity(spaceId, req.user!.id, 'workspace_exported', { pages: pages.length, databases: databases.length, notebooks: notebooks.length });
+    return reply.send(zip.toBuffer());
+  });
 }

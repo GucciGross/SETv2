@@ -31,7 +31,7 @@ export default function AgentsLanding() {
         <div className="absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_0%,rgba(108,140,255,0.14),transparent)]" />
         <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-14 pb-12 text-center">
           <div className="set-chip border-set-accent/40 bg-set-accent/10 text-blue-200 mb-5">
-            <Plug size={11} /> Model Context Protocol · OAuth 2.1 · 26 tools
+            <Plug size={11} /> Model Context Protocol · OAuth 2.1 · 40 tools
           </div>
           <h1 className="text-4xl sm:text-5xl font-bold text-white leading-[1.1] tracking-tight">
             Give your agents a workspace
@@ -95,7 +95,7 @@ export default function AgentsLanding() {
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <a href="/docs?section=mcp" className="set-btn text-xs flex items-center gap-1.5">
-              <BookOpen size={13} /> Full tool documentation — all 26 tools with parameters and examples
+              <BookOpen size={13} /> Full tool documentation — all 40 tools with parameters and examples
             </a>
             <a href="/api/mcp/docs.json" target="_blank" rel="noreferrer" className="set-btn-ghost text-xs flex items-center gap-1.5">
               Machine-readable manifest

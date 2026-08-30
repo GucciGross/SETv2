@@ -64,8 +64,17 @@ async function authenticate(req: any, reply: any): Promise<KeyCtx | null> {
 }
 
 // per-space month-to-date spend + configured caps; the cap check runs before
-// forwarding so an over-cap space fails fast without touching the upstream
-async function capStatus(spaceId: string): Promise<{ tokens: number; usd: number; capTokens: number | null; capUsd: number | null }> {
+// forwarding so an over-cap space fails fast without touching the upstream.
+// Also carries the prepaid credit state: balance + whether the space has
+// ever bought/granted credits (spaces that never did keep pure cap behavior).
+async function capStatus(spaceId: string): Promise<{
+  tokens: number;
+  usd: number;
+  capTokens: number | null;
+  capUsd: number | null;
+  creditCents: number;
+  prepaid: boolean;
+}> {
   const usage = await pool.query(
     `SELECT COALESCE(SUM(total_tokens), 0)::bigint AS tokens, COALESCE(SUM(cost_usd), 0) AS usd
      FROM usage_events WHERE space_id = $1 AND created_at >= date_trunc('month', now())`,
@@ -75,6 +84,12 @@ async function capStatus(spaceId: string): Promise<{ tokens: number; usd: number
     `SELECT data->'billing' AS billing FROM settings WHERE space_id = $1`,
     [spaceId]
   );
+  const credits = await pool.query(
+    `SELECT COALESCE(SUM(amount_cents), 0)::text AS balance,
+            EXISTS (SELECT 1 FROM credit_ledger WHERE space_id = $1 AND kind IN ('purchase', 'grant')) AS prepaid
+     FROM credit_ledger WHERE space_id = $1`,
+    [spaceId]
+  );
   const billing = settings.rows[0]?.billing ?? {};
   const num = (v: any) => (typeof v === 'number' && v > 0 ? v : null);
   return {
@@ -82,6 +97,8 @@ async function capStatus(spaceId: string): Promise<{ tokens: number; usd: number
     usd: Number(usage.rows[0].usd),
     capTokens: num(billing?.capTokens),
     capUsd: num(billing?.capUsd),
+    creditCents: Math.round(Number(credits.rows[0]?.balance ?? 0)),
+    prepaid: credits.rows[0]?.prepaid === true,
   };
 }
 
@@ -92,7 +109,71 @@ function checkCaps(caps: Awaited<ReturnType<typeof capStatus>>): { ok: true } | 
   if (caps.capUsd !== null && caps.usd >= caps.capUsd) {
     return { ok: false, status: 429, body: { error: `Monthly spend cap reached ($${caps.usd.toFixed(2)}/$${caps.capUsd.toFixed(2)}) — raise it in Settings → AI Providers`, reason: 'cap_usd' } };
   }
+  if (caps.prepaid && caps.creditCents <= 0) {
+    return { ok: false, status: 429, body: { error: `SET Cloud credit exhausted ($${(caps.creditCents / 100).toFixed(2)}) — top up in Settings → Billing`, reason: 'credits_exhausted' } };
+  }
   return { ok: true };
+}
+
+/**
+ * Spend + low-credit alerts, throttled via settings.data.billing.alerts so
+ * each threshold fires once per month (credits: once per day). Owners get an
+ * in-app notification; the audit trail records it. Best-effort — never
+ * blocks the request path on failure.
+ */
+async function checkSpendAlerts(spaceId: string, caps: Awaited<ReturnType<typeof capStatus>>): Promise<void> {
+  try {
+    const row = await pool.query(`SELECT data FROM settings WHERE space_id = $1`, [spaceId]);
+    const data = row.rows[0]?.data ?? {};
+    const alerts = data?.billing?.alerts ?? {};
+    const now = Date.now();
+    let changed = false;
+    const notify = async (payload: Record<string, any>) => {
+      const owners = await pool.query(
+        `SELECT user_id FROM memberships WHERE space_id = $1 AND role = 'owner'`,
+        [spaceId]
+      );
+      for (const o of owners.rows) {
+        await pool.query(`INSERT INTO notifications (user_id, space_id, type, payload) VALUES ($1, $2, 'billing', $3)`, [
+          o.user_id, spaceId, JSON.stringify(payload),
+        ]);
+      }
+    };
+
+    // USD cap thresholds: 50 / 80 / 95%
+    if (caps.capUsd && caps.usd > 0) {
+      const pct = Math.floor((caps.usd / caps.capUsd) * 100);
+      const threshold = [95, 80, 50].find((t) => pct >= t);
+      if (threshold !== undefined && alerts.capPct !== threshold) {
+        alerts.capPct = threshold;
+        changed = true;
+        await notify({ pct: threshold, used: caps.usd, cap: caps.capUsd });
+      }
+      if (threshold === undefined && pct < 50) {
+        if (alerts.capPct !== undefined && alerts.capPct !== null) { alerts.capPct = null; changed = true; }
+      }
+    }
+
+    // prepaid credit running low: once per day under $2
+    if (caps.prepaid && caps.creditCents > 0 && caps.creditCents <= 200) {
+      if (!alerts.lowCreditAt || now - alerts.lowCreditAt > 24 * 3600_000) {
+        alerts.lowCreditAt = now;
+        changed = true;
+        await notify({ balanceUsd: caps.creditCents / 100 });
+      }
+    }
+
+    if (changed) {
+      const billing = { ...(data?.billing ?? {}), alerts };
+      await pool.query(
+        `INSERT INTO settings (space_id, data) VALUES ($1, $2)
+         ON CONFLICT (space_id) DO UPDATE SET data = settings.data || jsonb_build_object('billing', EXCLUDED.data->'billing')`,
+        [spaceId, JSON.stringify({ billing })]
+      );
+    }
+  } catch (e) {
+    console.error('[gateway] spend alert check failed:', e);
+  }
 }
 
 function priceFor(model: string): [number, number] | null {
@@ -109,14 +190,30 @@ function costUsd(model: string, promptTokens: number, completionTokens: number):
   return Math.round(((promptTokens / 1e6) * price[0] + (completionTokens / 1e6) * price[1]) * 1e6) / 1e6;
 }
 
-async function recordUsage(spaceId: string, kind: 'chat' | 'embeddings', model: string, promptTokens: number, completionTokens: number, estimated: boolean): Promise<void> {
+async function recordUsage(
+  spaceId: string,
+  kind: 'chat' | 'embeddings',
+  model: string,
+  promptTokens: number,
+  completionTokens: number,
+  estimated: boolean,
+  prepaid = false
+): Promise<void> {
   const total = promptTokens + completionTokens;
+  const cost = costUsd(model, promptTokens, completionTokens);
   try {
     await pool.query(
       `INSERT INTO usage_events (space_id, kind, model, prompt_tokens, completion_tokens, total_tokens, cost_usd, estimated)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [spaceId, kind, model, promptTokens, completionTokens, total, costUsd(model, promptTokens, completionTokens), estimated]
+      [spaceId, kind, model, promptTokens, completionTokens, total, cost, estimated]
     );
+    // prepaid spaces: metered spend draws down the credit balance
+    if (prepaid && cost > 0) {
+      await pool.query(
+        `INSERT INTO credit_ledger (space_id, kind, amount_cents, note) VALUES ($1, 'usage', $2, $3)`,
+        [spaceId, -(cost * 100).toFixed(4), `${kind} ${model} · ${total} tokens${estimated ? ' (estimated)' : ''}`]
+      );
+    }
   } catch (e) {
     console.error('[gateway] usage insert failed:', e);
   }
@@ -176,6 +273,7 @@ app.get('/v1/models', async (req: any, reply: any) => {
 app.post('/v1/embeddings', async (req: any, reply: any) => {
   const ctx = (req as any).gateway as KeyCtx;
   const caps = await capStatus(ctx.spaceId);
+  void checkSpendAlerts(ctx.spaceId, caps);
   const capErr = checkCaps(caps);
   if (!capErr.ok) return reply.code(capErr.status).send(capErr.body);
 
@@ -186,13 +284,14 @@ app.post('/v1/embeddings', async (req: any, reply: any) => {
   }
   const json: any = await res.json();
   const total = json.usage?.total_tokens ?? Math.ceil(JSON.stringify(req.body?.input ?? '').length / 4);
-  await recordUsage(ctx.spaceId, 'embeddings', req.body?.model ?? '', 0, total, json.usage?.total_tokens === undefined);
+  await recordUsage(ctx.spaceId, 'embeddings', req.body?.model ?? '', 0, total, json.usage?.total_tokens === undefined, caps.prepaid);
   return json;
 });
 
 app.post('/v1/chat/completions', async (req: any, reply: any) => {
   const ctx = (req as any).gateway as KeyCtx;
   const caps = await capStatus(ctx.spaceId);
+  void checkSpendAlerts(ctx.spaceId, caps);
   const capErr = checkCaps(caps);
   if (!capErr.ok) return reply.code(capErr.status).send(capErr.body);
 
@@ -217,7 +316,7 @@ app.post('/v1/chat/completions', async (req: any, reply: any) => {
     const estimated = !usage?.prompt_tokens;
     const promptTokens = usage?.prompt_tokens ?? estimateTokens(body.messages ?? []);
     const completionTokens = usage?.completion_tokens ?? Math.ceil((json.choices?.[0]?.message?.content ?? '').length / 4);
-    await recordUsage(ctx.spaceId, 'chat', model, promptTokens, completionTokens, estimated);
+    await recordUsage(ctx.spaceId, 'chat', model, promptTokens, completionTokens, estimated, caps.prepaid);
     return json;
   }
 
@@ -264,7 +363,7 @@ app.post('/v1/chat/completions', async (req: any, reply: any) => {
   const estimated = !usage?.prompt_tokens;
   const promptTokens = usage?.prompt_tokens ?? estimateTokens(body.messages ?? []);
   const completionTokens = usage?.completion_tokens ?? Math.ceil(completionChars / 4);
-  await recordUsage(ctx.spaceId, 'chat', model, promptTokens, completionTokens, estimated);
+  await recordUsage(ctx.spaceId, 'chat', model, promptTokens, completionTokens, estimated, caps.prepaid);
 });
 
 const port = parseInt(env.PORT || '4100', 10);

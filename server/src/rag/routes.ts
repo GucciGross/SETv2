@@ -20,7 +20,7 @@ async function extractPdfText(buf: Buffer): Promise<string> {
   return result.text as string;
 }
 
-async function extractWebText(url: string): Promise<{ title: string; text: string }> {
+export async function extractWebText(url: string): Promise<{ title: string; text: string }> {
   const res = await fetch(url, { signal: AbortSignal.timeout(20000), headers: { 'user-agent': 'SET/2.0 (+self-hosted research tool)' } });
   if (!res.ok) throw new Error(`Fetch failed: HTTP ${res.status}`);
   const html = await res.text();

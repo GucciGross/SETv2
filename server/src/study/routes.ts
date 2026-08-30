@@ -14,6 +14,70 @@ function csvCell(v: unknown): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+/** Members × quiz best-score % × path progress with at-risk flags (HTTP export + MCP tool share this). */
+export async function buildGradebookCsv(spaceId: string): Promise<{ csv: string; memberCount: number; deckCount: number; pathCount: number }> {
+  const members = await q(
+    `SELECT u.id, u.name, u.email, m.role FROM memberships m JOIN users u ON u.id = m.user_id
+     WHERE m.space_id = $1 ORDER BY u.name`,
+    [spaceId]
+  );
+  const decks = await q<{ id: string; title: string }>(
+    `SELECT id, title FROM decks WHERE space_id = $1 AND kind = 'quiz' ORDER BY created_at`,
+    [spaceId]
+  );
+  const paths = await q<{ id: string; title: string; due_date: string; item_count: number }>(
+    `SELECT id, title, due_date, jsonb_array_length(items) AS item_count FROM learning_paths WHERE space_id = $1 ORDER BY created_at`,
+    [spaceId]
+  );
+  const attempts = await q(
+    `SELECT user_id, deck_id, final_score, total_points, status FROM quiz_attempts
+     WHERE space_id = $1 AND status = 'graded'`,
+    [spaceId]
+  );
+  const progress = await q(
+    `SELECT user_id, path_id, count(*) FILTER (WHERE done)::int AS done FROM path_progress
+     WHERE path_id IN (SELECT id FROM learning_paths WHERE space_id = $1)
+     GROUP BY user_id, path_id`,
+    [spaceId]
+  );
+
+  const best = new Map<string, number>(); // userId|deckId -> best pct
+  for (const a of attempts as any[]) {
+    if (!a.total_points) continue;
+    const pct = Math.round((Number(a.final_score) / Number(a.total_points)) * 100);
+    const key = `${a.user_id}|${a.deck_id}`;
+    best.set(key, Math.max(best.get(key) ?? -1, pct));
+  }
+  const pathTotals = new Map(paths.map((p: any) => [p.id, Number(p.item_count ?? 0)]));
+  const doneFor = new Map<string, number>(); // userId|pathId -> done
+  for (const p of progress as any[]) doneFor.set(`${p.user_id}|${p.path_id}`, p.done);
+
+  const header = ['Member', 'Email', 'Role', ...decks.flatMap((d: any) => [`${d.title} (best %)`, `${d.title} attempts`]), ...paths.flatMap((p: any) => [`${p.title} progress`, `${p.title} overdue?`]), 'At risk'];
+  const attemptCount = new Map<string, number>();
+  for (const a of attempts as any[]) attemptCount.set(`${a.user_id}|${a.deck_id}`, (attemptCount.get(`${a.user_id}|${a.deck_id}`) ?? 0) + 1);
+
+  const lines = [header.map(csvCell).join(',')];
+  for (const m of members as any[]) {
+    const cells: unknown[] = [m.name, m.email, m.role];
+    let atRisk = false;
+    for (const d of decks as any[]) {
+      const pct = best.get(`${m.id}|${d.id}`);
+      if (pct != null && pct < 60) atRisk = true;
+      cells.push(pct ?? '', attemptCount.get(`${m.id}|${d.id}`) ?? 0);
+    }
+    for (const p of paths as any[]) {
+      const total = pathTotals.get(p.id) ?? 0;
+      const done = doneFor.get(`${m.id}|${p.id}`) ?? 0;
+      const overdue = p.due_date && new Date(p.due_date) < new Date(new Date().toDateString()) && done < total;
+      if (overdue) atRisk = true;
+      cells.push(total ? `${done}/${total}` : '', overdue ? 'yes' : '');
+    }
+    cells.push(atRisk ? 'yes' : '');
+    lines.push(cells.map(csvCell).join(','));
+  }
+  return { csv: lines.join('\n'), memberCount: members.length, deckCount: decks.length, pathCount: paths.length };
+}
+
 export async function studyRoutes(app: FastifyInstance) {
   // deck → .h5p package download (LMS interop; libraries cached under DATA_DIR)
   app.get('/decks/:id/h5p', async (req, reply) => {
@@ -304,69 +368,11 @@ export async function studyRoutes(app: FastifyInstance) {
   app.get('/spaces/:spaceId/gradebook.csv', async (req, reply) => {
     const spaceId = (req.params as any).spaceId;
     if (!(await requireSpace(req, reply, spaceId, 'editor'))) return;
-    const members = await q(
-      `SELECT u.id, u.name, u.email, m.role FROM memberships m JOIN users u ON u.id = m.user_id
-       WHERE m.space_id = $1 ORDER BY u.name`,
-      [spaceId]
-    );
-    const decks = await q<{ id: string; title: string }>(
-      `SELECT id, title FROM decks WHERE space_id = $1 AND kind = 'quiz' ORDER BY created_at`,
-      [spaceId]
-    );
-    const paths = await q<{ id: string; title: string; due_date: string; item_count: number }>(
-      `SELECT id, title, due_date, jsonb_array_length(items) AS item_count FROM learning_paths WHERE space_id = $1 ORDER BY created_at`,
-      [spaceId]
-    );
-    const attempts = await q(
-      `SELECT user_id, deck_id, final_score, total_points, status FROM quiz_attempts
-       WHERE space_id = $1 AND status = 'graded'`,
-      [spaceId]
-    );
-    const progress = await q(
-      `SELECT user_id, path_id, count(*) FILTER (WHERE done)::int AS done FROM path_progress
-       WHERE path_id IN (SELECT id FROM learning_paths WHERE space_id = $1)
-       GROUP BY user_id, path_id`,
-      [spaceId]
-    );
-
-    const best = new Map<string, number>(); // userId|deckId -> best pct
-    for (const a of attempts as any[]) {
-      if (!a.total_points) continue;
-      const pct = Math.round((Number(a.final_score) / Number(a.total_points)) * 100);
-      const key = `${a.user_id}|${a.deck_id}`;
-      best.set(key, Math.max(best.get(key) ?? -1, pct));
-    }
-    const pathTotals = new Map(paths.map((p: any) => [p.id, Number(p.item_count ?? 0)]));
-    const doneFor = new Map<string, number>(); // userId|pathId -> done
-    for (const p of progress as any[]) doneFor.set(`${p.user_id}|${p.path_id}`, p.done);
-
-    const header = ['Member', 'Email', 'Role', ...decks.flatMap((d: any) => [`${d.title} (best %)`, `${d.title} attempts`]), ...paths.flatMap((p: any) => [`${p.title} progress`, `${p.title} overdue?`]), 'At risk'];
-    const attemptCount = new Map<string, number>();
-    for (const a of attempts as any[]) attemptCount.set(`${a.user_id}|${a.deck_id}`, (attemptCount.get(`${a.user_id}|${a.deck_id}`) ?? 0) + 1);
-
-    const lines = [header.map(csvCell).join(',')];
-    for (const m of members as any[]) {
-      const cells: unknown[] = [m.name, m.email, m.role];
-      let atRisk = false;
-      for (const d of decks as any[]) {
-        const pct = best.get(`${m.id}|${d.id}`);
-        if (pct != null && pct < 60) atRisk = true;
-        cells.push(pct ?? '', attemptCount.get(`${m.id}|${d.id}`) ?? 0);
-      }
-      for (const p of paths as any[]) {
-        const total = pathTotals.get(p.id) ?? 0;
-        const done = doneFor.get(`${m.id}|${p.id}`) ?? 0;
-        const overdue = p.due_date && new Date(p.due_date) < new Date(new Date().toDateString()) && done < total;
-        if (overdue) atRisk = true;
-        cells.push(total ? `${done}/${total}` : '', overdue ? 'yes' : '');
-      }
-      cells.push(atRisk ? 'yes' : '');
-      lines.push(cells.map(csvCell).join(','));
-    }
+    const { csv, memberCount, deckCount, pathCount } = await buildGradebookCsv(spaceId);
     reply.header('content-type', 'text/csv; charset=utf-8');
     reply.header('content-disposition', `attachment; filename="gradebook-${spaceId.slice(0, 8)}.csv"`);
-    void recordActivity(spaceId, req.user!.id, 'gradebook_exported', { members: members.length, decks: decks.length, paths: paths.length });
-    return lines.join('\n');
+    void recordActivity(spaceId, req.user!.id, 'gradebook_exported', { members: memberCount, decks: deckCount, paths: pathCount });
+    return csv;
   });
 
   app.delete('/decks/:id', async (req, reply) => {

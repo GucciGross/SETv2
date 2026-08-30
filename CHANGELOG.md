@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Data trust & account
+- One-click workspace export: Settings → Workspace downloads a zip with every page as Markdown (wiki links intact — re-importable via Import ZIP), every database as CSV, and every notebook's source texts plus a `.bib`. The "export anytime" guarantee, made literal
+- Account deletion (GDPR): self-serve in Settings → Workspace with type-to-confirm. Solely-owned workspaces are deleted with all content; shared workspaces keep everything (authorship references nulled); memberships, notifications, reviews and push subscriptions go with the account
+
+### Billing ops
+- Spend alerts from the gateway: workspace owners get a notification at 50/80/95% of the monthly USD cap (each threshold fires once per month) and a daily low-credit warning when prepaid balance drops under $2. E2E-verified against a live gateway loop
+
+### QoL
+- Quick capture: Ctrl/⌘-Shift-N anywhere in the app opens a tiny capture box — thoughts land timestamped in the Inbox page (created on first use), ready to triage later
+
+### Agents (MCP)
+- The native MCP server grew from 26 to 41 tools so external agents (Claude, Cursor, ChatGPT) get the full session feature set: `list_page_versions` / `get_page_version` / `restore_page_version`, `create_share_link` / `list_share_links` / `revoke_share_link`, `clip_web_page` (fetch any URL into a notebook as an indexed source), `clone_learning_path`, `list_quiz_attempts` / `grade_quiz_attempt`, `get_gradebook`, `get_audit_log` (type-filterable), `get_credit_balance` / `grant_credits` (owner), and `import_roster` (owner). Role and scope enforcement on each; destructive tools annotated
+- Shared internals: invite logic extracted to `spaces/invite.ts`, gradebook CSV builder to `buildGradebookCsv`, `extractWebText` exported — HTTP and MCP paths now use the same code
+
+### Billing (Phase 5, money path v1)
+- Prepaid SET Cloud credits: Stripe Checkout sells $10/$20/$50 credit packs (products/prices created lazily by lookup key); `checkout.session.completed` webhooks credit the space ledger — signature-verified, idempotent by session id
+- The gateway draws the balance down as it meters: each priced SET Cloud call appends a negative ledger row (exact token costs, 4-decimal cents); exhausted balance fails fast with a 429 pointing at Settings → Billing. Spaces that never bought credit keep the pure cap behavior
+- Settings → Billing tab: balance, pack buttons (owner), manual grant/refund lever for support, full ledger history; purchases and grants land in the audit trail
+- Env: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (documented in .env.example)
+
 ### Platform
 - Single sign-on (OIDC): env-configured provider (OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET) adds a "Continue with…" button to the login page; authorization-code flow with state-cookie CSRF protection, discovery-document caching, and auto-provisioning of SSO-only accounts by email. Works with Google Workspace, Keycloak, Authentik, Auth0, Zitadel, …
 - Self-host ops kit: `./scripts/ops/backup.sh` captures the Postgres dump + data volume into one timestamped archive; `./scripts/ops/restore.sh` puts it back (destructive, confirmed). Cron-friendly, documented in the README

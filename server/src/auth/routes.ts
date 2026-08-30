@@ -137,6 +137,28 @@ export async function authRoutes(app: FastifyInstance) {
     return { user: { ...user, mascot: full?.mascot ?? null, onboarding: full?.onboarding ?? {} } };
   });
 
+  /**
+   * Delete my account. Spaces the user solely owns are deleted with all
+   * content; shared spaces keep everything (authorship references are
+   * nulled). Remaining memberships, notifications, reviews and push
+   * subscriptions go with the account.
+   */
+  app.delete('/users/me', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const owned = await q<{ space_id: string }>(
+      `SELECT m.space_id FROM memberships m WHERE m.user_id = $1 AND m.role = 'owner'
+       AND NOT EXISTS (SELECT 1 FROM memberships o WHERE o.space_id = m.space_id AND o.user_id <> $1 AND o.role = 'owner')`,
+      [user.id]
+    );
+    for (const o of owned) await q(`DELETE FROM spaces WHERE id = $1`, [o.space_id]);
+    await q(`UPDATE pages SET created_by = NULL WHERE created_by = $1`, [user.id]);
+    await q(`UPDATE page_versions SET edited_by = NULL WHERE edited_by = $1`, [user.id]);
+    await q(`UPDATE quiz_attempts SET graded_by = NULL WHERE graded_by = $1`, [user.id]);
+    await q(`DELETE FROM users WHERE id = $1`, [user.id]); // cascades memberships, notifications, reviews, subscriptions, tokens
+    return { ok: true, spacesDeleted: owned.length };
+  });
+
   app.put('/users/mascot', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;

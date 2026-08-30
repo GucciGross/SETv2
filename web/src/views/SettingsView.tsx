@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera, Gauge, Cloud, Scissors, Trash2, Bell, Upload } from 'lucide-react';
+import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera, Gauge, Cloud, Scissors, Trash2, Bell, Upload, CreditCard, Coins, Download } from 'lucide-react';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 import McpSettings from '../components/McpSettings';
@@ -10,7 +10,7 @@ import { DitherButton } from '../components/dither-kit';
 
 export default function SettingsView() {
   const { spaceId } = useParams();
-  const [tab, setTab] = useState<'surfaces' | 'skills' | 'mcp' | 'channels' | 'mascot' | 'providers' | 'members' | 'workspace' | 'research' | 'companion' | 'clipper' | 'notifications'>('surfaces');
+  const [tab, setTab] = useState<'surfaces' | 'skills' | 'mcp' | 'channels' | 'mascot' | 'providers' | 'members' | 'workspace' | 'research' | 'companion' | 'clipper' | 'notifications' | 'billing'>('surfaces');
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
@@ -29,6 +29,7 @@ export default function SettingsView() {
           ['companion', 'Companion', <MonitorSmartphone key="cp" size={14} />],
           ['clipper', 'Clipper', <Scissors key="cli" size={14} />],
           ['notifications', 'Notifications', <Bell key="nt" size={14} />],
+          ['billing', 'Billing', <CreditCard key="bl" size={14} />],
         ] as const).map(([id, label, icon]) => (
           <button key={id} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm ${tab === id ? 'bg-set-accent/20 text-blue-200' : 'text-set-dim hover:text-set-text'}`} onClick={() => setTab(id)}>
             {icon} {label}
@@ -47,6 +48,7 @@ export default function SettingsView() {
       {tab === 'companion' && <CompanionTab spaceId={spaceId!} />}
       {tab === 'clipper' && <ClipperTab />}
       {tab === 'notifications' && <NotificationsTab />}
+      {tab === 'billing' && <BillingTab spaceId={spaceId!} />}
     </div>
   );
 }
@@ -634,8 +636,40 @@ function WorkspaceTab({ spaceId }: { spaceId: string }) {
 
   const space = spaces.find((s) => s.id === spaceId);
 
+  const exportZip = async () => {
+    const res = await api.raw(`/spaces/${spaceId}/export.zip`);
+    if (!res.ok) return alert('Export failed');
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `set-export-${space?.name?.replace(/[^\w.-]+/g, '_') ?? 'workspace'}.zip`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const deleteAccount = async () => {
+    if (prompt('This permanently deletes your account, and any workspace you are the sole owner of (all pages, notebooks, databases). Shared workspaces keep their content.\n\nType DELETE to confirm:') !== 'DELETE') return;
+    await api.del('/users/me');
+    logout();
+    window.location.href = '/';
+  };
+
   return (
     <div className="space-y-4">
+      <div className="set-card p-4 flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-[220px]">
+          <div className="text-sm font-medium text-white">Your data, anytime</div>
+          <div className="text-xs text-set-dim">One zip: every page as Markdown (wiki links intact, re-importable), every database as CSV, every notebook's sources + a .bib.</div>
+        </div>
+        <button className="set-btn text-sm flex items-center gap-1.5" onClick={exportZip}><Download size={13} /> Export workspace (.zip)</button>
+      </div>
+      <div className="set-card p-4 flex flex-wrap items-center gap-3 border-red-500/20">
+        <div className="flex-1 min-w-[220px]">
+          <div className="text-sm font-medium text-white">Danger zone</div>
+          <div className="text-xs text-set-dim">Deletes your account and every workspace you solely own. Shared workspaces keep their content.</div>
+        </div>
+        <button className="set-btn text-sm text-red-300 border-red-500/40 hover:border-red-500" onClick={deleteAccount}>Delete account…</button>
+      </div>
       <div className="set-card p-4">
         <div className="text-sm font-medium text-white mb-2"> Agent behavior</div>
         <label className="flex items-center gap-2 text-sm">
@@ -1223,6 +1257,122 @@ function NotificationsTab() {
       </div>
       {permission === 'denied' && <p className="text-xs text-red-300 mt-2">Notifications are blocked for this site — unblock them in your browser's site settings, then retry.</p>}
       {msg && <p className="text-xs text-set-dim mt-2">{msg}</p>}
+    </div>
+  );
+}
+
+function BillingTab({ spaceId }: { spaceId: string }) {
+  const { spaces, currentSpaceId } = useApp();
+  const role = spaces.find((s) => s.id === (currentSpaceId ?? spaceId))?.role ?? 'viewer';
+  const isOwner = role === 'owner';
+  const [data, setData] = useState<any>(null);
+  const [busy, setBusy] = useState<number | null>(null);
+  const [error, setError] = useState('');
+  const [banner, setBanner] = useState('');
+  const [searchParams] = useSearchParams();
+
+  const load = () => api.get(`/spaces/${spaceId}/billing`).then((r) => setData(r)).catch((e) => setError(e.message));
+  useEffect(() => {
+    load();
+  }, [spaceId]);
+  useEffect(() => {
+    if (searchParams.get('billing') === 'success') setBanner('Payment received — credits land within a few seconds of the webhook.');
+    if (searchParams.get('billing') === 'cancel') setBanner('Checkout cancelled.');
+  }, [searchParams]);
+
+  const buy = async (cents: number) => {
+    setBusy(cents);
+    setError('');
+    try {
+      const { url } = await api.post(`/spaces/${spaceId}/billing/checkout`, { amountCents: cents });
+      if (url) window.location.href = url;
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const [grantCents, setGrantCents] = useState('');
+  const grant = async () => {
+    const cents = Math.round(Number(grantCents) * 100);
+    if (!cents || cents < 1) return;
+    await api.post(`/spaces/${spaceId}/billing/grant`, { amountCents: cents, note: 'manual grant' });
+    setGrantCents('');
+    load();
+  };
+
+  if (error && !data) return <div className="set-card p-4 text-sm text-red-300">{error}</div>;
+  if (!data) return <div className="text-set-dim text-sm p-2">Loading billing…</div>;
+  const balance = (data.balanceCents / 100).toFixed(2);
+
+  return (
+    <div className="space-y-4">
+      {banner && <div className="set-card p-3 text-sm text-green-300 border-green-500/30">{banner}</div>}
+      <div className="set-card p-4">
+        <div className="flex items-start justify-between mb-1">
+          <h3 className="font-semibold text-white flex items-center gap-1.5"><Coins size={14} /> SET Cloud credit</h3>
+          <div className="text-right">
+            <div className="text-2xl font-bold text-white">${balance}</div>
+            <div className="text-[10px] uppercase text-set-dim">balance</div>
+          </div>
+        </div>
+        <p className="text-sm text-set-dim mb-4">
+          Prepaid credit pays for SET Cloud model calls (Settings → AI Providers) as you use them — no subscription.
+          Metered spend draws the balance down; existing spend caps still apply.
+        </p>
+        {!data.enabled ? (
+          <p className="text-xs text-amber-300">
+            Stripe isn't configured on this server yet (STRIPE_SECRET_KEY). Balances and grants still work for support use.
+          </p>
+        ) : isOwner ? (
+          <div className="flex flex-wrap gap-2">
+            {(data.packs ?? []).map((cents: number) => (
+              <button key={cents} className="set-btn-primary text-sm" onClick={() => buy(cents)} disabled={busy !== null}>
+                {busy === cents ? 'Opening Stripe…' : `Buy $${cents / 100} credit`}
+              </button>
+            ))}
+            {error && <p className="text-xs text-red-400 w-full">{error}</p>}
+          </div>
+        ) : (
+          <p className="text-xs text-set-dim">Only workspace owners can buy credit.</p>
+        )}
+      </div>
+
+      {isOwner && (
+        <div className="set-card p-4 flex flex-wrap items-center gap-2">
+          <div className="flex-1 min-w-[200px]">
+            <div className="text-sm text-white">Grant credit (support)</div>
+            <div className="text-xs text-set-dim">Manually add credit — refunds, comps, testing.</div>
+          </div>
+          <input
+            className="set-input w-24"
+            type="number"
+            min="0.01"
+            step="0.01"
+            placeholder="$"
+            value={grantCents}
+            onChange={(e) => setGrantCents(e.target.value)}
+          />
+          <button className="set-btn text-sm" onClick={grant}>Grant</button>
+        </div>
+      )}
+
+      <div className="set-card p-4">
+        <h3 className="font-semibold text-white mb-2 text-sm">History</h3>
+        {data.history?.length === 0 && <p className="text-sm text-set-dim">No credit activity yet.</p>}
+        <div className="space-y-1">
+          {data.history?.map((h: any) => (
+            <div key={h.id} className="flex items-center gap-2 text-sm py-0.5">
+              <span className="flex-1 truncate text-set-dim">{h.note || h.kind}{h.ref ? ` · ${h.ref.slice(0, 18)}…` : ''}</span>
+              <span className={`font-mono ${Number(h.amount_cents) >= 0 ? 'text-green-400' : 'text-amber-300'}`}>
+                {Number(h.amount_cents) >= 0 ? '+' : ''}{(Number(h.amount_cents) / 100).toFixed(4)}
+              </span>
+              <span className="text-[10px] text-set-dim w-32 text-right">{new Date(h.created_at).toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
