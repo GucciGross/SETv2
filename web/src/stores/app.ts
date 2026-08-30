@@ -101,30 +101,60 @@ export const useApp = create<AppState>((set, get) => ({
 
   connectWs: (spaceId, pageId) => {
     const old = get().ws;
-    if (old) old.close();
+    if (old) {
+      // this socket is being replaced, not dropped — its reconnect handler must not fire
+      old.onclose = null;
+      old.close();
+    }
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(localStorage.getItem('set_token') ?? '')}`);
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', spaceId, pageId }));
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'event' && msg.event?.type === 'presence') {
-          set({ presence: msg.event.payload.users ?? [] });
-        } else if (msg.type === 'event' && msg.event?.type === 'page_updated') {
-          if (msg.event.payload.by !== get().user?.id) {
+    let retries = 0;
+    const open = () => {
+      if (!localStorage.getItem('set_token')) return; // logged out — stop reconnecting
+      const ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(localStorage.getItem('set_token') ?? '')}`);
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'join', spaceId, pageId }));
+        if (retries > 0) {
+          // we were deaf for a while: catch up on anything that changed meanwhile
+          get().loadPages(spaceId);
+          window.dispatchEvent(new CustomEvent('set:space-meta-changed'));
+          retries = 0;
+        }
+      };
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          const ev = msg.type === 'event' ? msg.event : null;
+          if (!ev) return;
+          if (ev.type === 'presence') {
+            set({ presence: ev.payload.users ?? [] });
+          } else if (ev.type === 'page_updated') {
+            if (ev.payload.by !== get().user?.id) {
+              const { currentSpaceId } = get();
+              if (currentSpaceId) get().loadPages(currentSpaceId);
+              window.dispatchEvent(new CustomEvent('set:remote-page-update', { detail: ev.payload }));
+            }
+          } else if (['page_created', 'page_deleted', 'db_updated'].includes(ev.type)) {
             const { currentSpaceId } = get();
             if (currentSpaceId) get().loadPages(currentSpaceId);
-            window.dispatchEvent(new CustomEvent('set:remote-page-update', { detail: msg.event.payload }));
+            if (ev.type === 'db_updated') window.dispatchEvent(new CustomEvent('set:space-meta-changed'));
+          } else if (['notebook_created', 'notebook_updated', 'deck_created', 'model_created'].includes(ev.type)) {
+            // copilot/MCP added or changed non-page material — sidebar lists listen for this
+            window.dispatchEvent(new CustomEvent('set:space-meta-changed'));
           }
-        } else if (msg.type === 'event' && ['page_created', 'page_deleted', 'db_updated'].includes(msg.event?.type)) {
-          const { currentSpaceId } = get();
-          if (currentSpaceId) get().loadPages(currentSpaceId);
+        } catch {
+          /* ignore */
         }
-      } catch {
-        /* ignore */
-      }
+      };
+      ws.onclose = () => {
+        if (get().ws !== ws) return; // a newer connection took over
+        const delay = Math.min(15000, 1000 * 2 ** retries++);
+        window.setTimeout(() => {
+          if (get().ws === ws) open();
+        }, delay);
+      };
+      set({ ws });
     };
-    set({ ws });
+    open();
   },
 
   createPage: async (opts) => {

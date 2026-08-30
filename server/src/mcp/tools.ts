@@ -1,6 +1,7 @@
 import { q, one } from '../db.js';
 import crypto from 'node:crypto';
 import { mdToDoc } from '../lib/markdown.js';
+import { bus } from '../lib/events.js';
 import { syncLinks, relinkSpace, savePageContent } from '../pages/routes.js';
 import { retrieve } from '../rag/provider.js';
 import { getProvider } from '../llm/router.js';
@@ -339,6 +340,7 @@ export const TOOLS: ToolDef[] = [
       );
       await syncLinks(page!.id, ctx.spaceId, args.markdown ?? '');
       await relinkSpace(ctx.spaceId);
+      bus.publish({ spaceId: ctx.spaceId, type: 'page_created', payload: { pageId: page!.id } });
       void recordActivity(ctx.spaceId, ctx.userId, 'page_created', { pageId: page!.id, title: args.title, via: 'mcp' });
       return { pageId: page!.id, title: page!.title };
     },
@@ -361,6 +363,7 @@ export const TOOLS: ToolDef[] = [
       const next = (page.markdown ? page.markdown + '\n\n' : '') + args.markdown;
       await q(`UPDATE pages SET markdown = $2, content = $3, updated_at = now() WHERE id = $1`, [page.id, next, JSON.stringify(mdToDoc(next))]);
       await syncLinks(page.id, ctx.spaceId, next);
+      bus.publish({ spaceId: ctx.spaceId, type: 'page_updated', payload: { pageId: page.id } });
       return { pageId: page.id, title: page.title };
     },
   },
@@ -382,6 +385,7 @@ export const TOOLS: ToolDef[] = [
       if (args.title) await q(`UPDATE pages SET title = $2 WHERE id = $1`, [page.id, args.title]);
       if (args.icon) await q(`UPDATE pages SET icon = $2 WHERE id = $1`, [page.id, args.icon]);
       if (args.title) await relinkSpace(ctx.spaceId);
+      bus.publish({ spaceId: ctx.spaceId, type: 'page_updated', payload: { pageId: page.id } });
       return { ok: true };
     },
   },
@@ -433,6 +437,8 @@ export const TOOLS: ToolDef[] = [
         if (colId) cells[colId] = v;
       }
       const row = await one<any>(`INSERT INTO db_rows (database_id, page_id, cells) VALUES ($1, $2, $3) RETURNING id`, [args.databaseId, page!.id, JSON.stringify(cells)]);
+      bus.publish({ spaceId: ctx.spaceId, type: 'page_created', payload: { pageId: page!.id } });
+      bus.publish({ spaceId: ctx.spaceId, type: 'db_updated', payload: { databaseId: args.databaseId } });
       return { rowId: row!.id, pageId: page!.id };
     },
   },
@@ -463,6 +469,7 @@ export const TOOLS: ToolDef[] = [
         if (colId) cells[colId] = v;
       }
       await q(`UPDATE db_rows SET cells = cells || $2, updated_at = now() WHERE id = $1`, [args.rowId, JSON.stringify(cells)]);
+      bus.publish({ spaceId: ctx.spaceId, type: 'db_updated', payload: { databaseId: row.database_id } });
       return { ok: true };
     },
   },
@@ -480,6 +487,7 @@ export const TOOLS: ToolDef[] = [
     async run(args, ctx) {
       if (!canWrite(ctx)) throw new Error('Viewer role cannot write');
       const nb = await one<any>(`INSERT INTO notebooks (space_id, title, description) VALUES ($1, $2, $3) RETURNING id, title`, [ctx.spaceId, args.title, args.description ?? '']);
+      bus.publish({ spaceId: ctx.spaceId, type: 'notebook_created', payload: { notebookId: nb!.id } });
       return { notebookId: nb!.id, title: nb!.title };
     },
   },
@@ -508,6 +516,7 @@ export const TOOLS: ToolDef[] = [
       await ensureBootstrapProvider(ctx.spaceId);
       const provider = await getProvider(ctx.spaceId);
       void ingestSource(src!.id, provider);
+      bus.publish({ spaceId: ctx.spaceId, type: 'notebook_updated', payload: { notebookId: args.notebookId } });
       void recordActivity(ctx.spaceId, ctx.userId, 'source_added', { count: 1, names: [args.name], via: 'mcp' });
       return { sourceId: src!.id, status: 'indexing' };
     },
@@ -534,6 +543,7 @@ export const TOOLS: ToolDef[] = [
       if (!nb) throw new Error('Notebook not found');
       const result = await generateDeck(ctx.spaceId, args.notebookId, args.kind, args.topic, Math.min(Math.max(args.count ?? 10, 3), 40));
       const deck = await createDeckRecord(ctx.spaceId, args.notebookId, args.kind, `${args.kind}${args.topic ? ' - ' + args.topic : ''} (agent)`, result);
+      bus.publish({ spaceId: ctx.spaceId, type: 'deck_created', payload: { deckId: deck.id } });
       void recordActivity(ctx.spaceId, ctx.userId, 'deck_generated', { deckId: deck.id, kind: args.kind, via: 'mcp' });
       return { deckId: deck.id, kind: args.kind, preview: JSON.stringify(result).slice(0, 600) };
     },

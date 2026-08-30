@@ -4,6 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { one, q } from '../db.js';
 import { requireResourceSpace, requireSpace, rid } from '../lib/http.js';
+import { bus } from '../lib/events.js';
 import { config } from '../config.js';
 import { getProvider, chatCompletionStream, ensureBootstrapProvider } from '../llm/router.js';
 import { ingestSource, buildGroundedPrompt, type SearchHit } from './search.js';
@@ -70,6 +71,7 @@ export async function ragRoutes(app: FastifyInstance) {
       `INSERT INTO notebooks (space_id, title, description, subject_id) VALUES ($1, $2, $3, $4) RETURNING *`,
       [spaceId, body.title, body.description ?? '', body.subjectId ?? null]
     );
+    bus.publish({ spaceId, type: 'notebook_created', payload: { notebookId: nb!.id } });
     return { notebook: nb };
   });
 

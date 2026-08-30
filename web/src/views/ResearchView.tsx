@@ -39,11 +39,17 @@ export function ResearchList() {
   ];
 
   const load = () => api.get(`/spaces/${spaceId}/research`).then((r) => setRuns(r.runs)).catch(() => {});
+  const loadNotebooks = () => api.get(`/spaces/${spaceId}/notebooks`).then((r) => setNotebooks(r.notebooks)).catch(() => {});
   useEffect(() => {
     load();
-    api.get(`/spaces/${spaceId}/notebooks`).then((r) => setNotebooks(r.notebooks)).catch(() => {});
+    loadNotebooks();
+    // copilot/MCP-created notebooks appear without a remount
+    window.addEventListener('set:space-meta-changed', loadNotebooks);
     const t = setInterval(load, 4000);
-    return () => clearInterval(t);
+    return () => {
+      window.removeEventListener('set:space-meta-changed', loadNotebooks);
+      clearInterval(t);
+    };
   }, [spaceId]);
 
   const launch = async (q = question) => {

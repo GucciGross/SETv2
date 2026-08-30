@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { one } from '../db.js';
 import { config } from '../config.js';
+import { bus } from '../lib/events.js';
 import { ingestSource } from '../rag/search.js';
 import { getProvider, ensureBootstrapProvider } from '../llm/router.js';
 
@@ -83,6 +84,7 @@ export async function importModel(spaceId: string, name: string, ext: string, bu
     `INSERT INTO models3d (space_id, name, kind, file_path, file_size, parts) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, kind, file_size`,
     [spaceId, name.replace(/\.[^.]+$/, ''), kind, path.join(dir, stored), buf.length, JSON.stringify(parts)]
   );
+  bus.publish({ spaceId, type: 'model_created', payload: { modelId: model!.id } });
   return model!;
 }
 
@@ -156,6 +158,7 @@ export async function importNotebookSource(
   await ensureBootstrapProvider(spaceId);
   const provider = await getProvider(spaceId);
   void ingestSource(source!.id, provider);
+  bus.publish({ spaceId, type: 'notebook_updated', payload: { notebookId: nbId } });
   return { sourceId: source!.id, notebookId: nbId };
 }
 

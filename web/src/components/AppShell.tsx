@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import {
   FilePlus, CalendarDays, Network, Database, BookOpen, Boxes, Route, Settings, Search, Plus,
@@ -271,12 +271,21 @@ function AppShellInner() {
     }
   }, [location.pathname, currentSpaceId, navigate]);
 
-  useEffect(() => {
+  // sidebar space meta — loaded on space switch and live-refreshed when the
+  // copilot or an MCP client adds notebooks/databases/models (set:space-meta-changed)
+  const loadMeta = useCallback(() => {
     if (!currentSpaceId) return;
     api.get(`/spaces/${currentSpaceId}/databases`).then((r) => setDbs(r.databases)).catch(() => {});
     api.get(`/spaces/${currentSpaceId}/notebooks`).then((r) => setNbs(r.notebooks)).catch(() => {});
     api.get(`/spaces/${currentSpaceId}/subjects`).then((r) => setSubjects(r.subjects)).catch(() => {});
-  }, [currentSpaceId, spaceId]);
+  }, [currentSpaceId]);
+  useEffect(() => {
+    loadMeta();
+  }, [loadMeta, spaceId]);
+  useEffect(() => {
+    window.addEventListener('set:space-meta-changed', loadMeta);
+    return () => window.removeEventListener('set:space-meta-changed', loadMeta);
+  }, [loadMeta]);
 
   // notebook → subject grouping for the sidebar
   const nbsBySubject = useMemo(() => {

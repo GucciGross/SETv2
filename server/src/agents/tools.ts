@@ -1,5 +1,6 @@
 import { one, q } from '../db.js';
 import { mdToDoc } from '../lib/markdown.js';
+import { bus } from '../lib/events.js';
 import { syncLinks } from '../pages/routes.js';
 import { hybridSearch } from '../rag/search.js';
 import { generateDeck, createDeckRecord } from '../study/generate.js';
@@ -291,6 +292,7 @@ export const TOOLS: ToolDef2[] = [
         [ctx.spaceId, args.parentId ?? null, args.title, args.markdown ?? '', JSON.stringify(mdToDoc(args.markdown ?? '')), ctx.userId]
       );
       await syncLinks(page!.id, ctx.spaceId, args.markdown ?? '');
+      bus.publish({ spaceId: ctx.spaceId, type: 'page_created', payload: { pageId: page!.id } });
       const { telemetry } = await import('../telemetry/index.js');
       telemetry.track('page_created');
       return {
@@ -318,6 +320,7 @@ export const TOOLS: ToolDef2[] = [
         `INSERT INTO notebooks (space_id, title, description) VALUES ($1, $2, $3) RETURNING id, title`,
         [ctx.spaceId, args.title, args.description ?? '']
       );
+      bus.publish({ spaceId: ctx.spaceId, type: 'notebook_created', payload: { notebookId: nb!.id } });
       return {
         ok: true,
         result: { notebookId: nb!.id, title: nb!.title },
@@ -340,6 +343,7 @@ export const TOOLS: ToolDef2[] = [
       const next = (page.markdown ? page.markdown + '\n\n' : '') + args.markdown;
       await q(`UPDATE pages SET markdown = $2, content = $3, updated_at = now() WHERE id = $1`, [page.id, next, JSON.stringify(mdToDoc(next))]);
       await syncLinks(page.id, ctx.spaceId, next);
+      bus.publish({ spaceId: ctx.spaceId, type: 'page_updated', payload: { pageId: page.id } });
       return { ok: true, result: { pageId: page.id, title: page.title } };
     },
   },
@@ -385,6 +389,7 @@ export const TOOLS: ToolDef2[] = [
       if (args.kind === 'quiz') a2ui = { type: 'quiz', props: { deckId: deck.id, title: deck.title, items: (result as any).items } };
       if (args.kind === 'studyguide') a2ui = { type: 'card', props: { title: deck.title, icon: '', body: (result as any).markdown.slice(0, 900), kind: 'studyguide', deckId: deck.id } };
       if (args.kind === 'audio') a2ui = { type: 'card', props: { title: deck.title, icon: '', body: (result as any).segments.map((s: any) => `${s.speaker}: ${s.text}`).join('\n').slice(0, 900), kind: 'audio', deckId: deck.id } };
+      bus.publish({ spaceId: ctx.spaceId, type: 'deck_created', payload: { deckId: deck.id } });
       return { ok: true, result: { deckId: deck.id, kind: args.kind }, a2ui: a2ui ? [a2ui] : undefined };
     },
   },
