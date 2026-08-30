@@ -18,6 +18,49 @@ const HASH_SUFFIX = /\s+[0-9a-f]{32}(?=(\.[a-z]+)?$)/i;
 const cleanTitle = (filename: string) => decodeURIComponent(filename).replace(/\.(md|markdown|csv)$/i, '').replace(HASH_SUFFIX, '').trim();
 
 /**
+ * Vault-flavor normalization applied to every imported markdown page.
+ * Obsidian: strip YAML front-matter (tags survive as hashtags), rewrite
+ * ![[embeds]] to served image URLs (or plain links for note embeds), drop
+ * `.md` extensions and `#heading` anchors inside wiki links. Notion quirks
+ * are handled by cleanTitle + the .md-link rewrite in the route. All of
+ * these are no-ops when the patterns aren't present.
+ */
+export function normalizeImportedMarkdown(text: string, imageByBase: Map<string, string>): string {
+  // YAML front-matter → hashtags (Obsidian doesn't render it; SET pages shouldn't show raw YAML)
+  let tags: string[] = [];
+  const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  if (fm) {
+    text = text.slice(fm[0].length);
+    const tagLine = fm[1].match(/^tags:\s*\[([^\]]*)\]/m) ?? fm[1].match(/^tags:\s*(.+)$/m);
+    if (tagLine) {
+      tags = tagLine[1]
+        .split(/[[\],]/)
+        .map((t) => t.trim().replace(/^#/, ''))
+        .filter(Boolean)
+        .slice(0, 12);
+    }
+  }
+
+  // ![[image.png]] and ![[image.png|400]] → served image URL
+  text = text.replace(/!\[\[([^\]|]+?)(?:\|[^\]]*)?\]\]/g, (full, target) => {
+    const base = path.basename(String(target).trim());
+    const served = imageByBase.get(base);
+    return served ? `![${base}](${served})` : full;
+  });
+  // remaining ![[Note]] note embeds → plain links (SET has no transclusion)
+  text = text.replace(/!\[\[([^\]]+)\]\]/g, (_f, t) => `[[${t}]]`);
+
+  // [[Note.md#Heading|alias]] → [[Note|alias]]; [[Note.md]] → [[Note]]
+  text = text.replace(/\[\[([^\]|]+?)(?:#[^\]|]*)?(\|[^\]]*)?\]\]/g, (_f, target: string, alias?: string) => {
+    const clean = String(target).trim().replace(/\.(md|markdown)$/i, '').replace(HASH_SUFFIX, '').trim();
+    return clean ? (alias ? `[[${clean}${alias}]]` : `[[${clean}]]`) : _f;
+  });
+
+  if (tags.length) text += `\n\n${tags.map((t) => `#${t.replace(/\s+/g, '-')}`).join(' ')}\n`;
+  return text;
+}
+
+/**
  * Import a ZIP workspace export:
  * - .md files become pages (internal "Title <hash>.md" links become [[wiki links]])
  * - images become uploaded files; ![](image) references are rewritten to served URLs
@@ -80,6 +123,8 @@ export async function importZipRoutes(app: FastifyInstance) {
         const served = imageByBase.get(base);
         return served ? `![${alt}](${served})` : full;
       });
+      // Obsidian/Notion flavor: front-matter, embeds, wiki-link hygiene
+      text = normalizeImportedMarkdown(text, imageByBase);
       const title = titleByEntry.get(md.entryName) || 'Imported page';
       const page = await one<any>(
         `INSERT INTO pages (space_id, title, markdown, content, created_by) VALUES ($1, $2, $3, $4, $5)

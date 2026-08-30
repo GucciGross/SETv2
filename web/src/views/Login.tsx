@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, BookOpen } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { AlertTriangle, ArrowLeft, BookOpen, KeyRound } from 'lucide-react';
 import { api, setToken } from '../lib/api';
 import { useApp } from '../stores/app';
 import ShaderBackground from '../components/ShaderBackground';
@@ -13,6 +13,8 @@ import { DitherButton } from '../components/dither-kit';
  * as grabbable 3D glass tiles drifting around the room (FloatingIcons), and
  * the Pixel mascot in the portal. The mascot reacts to the form: it leans in
  * while you authenticate, kicks on a reject, celebrates the way in.
+ * SSO: when the server has OIDC configured, a provider button rides along,
+ * and the callback lands here with ?set_token= to finish the handshake.
  */
 
 export default function Login() {
@@ -24,7 +26,30 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [mood, setMood] = useState<MascotMood>('idle');
   const [rejected, setRejected] = useState(0); // bumps on each failed attempt
+  const [sso, setSso] = useState<{ enabled: boolean; name: string } | null>(null);
+  const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
+
+  // SSO callback handoff: /login?set_token=<jwt> from the OIDC redirect
+  useEffect(() => {
+    const token = params.get('set_token');
+    if (token) {
+      setToken(token);
+      params.delete('set_token');
+      setParams(params, { replace: true });
+      navigate('/app', { replace: true });
+    }
+    const ssoError = params.get('sso_error');
+    if (ssoError) {
+      setError(`Single sign-on failed (${ssoError}) — try again or use email/password.`);
+      params.delete('sso_error');
+      setParams(params, { replace: true });
+    }
+  }, [params, setParams, navigate]);
+
+  useEffect(() => {
+    api.get('/meta').then((r) => setSso(r.sso)).catch(() => {});
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -145,6 +170,22 @@ export default function Login() {
             >
               {busy ? 'OPENING THE GATE…' : mode === 'login' ? 'SIGN IN' : 'CREATE ACCOUNT'}
             </DitherButton>
+
+            {sso?.enabled && (
+              <>
+                <div className="flex items-center gap-3 pt-1" aria-hidden>
+                  <span className="h-px flex-1 bg-set-border/60" />
+                  <span className="set-mono set-mono-dim text-[10px]">OR</span>
+                  <span className="h-px flex-1 bg-set-border/60" />
+                </div>
+                <a
+                  href="/api/auth/oidc/login"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-set-border/70 bg-set-panel2/70 py-3 text-sm font-semibold text-white transition-colors hover:border-set-accent/60"
+                >
+                  <KeyRound size={15} className="text-set-accent" /> Continue with {sso.name}
+                </a>
+              </>
+            )}
 
             <div className="flex items-center justify-center pt-0.5">
               {mode === 'login' ? (

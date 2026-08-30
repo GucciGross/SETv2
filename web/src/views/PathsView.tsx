@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useApp } from '../stores/app';
-import { Plus, Check, Users, CalendarClock } from 'lucide-react';
+import { Plus, Check, Users, CalendarClock, Download, Copy, CalendarPlus } from 'lucide-react';
 
 export default function PathsView() {
   const { spaceId } = useParams();
@@ -17,6 +17,21 @@ export default function PathsView() {
   const load = async () => {
     if (!spaceId) return;
     setPaths((await api.get(`/spaces/${spaceId}/paths`)).paths);
+  };
+
+  const exportGradebook = async () => {
+    if (!spaceId) return;
+    const res = await api.raw(`/spaces/${spaceId}/gradebook.csv`);
+    if (!res.ok) {
+      alert('Gradebook export failed');
+      return;
+    }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'gradebook.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
   };
   useEffect(() => {
     load();
@@ -45,6 +60,22 @@ export default function PathsView() {
           <div className="mb-6">
             <h2 className="text-sm font-semibold text-set-dim uppercase tracking-wide mb-2 flex items-center gap-1.5">
               <CalendarClock size={14} /> My assignments
+              <button
+                className="set-btn-ghost text-xs normal-case ml-auto flex items-center gap-1"
+                title="Download your assignment due dates as a calendar file"
+                onClick={async () => {
+                  const res = await api.raw(`/spaces/${spaceId}/assignments.ics`);
+                  if (!res.ok) return alert('Calendar export failed');
+                  const blob = await res.blob();
+                  const a = document.createElement('a');
+                  a.href = URL.createObjectURL(blob);
+                  a.download = 'set-assignments.ics';
+                  a.click();
+                  URL.revokeObjectURL(a.href);
+                }}
+              >
+                <CalendarPlus size={12} /> .ics
+              </button>
             </h2>
             <div className="space-y-2">
               {mine.map((p) => {
@@ -78,7 +109,12 @@ export default function PathsView() {
           <h1 className="text-2xl font-bold text-white"> Learning Paths</h1>
           <p className="text-set-dim text-sm">Curricula with per-member readiness tracking.</p>
         </div>
-        <button className="set-btn flex items-center gap-1" onClick={() => setCreating((c) => !c)}><Plus size={14} /> New path</button>
+        <div className="flex gap-2">
+          <button className="set-btn flex items-center gap-1" onClick={exportGradebook} title="Members × quiz scores × path progress, CSV">
+            <Download size={14} /> Gradebook
+          </button>
+          <button className="set-btn flex items-center gap-1" onClick={() => setCreating((c) => !c)}><Plus size={14} /> New path</button>
+        </div>
       </div>
 
       {creating && (
@@ -177,6 +213,17 @@ function PathCard({ path, onChanged }: { path: any; onChanged: () => void }) {
           )}
           <button className="set-btn-ghost text-xs flex items-center gap-1" onClick={() => setAssignOpen((o) => !o)}>
             <Users size={12} /> Assign
+          </button>
+          <button
+            className="set-btn-ghost text-xs flex items-center gap-1"
+            title="Duplicate this path for a new cohort — items copied, assignments and due date reset"
+            onClick={async () => {
+              const { path: clone } = await api.post(`/paths/${path.id}/clone`);
+              onChanged();
+              document.getElementById(`path-${clone.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }}
+          >
+            <Copy size={12} /> Clone
           </button>
           <div className="w-28 h-2 bg-set-panel2 rounded-full overflow-hidden hidden sm:block">
             <div className="h-full bg-green-500/70 transition-all" style={{ width: items.length ? `${(done / items.length) * 100}%` : '0%' }} />

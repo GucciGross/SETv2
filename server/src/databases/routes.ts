@@ -5,6 +5,7 @@ import { requireResourceSpace, requireSpace, rid } from '../lib/http.js';
 import { bus } from '../lib/events.js';
 import { requireSurface } from '../surfaces.js';
 import { recordActivity } from '../team/activity.js';
+import { notifyUser } from '../team/push.js';
 import { chatCompletion, ensureBootstrapProvider, getProvider } from '../llm/router.js';
 
 const columnSchema = z.object({
@@ -337,6 +338,22 @@ export async function pathRoutes(app: FastifyInstance) {
     return { path };
   });
 
+  /** Clone a path (fresh cohort/semester): items + description copied, assignees + due date reset. */
+  app.post('/paths/:id/clone', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'learning_paths', id, 'editor');
+    if (!ctx) return;
+    if (!(await requireSurface(reply, ctx.spaceId, 'paths'))) return;
+    const src = await one<any>(`SELECT title, description, items FROM learning_paths WHERE id = $1`, [id]);
+    if (!src) return reply.code(404).send({ error: 'Path not found' });
+    const clone = await one<any>(
+      `INSERT INTO learning_paths (space_id, title, description, items) VALUES ($1, $2, $3, $4) RETURNING *`,
+      [ctx.spaceId, `${src.title} (copy)`, src.description ?? '', JSON.stringify(src.items ?? [])]
+    );
+    void recordActivity(ctx.spaceId, req.user!.id, 'path_cloned', { pathId: clone!.id, title: clone!.title });
+    return { path: clone };
+  });
+
   app.get('/paths/:id', async (req, reply) => {
     const id = rid((req.params as any).id);
     const ctx = await requireResourceSpace(req, reply, 'learning_paths', id);
@@ -407,6 +424,11 @@ export async function pathRoutes(app: FastifyInstance) {
         `INSERT INTO notifications (user_id, space_id, type, payload) VALUES ($1, $2, 'assigned', $3)`,
         [uid, ctx.spaceId, JSON.stringify({ pathId: id, title: path?.title, dueDate: body.dueDate ?? null, fromName: req.user!.name })]
       );
+      void notifyUser(uid, {
+        title: `${req.user!.name} assigned you a learning path`,
+        body: `${path?.title ?? 'Learning path'}${body.dueDate ? ` — due ${String(body.dueDate).slice(0, 10)}` : ''}`,
+        url: `/app/space/${ctx.spaceId}/paths`,
+      });
     }
     void existing;
     void recordActivity(ctx.spaceId, req.user!.id, 'assigned', { pathId: id, title: path?.title, assignees: body.assignees.length, dueDate: body.dueDate ?? null });

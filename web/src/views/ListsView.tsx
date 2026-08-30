@@ -2,14 +2,29 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useApp } from '../stores/app';
-import { Database, FileText, Plus } from 'lucide-react';
+import { Database, FileText, Plus, Upload } from 'lucide-react';
 
 /** Flat "all pages" list — the dashboard's Pages card lands here. */
 export function PagesList() {
   const { spaceId } = useParams();
   const navigate = useNavigate();
-  const { pages, createPage } = useApp();
+  const { pages, createPage, loadPages } = useApp();
+  const [importing, setImporting] = useState(false);
   const sorted = [...pages].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
+
+  const importZip = async (file: File) => {
+    if (!spaceId) return;
+    setImporting(true);
+    try {
+      const res = await api.upload(`/spaces/${spaceId}/import-zip`, [file]);
+      alert(`Imported ${res.pages} pages${res.databases ? `, ${res.databases} databases` : ''}${res.images ? `, ${res.images} images` : ''}.`);
+      await loadPages(spaceId);
+    } catch (e: any) {
+      alert(`Import failed: ${e.message}`);
+    } finally {
+      setImporting(false);
+    }
+  };
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
@@ -25,6 +40,13 @@ export function PagesList() {
         >
           <Plus size={13} /> New page
         </button>
+        <label
+          className="set-btn text-xs flex items-center gap-1.5 cursor-pointer"
+          title="Import an Obsidian vault or Notion export (zip of .md files, images and CSVs)"
+        >
+          <Upload size={13} /> {importing ? 'Importing…' : 'Import ZIP'}
+          <input type="file" hidden accept=".zip" disabled={importing} onChange={(e) => e.target.files?.[0] && importZip(e.target.files[0])} />
+        </label>
       </div>
       {sorted.length === 0 && <p className="text-sm text-set-dim">No pages yet — create the first one.</p>}
       <div className="set-card divide-y divide-set-border/40">

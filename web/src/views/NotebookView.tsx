@@ -5,7 +5,7 @@ import { api, sse } from '../lib/api';
 import { useAgentContext } from '@copilotkit/react-core/v2';
 import {
   Upload, Link as LinkIcon, ClipboardPaste, RefreshCw, Trash2, Layers, MessageSquare,
-  Network, Clock, BookOpen, GraduationCap, ChevronDown, Mic,
+  Network, Clock, BookOpen, GraduationCap, ChevronDown, Mic, BookMarked,
 } from 'lucide-react';
 import RecorderModal from '../components/Recorder';
 
@@ -125,7 +125,25 @@ export default function NotebookView() {
               onChange={(e) => setNotebook({ ...notebook, title: e.target.value })}
               onBlur={() => api.patch(`/notebooks/${nbId}`, { title: notebook.title }).catch(() => {})}
             />
-            <div className="text-xs text-set-dim">{sources.length} sources · citation-grade grounded research</div>
+            <div className="text-xs text-set-dim flex items-center gap-2">
+              <span>{sources.length} sources · citation-grade grounded research</span>
+              <button
+                className="set-btn-ghost inline-flex items-center gap-1"
+                title="Download every source as a .bib file"
+                onClick={async () => {
+                  const res = await api.raw(`/notebooks/${nbId}/export.bib`);
+                  if (!res.ok) return alert('BibTeX export failed');
+                  const blob = await res.blob();
+                  const a = document.createElement('a');
+                  a.href = URL.createObjectURL(blob);
+                  a.download = `${(notebook.title || 'notebook').replace(/[^\w.-]+/g, '_')}.bib`;
+                  a.click();
+                  URL.revokeObjectURL(a.href);
+                }}
+              >
+                <BookMarked size={12} /> cite (.bib)
+              </button>
+            </div>
             {subjects.length > 0 && (
               <select
                 className="set-input text-xs mt-1.5 w-44"
@@ -195,6 +213,8 @@ export default function NotebookView() {
                     <div className="text-sm text-white truncate">{s.name}</div>
                     <div className="text-xs text-set-dim">
                       {s.chunk_count} chunks · {s.status === 'ready' ? <span className="text-green-400">ready</span> : s.status === 'error' ? <span className="text-red-400" title={s.error}>error</span> : <span className="text-amber-300 animate-pulse">{s.status}…</span>}
+                      {s.meta?.ocr && <span className="ml-1 text-blue-300" title="No text layer — extracted via Firecrawl AnyDoc OCR">· OCR</span>}
+                      {s.meta?.scanned && <span className="ml-1 text-amber-400" title="This PDF is a scan with no text layer">· scanned, no text — add a Firecrawl key in Settings → Deep Research for OCR</span>}
                     </div>
                   </div>
                   {s.meta?.notes_page_id && (
@@ -508,6 +528,7 @@ function KnowledgeViews({ notebookId }: { notebookId: string; spaceId: string })
 function StudyGenerator({ notebookId, spaceId }: { notebookId: string; spaceId: string }) {
   const navigate = useNavigate();
   const [topic, setTopic] = useState('');
+  const [openCount, setOpenCount] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [decks, setDecks] = useState<any[]>([]);
 
@@ -521,7 +542,11 @@ function StudyGenerator({ notebookId, spaceId }: { notebookId: string; spaceId: 
   const generate = async (kind: string) => {
     setBusy(kind);
     try {
-      const { deck } = await api.post(`/notebooks/${notebookId}/generate`, { kind, topic: topic || undefined });
+      const { deck } = await api.post(`/notebooks/${notebookId}/generate`, {
+        kind,
+        topic: topic || undefined,
+        openCount: kind === 'quiz' ? openCount || undefined : undefined,
+      });
       navigate(`/app/space/${spaceId}/notebook/${notebookId}/deck/${deck.id}`);
     } catch (e: any) {
       alert(e.message);
@@ -532,7 +557,7 @@ function StudyGenerator({ notebookId, spaceId }: { notebookId: string; spaceId: 
 
   const kinds = [
     ['flashcards', ' Flashcards', 'Spaced-repetition cards'],
-    ['quiz', ' Quiz', 'Multiple choice with explanations'],
+    ['quiz', ' Quiz', 'Multiple choice + explanations'],
     ['studyguide', ' Study guide', 'Structured markdown guide'],
     ['audio', ' Audio overview', 'Two-host script, playable'],
   ];
@@ -542,6 +567,18 @@ function StudyGenerator({ notebookId, spaceId }: { notebookId: string; spaceId: 
       <div className="set-card p-4 mb-4">
         <div className="text-sm font-medium text-white mb-2">Generate study material from this notebook</div>
         <input className="set-input mb-3" placeholder="Optional topic focus (e.g. 'actuator torque limits')" value={topic} onChange={(e) => setTopic(e.target.value)} />
+        <label className="flex items-center gap-2 text-xs text-set-dim mb-3" title="Short-answer questions graded manually by an editor — for assessed quizzes">
+          open-answer questions:
+          <input
+            className="set-input w-16"
+            type="number"
+            min={0}
+            max={10}
+            value={openCount}
+            onChange={(e) => setOpenCount(Math.max(0, Math.min(10, Number(e.target.value) || 0)))}
+          />
+          <span>(quiz only — graded manually)</span>
+        </label>
         <div className="grid grid-cols-2 gap-2">
           {kinds.map(([kind, label, desc]) => (
             <button key={kind} className="set-card p-3 text-left hover:border-set-accent/50" onClick={() => generate(kind)} disabled={!!busy}>

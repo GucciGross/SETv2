@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { marked } from 'marked';
 import { api } from '../lib/api';
-import { InlineQuiz, InlineFlashcards } from '../components/A2UI';
+import { InlineFlashcards } from '../components/A2UI';
+import QuizPanel from '../components/QuizPanel';
 import { Package } from 'lucide-react';
 
 const md = (s: string) => ({ __html: marked.parse(s ?? '', { async: false }) as string });
@@ -42,7 +43,7 @@ export default function StudyView() {
         </button>
       </div>
       {deck.kind === 'flashcards' && <InlineFlashcards props={{ deckId: deck.id, title: deck.title, cards: items.cards }} />}
-      {deck.kind === 'quiz' && <InlineQuiz props={{ deckId: deck.id, title: deck.title, items: items.items }} />}
+      {deck.kind === 'quiz' && <QuizPanel deckId={deck.id} />}
       {deck.kind === 'studyguide' && (
         <div className="set-card p-6">
           <h1 className="text-xl font-bold text-white mb-3"> {deck.title}</h1>

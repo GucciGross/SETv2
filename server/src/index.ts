@@ -9,6 +9,7 @@ import { config } from './config.js';
 import { migrate } from './migrate.js';
 import { bus } from './lib/events.js';
 import { authRoutes } from './auth/routes.js';
+import { oidcRoutes } from './auth/oidc.js';
 import { spaceRoutes } from './spaces/routes.js';
 import { pageRoutes } from './pages/routes.js';
 import { databaseRoutes, pathRoutes } from './databases/routes.js';
@@ -25,6 +26,7 @@ import { fileRoutes } from './files/routes.js';
 import { libraryRoutes } from './library/routes.js';
 import { codeRoutes, terminalRoutes } from './code/routes.js';
 import { notificationRoutes, commentRoutes, pathProgressRoutes } from './team/routes.js';
+import { pushRoutes } from './team/push.js';
 import { myTasksRoutes, kitRoutes } from './team/mytasks.js';
 import { waitlistRoutes } from './waitlist.js';
 import { activityRoutes } from './team/activity.js';
@@ -34,10 +36,27 @@ import { skillsRoutes, seedSkills, getActiveSkillPrompt } from './skills/routes.
 import { onboardingRoutes } from './onboarding/routes.js';
 import { copilotKitRoutes } from './copilotkit/route.js';
 import { channelRoutes } from './channels/routes.js';
+import { clipRoutes } from './clip/routes.js';
 import { seed } from './seed.js';
 
 async function main() {
   const app = Fastify({ logger: true, bodyLimit: 64 * 1024 * 1024 });
+
+  // /api/clip is posted by the clipper bookmarklet from arbitrary origins.
+  // The cors plugin's origin callback can't see the URL, so open CORS for the
+  // clip route manually — this hook is registered first and Fastify runs
+  // same-scope hooks in order, letting it answer the preflight itself.
+  app.addHook('onRequest', async (req, reply) => {
+    if (!req.url.startsWith('/api/clip')) return;
+    reply.header('Access-Control-Allow-Origin', req.headers.origin ?? '*');
+    reply.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    reply.header('Vary', 'Origin');
+    if (req.method === 'OPTIONS') {
+      reply.code(204).send();
+      return reply;
+    }
+  });
 
   await app.register(cors, { origin: config.webOrigin === '*' ? true : config.webOrigin.split(','), credentials: true });
   await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024 } });
@@ -72,8 +91,18 @@ async function main() {
     }
   });
 
+  // clipper lives in its own scope: the bookmarklet posts cross-origin, so it
+  // carries its own permissive CORS registration instead of the main API's
+  await app.register(clipRoutes, { prefix: '/api' });
+
   await app.register(async (api) => {
     await authRoutes(api);
+    await oidcRoutes(api);
+    // public instance metadata: version + SSO availability (login page, about)
+    api.get('/meta', async () => {
+      const { oidcEnabled } = await import('./auth/oidc.js');
+      return { version: '2.1.0', sso: { enabled: oidcEnabled(), name: config.oidc.displayName } };
+    });
     await spaceRoutes(api);
     await onboardingRoutes(api);
     await pageRoutes(api);
@@ -93,6 +122,7 @@ async function main() {
     await codeRoutes(api);
     await terminalRoutes(api);
     await notificationRoutes(api);
+    await pushRoutes(api);
     await commentRoutes(api);
     await pathProgressRoutes(api);
     await myTasksRoutes(api);

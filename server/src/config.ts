@@ -49,6 +49,12 @@ const env = z
     // LLM gateway (PLAN.md Phase 5): internal URL of the OpenAI-compatible
     // proxy. When set, spaces can enable the managed "SET Cloud" provider.
     GATEWAY_URL: z.string().optional(),
+    // Single sign-on (OIDC): any compliant provider — Google Workspace,
+    // Keycloak, Authentik, Auth0, Zitadel… Auto-provisions users by email.
+    OIDC_ISSUER: z.string().optional(),
+    OIDC_CLIENT_ID: z.string().optional(),
+    OIDC_CLIENT_SECRET: z.string().optional(),
+    OIDC_NAME: z.string().optional(),
   })
   .passthrough()
   .parse(process.env);
@@ -84,6 +90,12 @@ export const config = {
   mcpEnabled: env.MCP_ENABLED !== '0',
   researchServiceUrl: env.RESEARCH_SERVICE_URL,
   gatewayUrl: env.GATEWAY_URL,
+  oidc: {
+    issuer: env.OIDC_ISSUER || '',
+    clientId: env.OIDC_CLIENT_ID || '',
+    clientSecret: env.OIDC_CLIENT_SECRET || '',
+    displayName: env.OIDC_NAME || 'SSO',
+  },
   transcribe: {
     baseUrl: env.TRANSCRIBE_BASE_URL || env.LLM_BASE_URL,
     apiKey: env.TRANSCRIBE_API_KEY || env.LLM_API_KEY,

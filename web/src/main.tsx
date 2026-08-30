@@ -48,6 +48,7 @@ import AgentsLanding from './views/AgentsLanding';
 import DashboardView from './views/DashboardView';
 import Reset from './views/Reset';
 import Join from './views/Join';
+import ShareView from './views/ShareView';
 import ActivityView from './views/ActivityView';
 import CapturesView from './views/CapturesView';
 import MyTasksView from './views/MyTasksView';
@@ -60,6 +61,7 @@ const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
   { path: '/docs', element: <DocsView standalone /> },
   { path: '/reset', element: <Reset /> },
+  { path: '/share/:token', element: <ShareView /> },
   { path: '/join', element: <Join /> },
   { path: '/oauth/consent', element: <Consent /> },
   { path: '/agents', element: <AgentsLanding /> },

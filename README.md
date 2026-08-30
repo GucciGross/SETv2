@@ -32,11 +32,12 @@ your desktop when you ask it to.
 
 | Layer | What you get |
 |---|---|
-| 📝 **Structured Workspace** | Rich block editor (TipTap) with tables, images, highlights, slash menu & `[[autocomplete]]`, relational databases with table/kanban/calendar/gallery views, spaces, roles & permissions |
-| 🕸 **Knowledge Graph** | Wiki links with bidirectional backlinks, unlinked mentions, block references with permanent IDs, live force-directed graph, full Markdown round-trip, daily notes |
-| 🔬 **Grounded Research** | Multi-source notebooks (PDF / web / transcripts / datasets), structure-aware chunking with human-in-the-loop correction, chat with inline `[1] [2]` citations, deep-research runs with a formatted paper view, knowledge views (mind map / tree / timeline / index) |
-| 🎓 **Learning System** | Generated flashcards, quizzes, study guides & two-host audio overviews, SM-2 spaced repetition, learning paths with deadlines and per-member progress |
+| 📝 **Structured Workspace** | Rich block editor (TipTap) with tables, images, highlights, slash menu & `[[autocomplete]]`, page version history with diff + restore, relational databases with table/kanban/calendar/gallery views, spaces, roles & permissions |
+| 🕸 **Knowledge Graph** | Wiki links with bidirectional backlinks, unlinked mentions, block references with permanent IDs, live force-directed graph, full Markdown round-trip, daily notes, Obsidian & Notion import, revocable public share links |
+| 🔬 **Grounded Research** | Multi-source notebooks (PDF / web / transcripts / datasets, OCR for scanned PDFs via Firecrawl AnyDoc), web clipper bookmarklet, structure-aware chunking with human-in-the-loop correction, chat with inline `[1] [2]` citations, BibTeX export, deep-research runs with a formatted paper view, knowledge views (mind map / tree / timeline / index) |
+| 🎓 **Learning System** | Generated flashcards, quizzes (practice or assessed: timed, shuffled, attempt caps, bank draws, manually-graded open answers), study guides & two-host audio overviews, SM-2 spaced repetition, learning paths with deadlines and per-member progress, gradebook CSV export |
 | 🤖 **AI Copilot** | Streaming agent runtime with workspace tools, human-in-the-loop approvals, generative UI (cards, tables, forms, quizzes, flashcards, 3D viewers) rendered natively in chat |
+| 🤝 **Teams** | Spaces + roles with an audited activity trail (filterable, CSV-exportable), assignments with deadlines, roster CSV invite, course cloning, web push notifications, comments, My Tasks |
 | 🖥 **Computer Use** *(new)* | The agent sees real desktop apps — annotated captures (screenshot + numbered element index) — and can click, type and scroll **only** with your explicit opt-in, action-by-action approval |
 
 ### Optional work surfaces — power features are opt-in
@@ -164,6 +165,31 @@ Or run Ollama inside the stack: `docker compose --profile ollama up -d`.
    # add SET_ALLOW_INPUT=1 to permit clicks/typing (still approval-gated)
    ```
 4. Ask the copilot to look at (or operate) a desktop app.
+
+### Backups (self-host ops kit)
+
+One command grabs everything — Postgres dump plus the data volume (uploads, captures, 3D models, push keys):
+
+```bash
+./scripts/ops/backup.sh                      # → set-backup-<timestamp>.tar.gz
+BACKUP_DIR=/mnt/nas ./scripts/ops/backup.sh  # or write it elsewhere
+./scripts/ops/restore.sh set-backup-…tar.gz  # put it all back (destructive, asks first)
+```
+
+Schedule it with cron (`0 3 * * *  cd /srv/set && ./scripts/ops/backup.sh`) and move archives off the machine.
+
+### Single sign-on (OIDC)
+
+Any OIDC provider works — Google Workspace, Keycloak, Authentik, Auth0, Zitadel. Set env vars on the server and a **Continue with …** button appears on the login page; users are matched by email and auto-provisioned with an SSO-only account:
+
+```yaml
+OIDC_ISSUER: https://auth.example.com/realms/set
+OIDC_CLIENT_ID: set
+OIDC_CLIENT_SECRET: …
+OIDC_NAME: Acme SSO        # button label (optional)
+```
+
+Redirect URI to register with the provider: `<your SET URL>/api/auth/oidc/callback`.
 
 ### Local development
 

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { one, q } from '../db.js';
 import { requireResourceSpace, requireUser, rid } from '../lib/http.js';
 import { recordActivity } from './activity.js';
+import { notifyUser } from './push.js';
 
 /**
  * Team layer v1: notifications feed, page comments, and per-member progress
@@ -133,6 +134,11 @@ export async function commentRoutes(app: FastifyInstance) {
         type,
         JSON.stringify({ pageId: id, pageTitle: page.title, fromName: user.name, commentId: comment!.id }),
       ]);
+      void notifyUser(r.user_id, {
+        title: type === 'mention' ? `${user.name} mentioned you` : `${user.name} commented`,
+        body: `${page.title}`,
+        url: `/app/space/${page.space_id}/page/${id}`,
+      });
     }
     for (const uid of mentioned) {
       if (recipients.some((r) => r.user_id === uid)) continue;
@@ -141,6 +147,11 @@ export async function commentRoutes(app: FastifyInstance) {
         page.space_id,
         JSON.stringify({ pageId: id, pageTitle: page.title, fromName: user.name, commentId: comment!.id }),
       ]);
+      void notifyUser(uid, {
+        title: `${user.name} mentioned you`,
+        body: `${page.title}`,
+        url: `/app/space/${page.space_id}/page/${id}`,
+      });
     }
     void recordActivity(page.space_id, user.id, 'comment', { pageId: id, pageTitle: page.title });
     return { comment: { ...comment, author_name: user.name, author_id: user.id } };

@@ -235,8 +235,22 @@ function AppShellInner() {
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [newSpaceName, setNewSpaceName] = useState('');
   const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const onboarding = (user as any)?.onboarding;
   const simple = shellMode === 'simple';
+
+  // "?" anywhere (outside a text field) opens the keyboard cheat sheet
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '?' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      e.preventDefault();
+      setHelpOpen((o) => !o);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     if (spaceId && spaceId !== currentSpaceId) setCurrentSpace(spaceId);
@@ -603,6 +617,31 @@ function AppShellInner() {
 
       {/* Copilot */}
       <CommandPalette />
+
+      {/* Keyboard cheat sheet (press ?) */}
+      {helpOpen && (
+        <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setHelpOpen(false)}>
+          <div className="set-card bg-set-panel w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-white mb-3">Keyboard</h3>
+            <div className="space-y-2 text-sm">
+              {([
+                ['Ctrl / ⌘ K', 'Command palette — jump to any page, notebook or action'],
+                ['?', 'This cheat sheet'],
+                ['Esc', 'Close dialogs and overlays'],
+                ['Ctrl / ⌘ ⏎', 'Submit a comment'],
+                ['[[', 'Link a page inside the editor'],
+                ['/', 'Open the editor block menu'],
+              ] as const).map(([keys, what]) => (
+                <div key={keys} className="flex items-baseline gap-3">
+                  <kbd className="set-mono text-xs bg-set-panel2 border border-set-border rounded px-1.5 py-0.5 whitespace-nowrap">{keys}</kbd>
+                  <span className="text-set-dim">{what}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-set-dim mt-4">Pages autosave as you type — no save shortcut needed.</p>
+          </div>
+        </div>
+      )}
 
       {/* On-screen guide agent */}
       <GuideFab />

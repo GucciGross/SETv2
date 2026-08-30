@@ -44,7 +44,8 @@ export async function generateDeck(
   notebookId: string | null,
   kind: 'flashcards' | 'quiz' | 'studyguide' | 'audio',
   topic: string | undefined,
-  count = 12
+  count = 12,
+  openCount = 0
 ): Promise<any> {
   const provider = await getProvider(spaceId);
   if (!provider) throw new Error('No LLM provider configured — add one in Settings  AI Providers');
@@ -63,11 +64,14 @@ export async function generateDeck(
     return { cards: (out.cards ?? out).slice(0, 40) as Flashcard[] };
   }
   if (kind === 'quiz') {
+    const openSpec = openCount > 0
+      ? ` Also include exactly ${openCount} open short-answer questions as objects {"type":"open","question":"...","answerReference":"model answer in 1-3 sentences","points":2}.`
+      : '';
     const out = await llmJson(
       provider,
       [
         { role: 'system', content: 'You generate multiple-choice quizzes strictly grounded in the provided sources.' },
-        { role: 'user', content: `Create ${count} multiple-choice questions${topic ? ` about: ${topic}` : ''}.\nReturn JSON: {"items":[{"question":"...","options":["A","B","C","D"],"answerIndex":0,"explanation":"..."}]}\n\nSources:\n${ctx}` },
+        { role: 'user', content: `Create ${count} multiple-choice questions${topic ? ` about: ${topic}` : ''}.${openSpec}\nReturn JSON: {"items":[{"type":"mcq","question":"...","options":["A","B","C","D"],"answerIndex":0,"explanation":"..."}]}\n\nSources:\n${ctx}` },
       ],
       { items: [] }
     );

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera, Gauge, Cloud } from 'lucide-react';
+import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera, Gauge, Cloud, Scissors, Trash2, Bell, Upload } from 'lucide-react';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 import McpSettings from '../components/McpSettings';
@@ -10,7 +10,7 @@ import { DitherButton } from '../components/dither-kit';
 
 export default function SettingsView() {
   const { spaceId } = useParams();
-  const [tab, setTab] = useState<'surfaces' | 'skills' | 'mcp' | 'channels' | 'mascot' | 'providers' | 'members' | 'workspace' | 'research' | 'companion'>('surfaces');
+  const [tab, setTab] = useState<'surfaces' | 'skills' | 'mcp' | 'channels' | 'mascot' | 'providers' | 'members' | 'workspace' | 'research' | 'companion' | 'clipper' | 'notifications'>('surfaces');
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
@@ -27,6 +27,8 @@ export default function SettingsView() {
           ['workspace', 'Workspace', <ShieldCheck key="c" size={14} />],
           ['research', 'Deep Research', <Telescope key="r" size={14} />],
           ['companion', 'Companion', <MonitorSmartphone key="cp" size={14} />],
+          ['clipper', 'Clipper', <Scissors key="cli" size={14} />],
+          ['notifications', 'Notifications', <Bell key="nt" size={14} />],
         ] as const).map(([id, label, icon]) => (
           <button key={id} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm ${tab === id ? 'bg-set-accent/20 text-blue-200' : 'text-set-dim hover:text-set-text'}`} onClick={() => setTab(id)}>
             {icon} {label}
@@ -43,6 +45,8 @@ export default function SettingsView() {
       {tab === 'workspace' && <WorkspaceTab spaceId={spaceId!} />}
       {tab === 'research' && <ResearchTab spaceId={spaceId!} />}
       {tab === 'companion' && <CompanionTab spaceId={spaceId!} />}
+      {tab === 'clipper' && <ClipperTab />}
+      {tab === 'notifications' && <NotificationsTab />}
     </div>
   );
 }
@@ -540,6 +544,28 @@ function MembersTab({ spaceId }: { spaceId: string }) {
     }
   };
 
+  const [rosterBusy, setRosterBusy] = useState(false);
+  const importRoster = async (file: File) => {
+    setMsg(null);
+    setRosterBusy(true);
+    try {
+      const csv = await file.text();
+      const res = await api.post(`/spaces/${spaceId}/invite-bulk`, { csv, defaultRole: 'editor' });
+      const s = res.summary;
+      setMsg({
+        ok: true,
+        text: `Roster: ${s.added} added, ${s.invited} invited by email${s.already ? `, ${s.already} already members` : ''}${
+          res.results.some((r: any) => r.result === 'invited' && !r.emailed) ? ' — email not configured on this server, invite links are in the server log' : ''
+        }`,
+      });
+      load();
+    } catch (e: any) {
+      setMsg({ ok: false, text: e.message });
+    } finally {
+      setRosterBusy(false);
+    }
+  };
+
   return (
     <div>
       <div className="set-card p-4 mb-4 flex flex-wrap gap-2">
@@ -551,6 +577,16 @@ function MembersTab({ spaceId }: { spaceId: string }) {
         <button className="set-btn-primary" onClick={invite}>Invite</button>
       </div>
       <p className="text-xs text-set-dim mb-3 -mt-2 ml-1">Existing users are added instantly; anyone else gets an invite email with a sign-up link.</p>
+      <div className="set-card p-4 mb-4 flex flex-wrap items-center gap-2">
+        <div className="flex-1 min-w-[200px]">
+          <div className="text-sm text-white">Import a whole roster</div>
+          <div className="text-xs text-set-dim">CSV with an email column (header row fine); an optional <code>editor</code>/<code>viewer</code> column sets the role.</div>
+        </div>
+        <label className="set-btn cursor-pointer text-sm flex items-center gap-1.5">
+          <Upload size={13} /> {rosterBusy ? 'Importing…' : 'Upload CSV'}
+          <input type="file" hidden accept=".csv,text/csv" disabled={rosterBusy} onChange={(e) => e.target.files?.[0] && importRoster(e.target.files[0])} />
+        </label>
+      </div>
       {msg && <p className={`text-xs mb-3 break-all ${msg.ok ? 'text-green-400' : 'text-red-400'}`}>{msg.text}</p>}
       <div className="space-y-2">
         {members.map((m) => (
@@ -1001,6 +1037,192 @@ function CompanionTab({ spaceId }: { spaceId: string }) {
           {tokens.length === 0 && <p className="text-xs text-set-dim">No tokens yet.</p>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Bookmarklet source — keeps the token inline so it works from any page. */
+function clipperBookmarklet(origin: string, token: string) {
+  const code = `(function(){var s=String(window.getSelection()).trim();var t=s||document.body.innerText;if(!t||!t.trim()){alert('Nothing to clip on this page.');return;}fetch('${origin}/api/clip',{method:'POST',headers:{'content-type':'application/json','authorization':'Bearer ${token}'},body:JSON.stringify({url:location.href,title:document.title,text:t.slice(0,200000)})}).then(function(r){return r.json().then(function(j){return r.ok&&j.ok})}).then(function(ok){alert(ok?'Clipped to SET - check your Clips notebook':'Clip failed')}).catch(function(e){alert('Clip failed: '+e)});})()`;
+  return 'javascript:' + encodeURIComponent(code);
+}
+
+function ClipperTab() {
+  const [tokens, setTokens] = useState<any[]>([]);
+  const [fresh, setFresh] = useState<string | null>(null); // plaintext, shown once
+  const [copied, setCopied] = useState(false);
+
+  const load = () => api.get('/users/clip-tokens').then((r) => setTokens(r.tokens)).catch(() => {});
+  useEffect(() => {
+    load();
+  }, []);
+
+  const create = async () => {
+    const { token } = await api.post('/users/clip-tokens', { name: 'bookmarklet' });
+    setFresh(token.plaintext);
+    setCopied(false);
+    load();
+  };
+
+  const revoke = async (id: string) => {
+    if (!confirm('Revoke this clip token? The bookmarklet stops working immediately.')) return;
+    await api.del(`/users/clip-tokens/${id}`);
+    load();
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="set-card p-4">
+        <h3 className="font-semibold text-white mb-1 flex items-center gap-1.5"><Scissors size={14} /> Web clipper</h3>
+        <p className="text-sm text-set-dim mb-3">
+          Clip any web page (or just your selection) straight into this SET's <b>Clips</b> notebook, where it becomes a
+          searchable, citable source. Create a token, then drag the link below onto your bookmarks bar.
+        </p>
+        <button className="set-btn-primary text-sm flex items-center gap-1.5" onClick={create}>
+          <Plus size={14} /> Create clip token
+        </button>
+        {fresh && (
+          <div className="mt-3 space-y-2">
+            <div className="text-xs text-amber-300">Copy this token now — it is shown only once. Treat it like a password.</div>
+            <div className="flex gap-2">
+              <code className="set-input flex-1 text-xs overflow-x-auto whitespace-nowrap">{fresh}</code>
+              <button
+                className="set-btn text-xs flex items-center gap-1.5"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(fresh);
+                  setCopied(true);
+                }}
+              >
+                {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <a
+              href={clipperBookmarklet(window.location.origin, fresh)}
+              onClick={(e) => e.preventDefault()}
+              className="inline-flex items-center gap-1.5 set-btn-primary text-sm no-underline"
+              title="Drag me to your bookmarks bar"
+            >
+              <Scissors size={14} /> ✂ Clip to SET — drag me to your bookmarks bar
+            </a>
+          </div>
+        )}
+      </div>
+      <div className="set-card p-4">
+        <h3 className="font-semibold text-white mb-2">Tokens</h3>
+        {tokens.length === 0 && <p className="text-sm text-set-dim">No clip tokens yet.</p>}
+        <div className="space-y-1">
+          {tokens.map((t) => (
+            <div key={t.id} className="flex items-center gap-2 text-sm py-1">
+              <span className="flex-1 truncate">{t.name}</span>
+              <span className="text-xs text-set-dim">
+                created {new Date(t.created_at).toLocaleDateString()}
+                {t.last_used_at ? ` · last used ${new Date(t.last_used_at).toLocaleDateString()}` : ' · never used'}
+              </span>
+              <button className="text-set-dim hover:text-red-400" onClick={() => revoke(t.id)} title="Revoke">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+        {tokens.length > 0 && !fresh && (
+          <p className="text-xs text-set-dim mt-2">Need the bookmarklet again? Create a new token — old ones keep working until revoked.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
+  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + padding).replace(/-/g, '+').replace(/_/g, '/'));
+  const out = new Uint8Array(new ArrayBuffer(raw.length));
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function NotificationsTab() {
+  const [permission, setPermission] = useState<string>(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported');
+  const [subscribed, setSubscribed] = useState<boolean | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setSubscribed(false);
+      return;
+    }
+    navigator.serviceWorker.getRegistration('/sw.js').then(async (reg) => {
+      if (!reg) return setSubscribed(false);
+      const sub = await reg.pushManager.getSubscription();
+      setSubscribed(!!sub);
+    });
+  }, []);
+
+  const enable = async () => {
+    setMsg(null);
+    try {
+      const perm = await Notification.requestPermission();
+      setPermission(perm);
+      if (perm !== 'granted') return setMsg('Permission denied — allow notifications for this site in your browser settings.');
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      const { publicKey } = await api.get('/push/vapid-key');
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+      }
+      const json = sub.toJSON();
+      await api.post('/push/subscribe', { endpoint: json.endpoint, keys: json.keys });
+      setSubscribed(true);
+      setMsg('Push enabled — mentions, comments and assignments will reach this device.');
+    } catch (e: any) {
+      setMsg(`Couldn't enable push: ${e.message}`);
+    }
+  };
+
+  const disable = async () => {
+    setMsg(null);
+    try {
+      const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+      const sub = reg ? await reg.pushManager.getSubscription() : null;
+      if (sub) {
+        await api.del(`/push/subscribe?endpoint=${encodeURIComponent(sub.endpoint)}`);
+        await sub.unsubscribe();
+      }
+      setSubscribed(false);
+      setMsg('Push disabled for this device.');
+    } catch (e: any) {
+      setMsg(`Couldn't disable: ${e.message}`);
+    }
+  };
+
+  return (
+    <div className="set-card p-4">
+      <h3 className="font-semibold text-white mb-1 flex items-center gap-1.5"><Bell size={14} /> Push notifications</h3>
+      <p className="text-sm text-set-dim mb-3">
+        Get @mentions, comments and learning-path assignments on this device — even when SET isn't open.
+        Works best with SET installed as an app (PWA).
+      </p>
+      <div className="text-xs text-set-dim mb-3">
+        Browser permission: <span className={permission === 'granted' ? 'text-green-400' : 'text-amber-300'}>{permission}</span>
+        {subscribed !== null && (
+          <>
+            {' · '}this device: <span className={subscribed ? 'text-green-400' : 'text-set-dim'}>{subscribed ? 'subscribed' : 'not subscribed'}</span>
+          </>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <button className="set-btn-primary text-sm" onClick={enable} disabled={permission === 'denied'}>
+          {subscribed ? 'Re-enable / sync' : 'Enable push'}
+        </button>
+        {subscribed && (
+          <button className="set-btn text-sm" onClick={disable}>Disable</button>
+        )}
+      </div>
+      {permission === 'denied' && <p className="text-xs text-red-300 mt-2">Notifications are blocked for this site — unblock them in your browser's site settings, then retry.</p>}
+      {msg && <p className="text-xs text-set-dim mt-2">{msg}</p>}
     </div>
   );
 }

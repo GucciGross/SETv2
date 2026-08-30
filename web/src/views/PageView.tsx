@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Link2, ArrowUpRight, Download, MailQuestion } from 'lucide-react';
+import { Link2, ArrowUpRight, Download, MailQuestion, History, RotateCcw, Share2, Copy, Check, ExternalLink, Ban } from 'lucide-react';
 import Editor from '../components/Editor';
 import { useAgentContext } from '@copilotkit/react-core/v2';
 import { registerEditor } from '../lib/editorBridge';
 import { MessageSquare, Send } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../stores/app';
+import { collapseContext, diffLines } from '../lib/diff';
 
 interface PageData {
   id: string;
@@ -102,13 +103,162 @@ function Comments({ pageId }: { pageId: string }) {
   );
 }
 
+function VersionHistory({ pageId, currentMarkdown, onRestored }: { pageId: string; currentMarkdown: string; onRestored: () => void }) {
+  const [versions, setVersions] = useState<any[]>([]);
+  const [selected, setSelected] = useState<any>(null);
+  const [preview, setPreview] = useState<{ title: string; markdown: string } | null>(null);
+  const [restoring, setRestoring] = useState(false);
+
+  const load = () => api.get(`/pages/${pageId}/versions`).then((r) => setVersions(r.versions)).catch(() => {});
+  useEffect(() => {
+    load();
+  }, [pageId, currentMarkdown]);
+
+  const open = (v: any) => {
+    setSelected(v);
+    setPreview(null);
+    api.get(`/pages/${pageId}/versions/${v.id}`).then((r) => setPreview(r.version)).catch(() => {});
+  };
+
+  const restore = async () => {
+    if (!selected || restoring) return;
+    if (!confirm('Restore this version? The current content is saved to history first, so this is undoable.')) return;
+    setRestoring(true);
+    try {
+      await api.post(`/pages/${pageId}/versions/${selected.id}/restore`);
+      onRestored();
+      setSelected(null);
+      setPreview(null);
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  if (versions.length === 0) {
+    return <p className="text-xs text-set-dim p-2">No history yet — it fills in as the page is edited.</p>;
+  }
+  return (
+    <div className="p-2 space-y-1">
+      {versions.map((v) => (
+        <button
+          key={v.id}
+          onClick={() => open(v)}
+          className={`w-full text-left px-2 py-1.5 rounded text-sm ${selected?.id === v.id ? 'bg-set-accent/20' : 'hover:bg-set-panel2'}`}
+        >
+          <div className="text-set-text truncate">{new Date(v.created_at).toLocaleString()}</div>
+          <div className="text-[10px] text-set-dim">
+            {v.edited_by_name || 'unknown'} · {v.size} chars
+          </div>
+        </button>
+      ))}
+      {selected && (
+        <div className="pt-2 mt-2 border-t border-set-border">
+          <button className="set-btn-primary w-full text-xs flex items-center justify-center gap-1.5" onClick={restore} disabled={restoring}>
+            <RotateCcw size={12} /> {restoring ? 'Restoring…' : 'Restore this version'}
+          </button>
+        </div>
+      )}
+      {preview && (
+        <div className="mt-2 border border-set-border rounded-lg overflow-hidden">
+          <div className="px-2 py-1 text-[10px] uppercase text-set-dim bg-set-panel2">Changes vs. now</div>
+          <div className="max-h-72 overflow-auto font-mono text-[11px] leading-4">
+            {collapseContext(diffLines(preview.markdown, currentMarkdown), 1).map((l, i) =>
+              l.kind === 'gap' ? (
+                <div key={i} className="text-set-dim/60 px-2">{l.text}</div>
+              ) : (
+                <div
+                  key={i}
+                  className={`px-2 whitespace-pre-wrap break-words ${
+                    l.kind === 'add' ? 'bg-green-500/10 text-green-300' : l.kind === 'del' ? 'bg-red-500/10 text-red-300' : 'text-set-dim'
+                  }`}
+                >
+                  {l.kind === 'add' ? '+ ' : l.kind === 'del' ? '- ' : '  '}
+                  {l.text || '\u00A0'}
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ShareMenu({ pageId }: { pageId: string }) {
+  const [open, setOpen] = useState(false);
+  const [shares, setShares] = useState<any[]>([]);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const load = () => api.get(`/pages/${pageId}/shares`).then((r) => setShares(r.shares)).catch(() => {});
+  useEffect(() => {
+    if (open) load();
+  }, [open, pageId]);
+
+  const create = async () => {
+    await api.post(`/pages/${pageId}/share`);
+    load();
+  };
+
+  const revoke = async (id: string) => {
+    if (!confirm('Revoke this link? Anyone opening it will get a "no longer available" page.')) return;
+    await api.del(`/share-links/${id}`);
+    load();
+  };
+
+  const copy = async (token: string) => {
+    await navigator.clipboard.writeText(`${window.location.origin}/share/${token}`);
+    setCopied(token);
+    setTimeout(() => setCopied(null), 1500);
+  };
+
+  const active = shares.filter((s) => !s.revoked_at);
+
+  return (
+    <span className="relative inline-block">
+      <button className="set-btn-ghost inline-flex items-center gap-1" onClick={() => setOpen((o) => !o)}>
+        <Share2 size={12} /> share {active.length > 0 && <span className="text-green-400">{active.length}</span>}
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 left-0 w-72 set-card p-2.5 shadow-xl">
+          <div className="text-xs text-set-dim mb-2">
+            Publish this page to a read-only link anyone can open — no account needed.
+          </div>
+          <button className="set-btn-primary text-xs w-full mb-2" onClick={create}>
+            {active.length > 0 ? 'New link' : 'Create public link'}
+          </button>
+          <div className="space-y-1 max-h-52 overflow-auto">
+            {shares.map((s) => (
+              <div key={s.id} className={`flex items-center gap-1.5 text-xs px-1.5 py-1 rounded ${s.revoked_at ? 'opacity-50' : 'hover:bg-set-panel2'}`}>
+                <button className="flex-1 text-left truncate font-mono" onClick={() => !s.revoked_at && copy(s.token)} title={s.revoked_at ? 'revoked' : 'click to copy'}>
+                  /share/{s.token.slice(0, 10)}…
+                </button>
+                <span className="text-set-dim whitespace-nowrap" title="views">
+                  {s.view_count}
+                  <ExternalLink size={10} className="inline ml-0.5 -mt-0.5" />
+                </span>
+                {copied === s.token ? (
+                  <Check size={12} className="text-green-400" />
+                ) : (
+                  !s.revoked_at && <Copy size={12} className="text-set-dim cursor-pointer hover:text-set-text" onClick={() => copy(s.token)} />
+                )}
+                {!s.revoked_at && <Ban size={12} className="text-set-dim cursor-pointer hover:text-red-400" onClick={() => revoke(s.id)} />}
+              </div>
+            ))}
+            {shares.length === 0 && <div className="text-xs text-set-dim px-1.5 py-1">No links yet.</div>}
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
 export default function PageView() {
   const { spaceId, pageId } = useParams();
   const navigate = useNavigate();
   const { pages, createPage, loadPages } = useApp();
   const [page, setPage] = useState<PageData | null>(null);
   const [title, setTitle] = useState('');
-  const [tab, setTab] = useState<'backlinks' | 'mentions'>('backlinks');
+  const [tab, setTab] = useState<'backlinks' | 'mentions' | 'history'>('backlinks');
   const [backlinks, setBacklinks] = useState<any[]>([]);
   const [outgoing, setOutgoing] = useState<any[]>([]);
   const [mentions, setMentions] = useState<any[]>([]);
@@ -206,6 +356,7 @@ export default function PageView() {
                 >
                   <Download size={12} /> export .md
                 </button>
+                <ShareMenu pageId={page.id} />
               </div>
             </div>
           </div>
@@ -219,18 +370,18 @@ export default function PageView() {
       {/* Linked mentions side panel */}
       <div className="w-64 shrink-0 border-l border-set-border bg-set-panel/60 overflow-y-auto hidden xl:block">
         <div className="flex border-b border-set-border text-sm">
-          {(['backlinks', 'mentions'] as const).map((t) => (
+          {(['backlinks', 'mentions', 'history'] as const).map((t) => (
             <button
               key={t}
               className={`flex-1 py-2.5 px-2 capitalize ${tab === t ? 'text-white border-b-2 border-set-accent' : 'text-set-dim hover:text-set-text'}`}
               onClick={() => setTab(t)}
             >
-              {t === 'backlinks' ? <span className="flex items-center justify-center gap-1"><Link2 size={12} /> {backlinks.length}</span> : <span className="flex items-center justify-center gap-1"><MailQuestion size={12} /> {mentions.length}</span>}
+              {t === 'backlinks' ? <span className="flex items-center justify-center gap-1"><Link2 size={12} /> {backlinks.length}</span> : t === 'mentions' ? <span className="flex items-center justify-center gap-1"><MailQuestion size={12} /> {mentions.length}</span> : <span className="flex items-center justify-center gap-1"><History size={12} /></span>}
             </button>
           ))}
         </div>
         <div className="p-2 space-y-1">
-          {tab === 'backlinks' ? (
+          {tab === 'backlinks' && (
             <>
               {backlinks.map((b) => (
                 <button key={b.id} onClick={linkify(b.id)} className="w-full text-left px-2 py-1.5 rounded hover:bg-set-panel2 text-sm flex items-center gap-1.5">
@@ -252,7 +403,8 @@ export default function PageView() {
                 </>
               )}
             </>
-          ) : (
+          )}
+          {tab === 'mentions' && (
             <>
               {mentions.map((m) => (
                 <button key={m.id} onClick={linkify(m.id)} className="w-full text-left px-2 py-1.5 rounded hover:bg-set-panel2 text-sm flex items-center gap-1.5">
@@ -264,6 +416,7 @@ export default function PageView() {
               {mentions.length === 0 && <p className="text-xs text-set-dim p-2">No unlinked mentions found.</p>}
             </>
           )}
+          {tab === 'history' && <VersionHistory pageId={page.id} currentMarkdown={page.markdown} onRestored={load} />}
         </div>
       </div>
     </div>

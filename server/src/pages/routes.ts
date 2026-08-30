@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import crypto from 'node:crypto';
 import { one, q } from '../db.js';
 import { requireResourceSpace, requireSpace, rid } from '../lib/http.js';
 import { docToMd, extractWikiTargets, mdToDoc, nodeToMd, type TNode } from '../lib/markdown.js';
@@ -32,11 +33,48 @@ export async function syncLinks(pageId: string, spaceId: string, markdown: strin
   }
 }
 
-export async function savePageContent(pageId: string, spaceId: string, patch: { content?: any; markdown?: string }) {
+const VERSIONS_KEPT = 50;
+
+/**
+ * Snapshot the page's current content as a version before it gets overwritten.
+ * Skips no-op saves (same markdown) and prunes the timeline to VERSIONS_KEPT.
+ */
+async function snapshotVersion(pageId: string, spaceId: string, editedBy?: string) {
+  const page = await one<{ title: string; markdown: string | null }>(
+    `SELECT title, markdown FROM pages WHERE id = $1`,
+    [pageId]
+  );
+  if (!page) return;
+  const last = await one<{ markdown: string | null }>(
+    `SELECT markdown FROM page_versions WHERE page_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [pageId]
+  );
+  if (last && last.markdown === (page.markdown ?? '')) return;
+  await q(
+    `INSERT INTO page_versions (page_id, space_id, title, markdown, edited_by) VALUES ($1, $2, $3, $4, $5)`,
+    [pageId, spaceId, page.title, page.markdown ?? '', editedBy ?? null]
+  );
+  await q(
+    `DELETE FROM page_versions WHERE page_id = $1 AND id NOT IN (
+       SELECT id FROM page_versions WHERE page_id = $1 ORDER BY created_at DESC LIMIT $2)`,
+    [pageId, VERSIONS_KEPT]
+  );
+}
+
+export async function savePageContent(
+  pageId: string,
+  spaceId: string,
+  patch: { content?: any; markdown?: string },
+  editedBy?: string
+) {
   let markdown = patch.markdown;
   let content = patch.content;
   if (content !== undefined && markdown === undefined) markdown = docToMd(content as TNode);
   if (markdown !== undefined && content === undefined) content = mdToDoc(markdown);
+  const prior = await one<{ markdown: string | null }>(`SELECT markdown FROM pages WHERE id = $1`, [pageId]);
+  if (prior && prior.markdown !== (markdown ?? prior.markdown ?? '')) {
+    await snapshotVersion(pageId, spaceId, editedBy);
+  }
   await q(
     `UPDATE pages SET content = $2, markdown = $3, updated_at = now() WHERE id = $1`,
     [pageId, JSON.stringify(content ?? null), markdown ?? '']
@@ -143,7 +181,7 @@ export async function pageRoutes(app: FastifyInstance) {
       .parse(req.body);
 
     if (body.content !== undefined || body.markdown !== undefined) {
-      await savePageContent(id, ctx.spaceId, { content: body.content, markdown: body.markdown });
+      await savePageContent(id, ctx.spaceId, { content: body.content, markdown: body.markdown }, req.user!.id);
     }
     const sets: string[] = [];
     const vals: any[] = [id];
@@ -195,6 +233,110 @@ export async function pageRoutes(app: FastifyInstance) {
       [spaceId]
     );
     return { pages: rows };
+  });
+
+  // ---- version history ----
+
+  app.get('/pages/:id/versions', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'pages', id);
+    if (!ctx) return;
+    const rows = await q(
+      `SELECT v.id, v.title, v.edited_by, v.created_at, length(v.markdown) AS size,
+              COALESCE(u.name, '') AS edited_by_name
+       FROM page_versions v LEFT JOIN users u ON u.id = v.edited_by
+       WHERE v.page_id = $1 ORDER BY v.created_at DESC LIMIT 100`,
+      [id]
+    );
+    return { versions: rows };
+  });
+
+  app.get('/pages/:id/versions/:versionId', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'pages', id);
+    if (!ctx) return;
+    const version = await one<{ id: string; title: string; markdown: string; created_at: string }>(
+      `SELECT id, title, markdown, created_at FROM page_versions WHERE id = $1 AND page_id = $2`,
+      [rid((req.params as any).versionId), id]
+    );
+    if (!version) return reply.code(404).send({ error: 'Version not found' });
+    return { version };
+  });
+
+  app.post('/pages/:id/versions/:versionId/restore', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'pages', id, 'editor');
+    if (!ctx) return;
+    const version = await one<{ markdown: string }>(
+      `SELECT markdown FROM page_versions WHERE id = $1 AND page_id = $2`,
+      [rid((req.params as any).versionId), id]
+    );
+    if (!version) return reply.code(404).send({ error: 'Version not found' });
+    // savePageContent snapshots the current state first, so a restore is itself undoable
+    await savePageContent(id, ctx.spaceId, { markdown: version.markdown }, req.user!.id);
+    await relinkSpace(ctx.spaceId);
+    void recordActivity(ctx.spaceId, req.user!.id, 'page_restored', { pageId: id });
+    const page = await one<any>(`SELECT * FROM pages WHERE id = $1`, [id]);
+    return { page };
+  });
+
+  // ---- public read-only share links ----
+
+  app.post('/pages/:id/share', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'pages', id, 'editor');
+    if (!ctx) return;
+    const token = crypto.randomBytes(18).toString('base64url'); // 24 URL-safe chars
+    const link = await one<any>(
+      `INSERT INTO share_links (space_id, page_id, token, created_by) VALUES ($1, $2, $3, $4)
+       RETURNING id, token, created_at`,
+      [ctx.spaceId, id, token, req.user!.id]
+    );
+    const page = await one<{ title: string }>(`SELECT title FROM pages WHERE id = $1`, [id]);
+    void recordActivity(ctx.spaceId, req.user!.id, 'share_created', { pageId: id, title: page?.title ?? '' });
+    return { share: link };
+  });
+
+  app.get('/pages/:id/shares', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'pages', id);
+    if (!ctx) return;
+    const rows = await q(
+      `SELECT id, token, created_at, revoked_at, view_count, last_viewed_at
+       FROM share_links WHERE page_id = $1 ORDER BY created_at DESC`,
+      [id]
+    );
+    return { shares: rows };
+  });
+
+  app.delete('/share-links/:id', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'share_links', id, 'editor');
+    if (!ctx) return;
+    const link = await one<{ page_id: string }>(
+      `UPDATE share_links SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL RETURNING page_id`,
+      [id]
+    );
+    if (link) {
+      const page = await one<{ title: string }>(`SELECT title FROM pages WHERE id = $1`, [link.page_id]);
+      void recordActivity(ctx.spaceId, req.user!.id, 'share_revoked', { pageId: link.page_id, title: page?.title ?? '' });
+    }
+    return { ok: true };
+  });
+
+  /** Unauthenticated reader for a published page — title + markdown only. */
+  app.get('/share/:token', async (req, reply) => {
+    const token = String((req.params as any).token ?? '');
+    if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return reply.code(404).send({ error: 'Not found' });
+    const page = await one<any>(
+      `SELECT p.id, p.title, p.icon, p.markdown, p.updated_at
+       FROM share_links s JOIN pages p ON p.id = s.page_id
+       WHERE s.token = $1 AND s.revoked_at IS NULL AND p.deleted_at IS NULL`,
+      [token]
+    );
+    if (!page) return reply.code(404).send({ error: 'This link is no longer available' });
+    void q(`UPDATE share_links SET view_count = view_count + 1, last_viewed_at = now() WHERE token = $1`, [token]);
+    return { page };
   });
 
   app.get('/pages/:id/backlinks', async (req, reply) => {

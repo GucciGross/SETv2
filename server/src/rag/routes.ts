@@ -11,6 +11,8 @@ import { recordActivity } from '../team/activity.js';
 import { transcriptionConfigured, transcribeBuffer } from '../copilotkit/transcribe.js';
 import { retrieve } from './provider.js';
 import { extractDates } from './chunker.js';
+import { sourcesToBibTeX } from './cite.js';
+import { extractPdfWithOcr } from './ocr.js';
 
 async function extractPdfText(buf: Buffer): Promise<string> {
   const pdfParse = (await import('pdf-parse')).default as any;
@@ -83,6 +85,18 @@ export async function ragRoutes(app: FastifyInstance) {
       [id]
     );
     return { notebook, sources };
+  });
+
+  // citation export: every source as a .bib entry, ready for LaTeX/Zotero
+  app.get('/notebooks/:id/export.bib', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'notebooks', id);
+    if (!ctx) return;
+    const sources = await q(`SELECT id, name, uri, kind, created_at FROM sources WHERE notebook_id = $1 ORDER BY created_at`, [id]);
+    const notebook = await one<{ title: string }>(`SELECT title FROM notebooks WHERE id = $1`, [id]);
+    reply.header('content-type', 'application/x-bibtex; charset=utf-8');
+    reply.header('content-disposition', `attachment; filename="${(notebook?.title ?? 'notebook').replace(/[^\w.-]+/g, '_').slice(0, 60)}.bib"`);
+    return sourcesToBibTeX(sources as any);
   });
 
   app.patch('/notebooks/:id', async (req, reply) => {
@@ -195,11 +209,14 @@ export async function ragRoutes(app: FastifyInstance) {
         const lower = file.filename.toLowerCase();
         let text = '';
         let kind = 'txt';
+        let pdfMeta: Record<string, any> = {};
         if (lower.endsWith('.pdf') || file.mimetype === 'application/pdf') {
           kind = 'pdf';
-          text = await extractPdfText(buf).catch((e) => {
-            throw new Error(`PDF parse failed for ${file.filename}: ${e.message}`);
-          });
+          // scanned PDFs have no text layer — fall back to Firecrawl AnyDoc OCR
+          // (Settings → Deep Research) instead of failing the upload
+          const out = await extractPdfWithOcr(ctx.spaceId, buf, file.filename, extractPdfText);
+          text = out.text;
+          pdfMeta = out.ocr ? { ocr: true } : out.scanned ? { scanned: true } : {};
         } else if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
           kind = 'md';
           text = buf.toString('utf8');
@@ -214,7 +231,7 @@ export async function ragRoutes(app: FastifyInstance) {
         await makeSource(kind, file.filename.replace(/\.[^.]+$/, ''), text, {
           mime: file.mimetype,
           size: buf.length,
-          meta: { storedFile: safe },
+          meta: { storedFile: safe, ...pdfMeta },
         });
       }
     } else {
