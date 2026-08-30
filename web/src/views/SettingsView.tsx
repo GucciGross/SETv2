@@ -61,6 +61,7 @@ const SURFACES: { key: string; name: string; description: string; core?: boolean
   { key: 'threeD', name: '3D & CAD', description: 'Interactive 3D learning: GLB/STL/OBJ models, URDF robotics, STEP import' },
   { key: 'library', name: 'Library', description: 'Browse and import open datasets from the HuggingFace Hub (CAD corpora, textbooks, 3D models)' },
   { key: 'canvas', name: 'Canvas', description: 'Experimental infinite-canvas spatial view over your pages' },
+  { key: 'wandgx', name: 'WandGx Builder', description: 'Create apps from prompts through a connected WandGx instance — repo, Docker setup and live URL land back on your pages' },
 ];
 
 function ChannelsTab({ spaceId }: { spaceId: string }) {
@@ -338,6 +339,45 @@ function SurfacesTab({ spaceId }: { spaceId: string }) {
           );
         })}
       </div>
+      {surfaces.wandgx && <WandgxCard spaceId={spaceId} />}
+    </div>
+  );
+}
+
+/** WandGx connection status + recent builds (wandgx surface enabled). */
+function WandgxCard({ spaceId }: { spaceId: string }) {
+  const [status, setStatus] = useState<any>(null);
+  const [builds, setBuilds] = useState<any[]>([]);
+
+  useEffect(() => {
+    api.get(`/spaces/${spaceId}/wandgx/status`).then(setStatus).catch(() => setStatus({ configured: false }));
+    api.get(`/spaces/${spaceId}/wandgx/builds`).then((r) => setBuilds(r.builds ?? [])).catch(() => {});
+  }, [spaceId]);
+
+  const color = status?.reachable ? 'bg-green-400' : status?.configured ? 'bg-red-400' : 'bg-amber-400';
+  const label = status?.reachable ? 'connected' : status?.configured ? `unreachable${status.detail ? ` (${status.detail})` : ''}` : 'not configured — set WANDGX_URL / WANDGX_TOKEN on the server';
+
+  return (
+    <div className="set-card p-3.5 mt-4">
+      <div className="flex items-center gap-2 mb-2">
+        <span className={`w-2 h-2 rounded-full ${color}`} />
+        <span className="text-sm text-white">WandGx Builder</span>
+        <span className="text-xs text-set-dim truncate">{label}</span>
+      </div>
+      {builds.length > 0 ? (
+        <div className="space-y-1">
+          {builds.slice(0, 5).map((b) => (
+            <div key={b.id} className="flex items-center gap-2 text-xs">
+              <span className={`truncate flex-1 ${b.status === 'error' ? 'text-red-400' : 'text-set-text'}`}>{b.title}</span>
+              <span className="text-set-dim whitespace-nowrap">{b.status}</span>
+              {b.live_url && <a className="text-blue-300 hover:underline" href={b.live_url} target="_blank" rel="noreferrer">live</a>}
+              {b.repo_url && <a className="text-blue-300 hover:underline" href={b.repo_url} target="_blank" rel="noreferrer">repo</a>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-set-dim">No builds yet — open a page and hit “build”, or ask the copilot to build something.</p>
+      )}
     </div>
   );
 }

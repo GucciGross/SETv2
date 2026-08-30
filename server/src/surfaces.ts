@@ -13,6 +13,7 @@ export const DEFAULT_SURFACES: Record<string, boolean> = {
   threeD: false,
   library: false,
   canvas: false,
+  wandgx: false,
 };
 
 export const SURFACE_INFO: { key: string; name: string; description: string }[] = [
@@ -22,6 +23,7 @@ export const SURFACE_INFO: { key: string; name: string; description: string }[] 
   { key: 'threeD', name: '3D & CAD', description: 'Interactive 3D learning: GLB/STL/OBJ models, URDF robotics, STEP import' },
   { key: 'library', name: 'Library', description: 'Browse and import open datasets from the HuggingFace Hub (CAD corpora, textbooks, 3D models)' },
   { key: 'canvas', name: 'Canvas', description: 'Experimental infinite-canvas spatial view over your pages' },
+  { key: 'wandgx', name: 'WandGx Builder', description: 'Create apps from prompts through a connected WandGx instance — repo, Docker setup and live URL land back on your pages' },
 ];
 
 export async function getSurfaces(spaceId: string): Promise<Record<string, boolean>> {

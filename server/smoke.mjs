@@ -1,4 +1,4 @@
-const BASE = 'http://localhost:4000/api';
+const BASE = process.env.SET_BASE ?? 'http://localhost:4000/api';
 let token = '';
 const h = () => ({ 'content-type': 'application/json', authorization: `Bearer ${token}` });
 const call = async (method, path, body) => {
@@ -104,15 +104,17 @@ const dbAfter = (await call('GET', `/databases/${dbs[0].id}`)).json;
 check('row cell update', dbAfter.rows.find(x => x.id === newRow.id).cells.c2 === 'Running');
 await call('DELETE', `/rows/${newRow.id}`);
 
-// 9. notebooks + RAG (hash embeddings, no LLM)
+// 9. notebooks + RAG (hash embeddings, no LLM) — find the seeded demo
+// notebook by title; a used instance accumulates research/QA notebooks too.
 const nbs = (await call('GET', `/spaces/${team.id}/notebooks`)).json.notebooks;
-check('demo notebook exists', nbs.length === 1 && nbs[0].chunk_count >= 4, `${nbs[0]?.chunk_count} chunks`);
-const nbDetail = (await call('GET', `/notebooks/${nbs[0].id}`)).json;
+const demoNb = nbs.find((n) => n.title === 'Arm Actuators Reference');
+check('demo notebook exists', !!demoNb && demoNb.chunk_count >= 4, `${demoNb?.chunk_count} chunks`);
+const nbDetail = (await call('GET', `/notebooks/${demoNb.id}`)).json;
 check('source ready after ingestion', nbDetail.sources[0].status === 'ready', nbDetail.sources[0].status);
 const srcId = nbDetail.sources[0].id;
 const chunks = (await call('GET', `/sources/${srcId}/chunks`)).json.chunks;
 check('chunks listed', chunks.length >= 4);
-const search = (await call('POST', `/notebooks/${nbs[0].id}/search`, { query: 'what torque requirements for actuator selection' })).json;
+const search = (await call('POST', `/notebooks/${demoNb.id}/search`, { query: 'what torque requirements for actuator selection' })).json;
 check('hybrid search returns hits', search.hits.length >= 2, search.hits.slice(0, 2).map(h => h.heading || h.content.slice(0, 30)).join(' | '));
 
 // add a web/text source

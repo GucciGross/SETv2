@@ -14,6 +14,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "migrate": "tsx src/migrate.ts",
     "seed": "tsx src/seed.ts",
+    "import:pbl": "tsx src/importers/pbl.ts",
+    "wandgx:stub": "node scripts/wandgx-stub.mjs",
+    "smoke:wandgx": "node smoke-wandgx.mjs",
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {

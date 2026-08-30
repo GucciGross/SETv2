@@ -14,6 +14,7 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/src/importers/data ./dist/importers/data
 COPY --from=build /app/sql ./sql
 RUN mkdir -p /app/data
 EXPOSE 4000

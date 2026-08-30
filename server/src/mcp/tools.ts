@@ -906,6 +906,44 @@ export const TOOLS: ToolDef[] = [
       return { grantedUsd: cents / 100 };
     },
   },
+  {
+    name: 'wandgx_build',
+    title: 'Start WandGx app build',
+    description:
+      'Start an app build on the connected WandGx instance from a prompt. WandGx generates a real application (GitHub repo, Docker setup, live URL); progress and result links are appended to the linked page\'s Build log. Requires the WandGx Builder surface to be enabled for the workspace.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string', description: 'What to build — stack, features and constraints' },
+        title: { type: 'string', description: 'Short build name (defaults to the first line of the prompt)' },
+        pageRef: { type: 'string', description: 'Page id or exact title whose Build log should track this build' },
+      },
+      required: ['prompt'],
+    },
+    scope: 'mcp:write',
+    async run(args, ctx) {
+      if (!canWrite(ctx)) throw new Error('Editor role required');
+      const surfaces = await getSurfaces(ctx.spaceId);
+      if (!surfaces.wandgx) throw new Error('The WandGx Builder surface is disabled for this workspace. Enable it in Settings → Work surfaces.');
+      let pageId: string | undefined;
+      if (args.pageRef) {
+        const page = await pageByRef(ctx, args.pageRef);
+        if (!page) throw new Error(`Page not found: ${args.pageRef}`);
+        pageId = page.id;
+      }
+      const { startWandgxBuild } = await import('../wandgx/client.js');
+      const r = await startWandgxBuild({ spaceId: ctx.spaceId, userId: ctx.userId, prompt: args.prompt, title: args.title, pageId });
+      if (r.error) throw new Error(r.error);
+      return {
+        buildId: r.build.id,
+        wandgxBuildId: r.remote?.buildId ?? null,
+        status: r.build.status,
+        title: r.build.title,
+        pageId: r.build.page_id,
+        note: 'Result links land in the page Build log when the build finishes (webhook).',
+      };
+    },
+  },
 ];
 
 export function toolList() {

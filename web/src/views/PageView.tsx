@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Link2, ArrowUpRight, Download, MailQuestion, History, RotateCcw, Share2, Copy, Check, ExternalLink, Ban } from 'lucide-react';
+import { Link2, ArrowUpRight, Download, MailQuestion, History, RotateCcw, Share2, Copy, Check, ExternalLink, Ban, Rocket } from 'lucide-react';
 import Editor from '../components/Editor';
 import { useAgentContext } from '@copilotkit/react-core/v2';
 import { registerEditor } from '../lib/editorBridge';
@@ -184,6 +184,59 @@ function VersionHistory({ pageId, currentMarkdown, onRestored }: { pageId: strin
   );
 }
 
+/** Kick off a WandGx build tracked in this page's Build log (wandgx surface). */
+function BuildMenu({ spaceId, pageId, pageTitle, onStarted }: { spaceId: string; pageId: string; pageTitle: string; onStarted: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [prompt, setPrompt] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const start = async () => {
+    if (!prompt.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.post(`/spaces/${spaceId}/wandgx/builds`, { prompt: prompt.trim(), title: `${pageTitle} — build`, pageId });
+      setPrompt('');
+      setOpen(false);
+      onStarted();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <span className="relative inline-block">
+      <button className="set-btn-ghost inline-flex items-center gap-1" onClick={() => setOpen((o) => !o)}>
+        <Rocket size={12} /> build
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 left-0 w-80 set-card p-2.5 shadow-xl">
+          <div className="text-xs text-set-dim mb-2">
+            Describe what to build — WandGx generates the app and the repo + live links land in this page's Build log.
+          </div>
+          <textarea
+            className="set-input resize-none text-sm"
+            rows={3}
+            placeholder={`e.g. a starter for “${pageTitle}” with tests and a README`}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) start();
+            }}
+          />
+          {err && <div className="text-xs text-red-400 mt-1">{err}</div>}
+          <button className="set-btn-primary text-xs w-full mt-2 inline-flex items-center justify-center gap-1" onClick={start} disabled={busy || !prompt.trim()}>
+            <Rocket size={12} /> {busy ? 'Starting…' : 'Start WandGx build'}
+          </button>
+        </div>
+      )}
+    </span>
+  );
+}
+
 function ShareMenu({ pageId }: { pageId: string }) {
   const [open, setOpen] = useState(false);
   const [shares, setShares] = useState<any[]>([]);
@@ -255,7 +308,7 @@ function ShareMenu({ pageId }: { pageId: string }) {
 export default function PageView() {
   const { spaceId, pageId } = useParams();
   const navigate = useNavigate();
-  const { pages, createPage, loadPages } = useApp();
+  const { pages, createPage, loadPages, surfaces } = useApp();
   const [page, setPage] = useState<PageData | null>(null);
   const [title, setTitle] = useState('');
   const [tab, setTab] = useState<'backlinks' | 'mentions' | 'history'>('backlinks');
@@ -357,6 +410,9 @@ export default function PageView() {
                   <Download size={12} /> export .md
                 </button>
                 <ShareMenu pageId={page.id} />
+                {surfaces.wandgx && spaceId && (
+                  <BuildMenu spaceId={spaceId} pageId={page.id} pageTitle={page.title} onStarted={load} />
+                )}
               </div>
             </div>
           </div>

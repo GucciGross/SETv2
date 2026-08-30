@@ -593,6 +593,45 @@ export const TOOLS: ToolDef2[] = [
       return { ok: true, result: { rendered: true }, a2ui: [{ type: args.component, props: args.props }] };
     },
   },
+  {
+    name: 'wandgx_build',
+    description:
+      'Start a WandGx app build from a prompt. WandGx generates a real app (GitHub repo, Docker setup, live URL); progress and result links are appended to the linked page\'s Build log. Great for project-based learning: generate a starter or a variant of the tutorial the user is working through.',
+    parameters: {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string', description: 'What to build — the richer the spec (stack, features, constraints), the better the result' },
+        title: { type: 'string', description: 'Short build name (defaults to the first line of the prompt)' },
+        pageRef: { type: 'string', description: 'Optional page id or title whose Build log should track this build' },
+      },
+      required: ['prompt'],
+    },
+    write: true,
+    async run(args, ctx) {
+      const { getSurfaces } = await import('../surfaces.js');
+      if (!(await getSurfaces(ctx.spaceId)).wandgx) {
+        return { ok: false, result: { error: 'The WandGx Builder surface is disabled for this space. Enable it in Settings → Work surfaces.' } };
+      }
+      let pageId: string | undefined;
+      if (args.pageRef) {
+        const page = await findPageByTitleOrId(ctx, args.pageRef);
+        if (!page) return { ok: false, result: { error: `Page not found: ${args.pageRef}` } };
+        pageId = page.id;
+      }
+      const { startWandgxBuild } = await import('../wandgx/client.js');
+      try {
+        const r = await startWandgxBuild({ spaceId: ctx.spaceId, userId: ctx.userId, prompt: args.prompt, title: args.title, pageId });
+        if (r.error) return { ok: false, result: { error: r.error } };
+        return {
+          ok: true,
+          result: { buildId: r.build.id, wandgxBuildId: r.remote?.buildId ?? null, status: r.build.status, title: r.build.title, note: 'Result links will appear in the page Build log when the build finishes' },
+          a2ui: [{ type: 'card', props: { title: r.build.title, icon: '🚀', body: args.prompt.slice(0, 500), action: 'open_page', pageId: r.build.page_id } }],
+        };
+      } catch (err: any) {
+        return { ok: false, result: { error: err?.message ?? 'WandGx build failed' } };
+      }
+    },
+  },
 ];
 
 export const TOOL_DEFS: ToolDef[] = TOOLS.map((t) => ({

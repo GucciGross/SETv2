@@ -10,3 +10,6 @@ web/dist/
 
 # python
 __pycache__/
+
+# local agent session data
+.zcode/

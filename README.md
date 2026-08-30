@@ -44,7 +44,13 @@ your desktop when you ask it to.
 
 Toggle per workspace in Settings. Not a CAD person? You'll never see the 3D surface.
 
-`Coding` (editor + sandboxed JS runner) · `Terminal` (workspace console with grounded search) · `3D & CAD` (GLB/STL/OBJ, URDF robotics with animated joints, STEP import) · `Library` (curated HuggingFace datasets importable into notebooks) · `Learning Paths` · `Canvas` (infinite-canvas spatial view)
+`Coding` (editor + sandboxed JS runner) · `Terminal` (workspace console with grounded search) · `3D & CAD` (GLB/STL/OBJ, URDF robotics with animated joints, STEP import) · `Library` (curated HuggingFace datasets importable into notebooks) · `Learning Paths` · `Canvas` (infinite-canvas spatial view) · `WandGx Builder` (start app builds from any page — the copilot or MCP can too; repo + live URL land in the page's Build log — see [WANDGX.md](WANDGX.md))
+
+Seed a learning workspace from the [project-based-learning](https://github.com/practical-tutorials/project-based-learning) catalog — 445 build-it-yourself tutorials across 22 languages as wiki-linked pages, a Projects tracker and a Project Brief template:
+
+```bash
+cd server && npm run import:pbl -- --space=<spaceId>   # idempotent, re-run anytime
+```
 
 ---
 

@@ -55,6 +55,13 @@ const env = z
     OIDC_CLIENT_ID: z.string().optional(),
     OIDC_CLIENT_SECRET: z.string().optional(),
     OIDC_NAME: z.string().optional(),
+    // WandGx creation connector: delegate app generation to a WandGx instance.
+    // url = its API base (dev default below); token = service credential
+    // (empty = connector disabled); webhookSecret = HMAC key for inbound
+    // /api/wandgx/events build callbacks.
+    WANDGX_URL: z.string().optional(),
+    WANDGX_TOKEN: z.string().optional(),
+    WANDGX_WEBHOOK_SECRET: z.string().optional(),
   })
   .passthrough()
   .parse(process.env);
@@ -95,6 +102,12 @@ export const config = {
     clientId: env.OIDC_CLIENT_ID || '',
     clientSecret: env.OIDC_CLIENT_SECRET || '',
     displayName: env.OIDC_NAME || 'SSO',
+  },
+  wandgx: {
+    // WandGx dev API runs on :4001 (its prod port collides with SET's :4000)
+    url: env.WANDGX_URL || 'http://127.0.0.1:4001/api/v1',
+    token: env.WANDGX_TOKEN,
+    webhookSecret: env.WANDGX_WEBHOOK_SECRET,
   },
   transcribe: {
     baseUrl: env.TRANSCRIBE_BASE_URL || env.LLM_BASE_URL,

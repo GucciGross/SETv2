@@ -36,6 +36,7 @@ import { skillsRoutes, seedSkills, getActiveSkillPrompt } from './skills/routes.
 import { onboardingRoutes } from './onboarding/routes.js';
 import { copilotKitRoutes } from './copilotkit/route.js';
 import { channelRoutes } from './channels/routes.js';
+import { wandgxRoutes } from './wandgx/routes.js';
 import { clipRoutes } from './clip/routes.js';
 import { billingRoutes } from './billing/routes.js';
 import { seed } from './seed.js';
@@ -139,6 +140,7 @@ async function main() {
     await skillsRoutes(api);
     await copilotKitRoutes(api);
     await channelRoutes(api);
+    await wandgxRoutes(api);
   }, { prefix: '/api' });
 
   await migrate();
