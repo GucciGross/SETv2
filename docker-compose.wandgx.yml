@@ -1,0 +1,25 @@
+# Local WandGx connector testing — pairs the server with the stub:
+#   docker compose -f docker-compose.yml -f docker-compose.wandgx.yml up -d
+# Builds started from SET hit the stub (instant fake deploys with repo + live
+# URLs and signed webhooks back). For the real WandGx instance, set
+# WANDGX_URL/WANDGX_TOKEN/WANDGX_WEBHOOK_SECRET on the server instead
+# (see WANDGX.md).
+services:
+  server:
+    environment:
+      WANDGX_URL: http://wandgx-stub:4101
+      WANDGX_TOKEN: stub-token
+      WANDGX_WEBHOOK_SECRET: stub-secret
+  wandgx-stub:
+    image: node:20-alpine
+    working_dir: /scripts
+    volumes:
+      - ./server/scripts:/scripts:ro
+    environment:
+      PORT: 4101
+      SET_URL: http://server:4000
+      WANDGX_TOKEN: stub-token
+      WANDGX_WEBHOOK_SECRET: stub-secret
+    ports:
+      - "4101:4101"
+    command: node wandgx-stub.mjs
