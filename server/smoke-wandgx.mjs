@@ -87,6 +87,18 @@ try {
   r = await call('GET', `/spaces/${spaceId}/wandgx/status`);
   check('status endpoint reports reachable', r.status === 200 && r.json.reachable === true && r.json.configured === true);
 
+  // 5b. one-tap variants: from a page spec and from a past build
+  const v1 = await call('POST', `/spaces/${spaceId}/wandgx/variants`, { pageRef: page.title, language: 'Rust' });
+  check('variant from page (201)', v1.status === 201 && v1.json.build?.title?.includes('Rust variant') === true && v1.json.build?.page_id === page.id, `status=${v1.status} ${v1.json.error ?? v1.json.build?.title}`);
+  const v2 = await call('POST', `/spaces/${spaceId}/wandgx/variants`, { buildId: buildRow.id, language: 'Go' });
+  check('variant from build (201)', v2.status === 201 && v2.json.build?.title?.includes('Go variant') === true && v2.json.build?.page_id === page.id, `status=${v2.status} ${v2.json.error ?? v2.json.build?.title}`);
+  const vBad = await call('POST', `/spaces/${spaceId}/wandgx/variants`, { language: 'Rust' });
+  check('variant needs buildId or pageRef (400)', vBad.status === 400, `status=${vBad.status}`);
+  const vMissing = await call('POST', `/spaces/${spaceId}/wandgx/variants`, { buildId: buildRow.id, pageRef: page.id, language: '' });
+  check('variant rejects empty language', vMissing.status === 400, `status=${vMissing.status}`);
+  const v404 = await call('POST', `/spaces/${spaceId}/wandgx/variants`, { buildId: '00000000-0000-0000-0000-000000000000', language: 'Rust' });
+  check('variant unknown build → 404', v404.status === 404, `status=${v404.status}`);
+
   // 6. negative: surface gate
   r = await call('POST', '/spaces', { name: `WandGx Off ${Date.now()}` });
   const offSpace = r.json.space.id;

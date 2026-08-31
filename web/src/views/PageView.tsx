@@ -190,6 +190,7 @@ function BuildMenu({ spaceId, pageId, pageTitle, onStarted }: { spaceId: string;
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [customLang, setCustomLang] = useState('');
 
   const start = async () => {
     if (!prompt.trim() || busy) return;
@@ -198,6 +199,23 @@ function BuildMenu({ spaceId, pageId, pageTitle, onStarted }: { spaceId: string;
     try {
       await api.post(`/spaces/${spaceId}/wandgx/builds`, { prompt: prompt.trim(), title: `${pageTitle} — build`, pageId });
       setPrompt('');
+      setOpen(false);
+      onStarted();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const variant = async (language: string) => {
+    const lang = language.trim();
+    if (!lang || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.post(`/spaces/${spaceId}/wandgx/variants`, { pageRef: pageId, language: lang });
+      setCustomLang('');
       setOpen(false);
       onStarted();
     } catch (e: any) {
@@ -231,6 +249,28 @@ function BuildMenu({ spaceId, pageId, pageTitle, onStarted }: { spaceId: string;
           <button className="set-btn-primary text-xs w-full mt-2 inline-flex items-center justify-center gap-1" onClick={start} disabled={busy || !prompt.trim()}>
             <Rocket size={12} /> {busy ? 'Starting…' : 'Start WandGx build'}
           </button>
+          <div className="border-t border-set-border mt-2.5 pt-2.5">
+            <div className="text-xs text-set-dim mb-1.5">Or rebuild this page's spec in another language:</div>
+            <div className="flex flex-wrap gap-1">
+              {['Rust', 'Go', 'Python', 'TypeScript'].map((lang) => (
+                <button key={lang} className="rounded-full bg-set-panel2 px-2 py-0.5 text-[11px] text-set-text hover:bg-set-accent/25 disabled:opacity-50" onClick={() => variant(lang)} disabled={busy}>
+                  {lang}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1 mt-1.5">
+              <input
+                className="set-input flex-1 text-[11px] py-1"
+                placeholder="any language — e.g. Elixir"
+                value={customLang}
+                onChange={(e) => setCustomLang(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && variant(customLang)}
+              />
+              <button className="set-btn text-[11px] px-2" onClick={() => variant(customLang)} disabled={busy || !customLang.trim()}>
+                variant
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </span>

@@ -1,12 +1,11 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import crypto from 'node:crypto';
-import { q } from '../db.js';
+import { one, q } from '../db.js';
 import { requireSpace } from '../lib/http.js';
 import { requireSurface } from '../surfaces.js';
 import { config } from '../config.js';
 import { applyWandgxEvent, startWandgxBuild, wandgxConfigured, wandgxHealth } from './client.js';
-
 /**
  * WandGx creation connector routes.
  * * /spaces/:id/wandgx/* — user-facing (JWT + editor role + surface gate)
@@ -81,6 +80,69 @@ export async function wandgxRoutes(app: FastifyInstance) {
       [spaceId]
     );
     return { builds };
+  });
+
+  // One-tap variants: rebuild a past build (or a page's spec) in another
+  // language. The variant stacks on the same page's Build log, so approaches
+  // sit side by side for comparison.
+  app.post('/spaces/:spaceId/wandgx/variants', async (req, reply) => {
+    const spaceId = (req.params as any).spaceId;
+    if (!(await requireSpace(req, reply, spaceId, 'editor'))) return;
+    if (!(await requireSurface(reply, spaceId, 'wandgx'))) return;
+    const body = z
+      .object({
+        buildId: z.string().optional(),
+        pageRef: z.string().optional(),
+        language: z.string().max(60).optional(),
+      })
+      .parse(req.body);
+    const language = (body.language ?? '').replace(/[\r\n`]+/g, ' ').trim();
+    if (!language) return reply.code(400).send({ error: 'language is required' });
+    if (!body.buildId === !body.pageRef) {
+      return reply.code(400).send({ error: 'Provide exactly one of buildId or pageRef' });
+    }
+
+    let basePrompt: string;
+    let baseTitle: string;
+    let pageId: string | null = null;
+    if (body.buildId) {
+      const build = await one<{ id: string; title: string; prompt: string; page_id: string | null }>(
+        `SELECT id, title, prompt, page_id FROM wandgx_builds WHERE id::text = $1 AND space_id = $2`,
+        [body.buildId, spaceId]
+      );
+      if (!build) return reply.code(404).send({ error: 'Build not found' });
+      basePrompt = build.prompt;
+      baseTitle = build.title;
+      pageId = build.page_id;
+    } else {
+      const page = await one<{ id: string; title: string; markdown: string | null }>(
+        `SELECT id, title, markdown FROM pages WHERE (id::text = $1 OR lower(title) = lower($1)) AND space_id = $2 AND deleted_at IS NULL`,
+        [body.pageRef, spaceId]
+      );
+      if (!page) return reply.code(404).send({ error: 'Page not found' });
+      basePrompt = (page.markdown ?? '').slice(0, 3000);
+      baseTitle = page.title;
+      pageId = page.id;
+    }
+
+    const prompt =
+      `Recreate "${baseTitle}" as a ${language} project, preserving the feature set, behavior and rough scope.\n\n` +
+      `Original spec:\n${basePrompt}\n\n` +
+      `Call out the ${language}-idiomatic choices (libraries, memory model, tooling) in the README so a learner can compare approaches.`;
+
+    try {
+      const result = await startWandgxBuild({
+        spaceId,
+        userId: req.user!.id,
+        prompt,
+        title: `${baseTitle} — ${language} variant`,
+        pageId,
+      });
+      if (result.error) return reply.code(502).send({ build: result.build, error: result.error });
+      return reply.code(201).send({ build: result.build, remote: result.remote });
+    } catch (err: any) {
+      return reply.code(400).send({ error: err?.message ?? 'Variant build failed' });
+    }
   });
 
   app.get('/spaces/:spaceId/wandgx/status', async (req, reply) => {

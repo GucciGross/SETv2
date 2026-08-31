@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera, Gauge, Cloud, Scissors, Trash2, Bell, Upload, CreditCard, Coins, Download, CloudSun } from 'lucide-react';
+import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera, Gauge, Cloud, Scissors, Trash2, Bell, Upload, CreditCard, Coins, Download, CloudSun, RefreshCw } from 'lucide-react';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 import McpSettings from '../components/McpSettings';
@@ -348,11 +348,29 @@ function SurfacesTab({ spaceId }: { spaceId: string }) {
 function WandgxCard({ spaceId }: { spaceId: string }) {
   const [status, setStatus] = useState<any>(null);
   const [builds, setBuilds] = useState<any[]>([]);
+  const [variantFor, setVariantFor] = useState<string | null>(null);
+  const [language, setLanguage] = useState('Rust');
+  const [busy, setBusy] = useState(false);
 
+  const load = () => api.get(`/spaces/${spaceId}/wandgx/builds`).then((r) => setBuilds(r.builds ?? [])).catch(() => {});
   useEffect(() => {
     api.get(`/spaces/${spaceId}/wandgx/status`).then(setStatus).catch(() => setStatus({ configured: false }));
-    api.get(`/spaces/${spaceId}/wandgx/builds`).then((r) => setBuilds(r.builds ?? [])).catch(() => {});
+    load();
   }, [spaceId]);
+
+  const startVariant = async (buildId: string) => {
+    if (busy || !language.trim()) return;
+    setBusy(true);
+    try {
+      await api.post(`/spaces/${spaceId}/wandgx/variants`, { buildId, language: language.trim() });
+      setVariantFor(null);
+      load();
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const color = status?.reachable ? 'bg-green-400' : status?.configured ? 'bg-red-400' : 'bg-amber-400';
   const label = status?.reachable ? 'connected' : status?.configured ? `unreachable${status.detail ? ` (${status.detail})` : ''}` : 'not configured — set WANDGX_URL / WANDGX_TOKEN on the server';
@@ -367,11 +385,34 @@ function WandgxCard({ spaceId }: { spaceId: string }) {
       {builds.length > 0 ? (
         <div className="space-y-1">
           {builds.slice(0, 5).map((b) => (
-            <div key={b.id} className="flex items-center gap-2 text-xs">
-              <span className={`truncate flex-1 ${b.status === 'error' ? 'text-red-400' : 'text-set-text'}`}>{b.title}</span>
-              <span className="text-set-dim whitespace-nowrap">{b.status}</span>
-              {b.live_url && <a className="text-blue-300 hover:underline" href={b.live_url} target="_blank" rel="noreferrer">live</a>}
-              {b.repo_url && <a className="text-blue-300 hover:underline" href={b.repo_url} target="_blank" rel="noreferrer">repo</a>}
+            <div key={b.id}>
+              <div className="flex items-center gap-2 text-xs">
+                <span className={`truncate flex-1 ${b.status === 'error' ? 'text-red-400' : 'text-set-text'}`}>{b.title}</span>
+                <span className="text-set-dim whitespace-nowrap">{b.status}</span>
+                {b.live_url && <a className="text-blue-300 hover:underline" href={b.live_url} target="_blank" rel="noreferrer">live</a>}
+                {b.repo_url && <a className="text-blue-300 hover:underline" href={b.repo_url} target="_blank" rel="noreferrer">repo</a>}
+                <button
+                  className="text-set-dim hover:text-set-accent"
+                  title="Rebuild this app in another language"
+                  onClick={() => setVariantFor(variantFor === b.id ? null : b.id)}
+                >
+                  <RefreshCw size={11} />
+                </button>
+              </div>
+              {variantFor === b.id && (
+                <div className="flex gap-1 mt-1 pl-2">
+                  <input
+                    className="set-input flex-1 text-[11px] py-0.5"
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    placeholder="language — e.g. Rust"
+                    onKeyDown={(e) => e.key === 'Enter' && startVariant(b.id)}
+                  />
+                  <button className="set-btn text-[11px] px-2" onClick={() => startVariant(b.id)} disabled={busy}>
+                    {busy ? '…' : 'variant'}
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
