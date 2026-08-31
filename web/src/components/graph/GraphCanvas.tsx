@@ -11,7 +11,7 @@ import { Viewport, type EdgeHit } from '../../lib/graph/viewport';
 import type { CliqueResult } from '../../lib/graph/cliques';
 import { edgeIds, type GraphData, type GraphEdge, type GraphNode } from '../../lib/graph/types';
 
-export type GraphColorMode = 'clique' | 'recency' | 'off';
+export type GraphColorMode = 'clique' | 'recency' | 'mastery' | 'off';
 
 export interface FlyToRequest {
   /** Node ids to fit in view. */
@@ -19,6 +19,8 @@ export interface FlyToRequest {
   /** Bump to re-trigger a fly to the same ids. */
   nonce: number;
 }
+
+export type MasteryState = 'mastered' | 'learning' | 'decaying';
 
 interface GraphCanvasProps {
   /** Full dataset — drives the simulation. */
@@ -29,6 +31,8 @@ interface GraphCanvasProps {
   /** Community detection result — colors nodes in clique mode. */
   cliques: CliqueResult | null;
   colorMode: GraphColorMode;
+  /** Per-page mastery (mastery color mode); absent page = untested. */
+  mastery: Record<string, MasteryState> | null;
   /** When the nonce changes, the camera animates to fit these node ids. */
   flyTo: FlyToRequest | null;
   /** localStorage key for dragged-pin positions; undefined disables memory. */
@@ -91,6 +95,7 @@ export default function GraphCanvas({
   selectedId,
   cliques,
   colorMode,
+  mastery,
   flyTo,
   pinsKey,
   resetSignal,
@@ -126,6 +131,8 @@ export default function GraphCanvas({
   cliquesRef.current = cliques;
   const colorModeRef = useRef(colorMode);
   colorModeRef.current = colorMode;
+  const masteryRef = useRef(mastery);
+  masteryRef.current = mastery;
   const dataRef = useRef(data);
   dataRef.current = data;
   const pinsKeyRef = useRef(pinsKey);
@@ -187,6 +194,11 @@ export default function GraphCanvas({
       } else if (mode === 'recency') {
         const fresh = recencyFill(n);
         if (fresh) return fresh;
+      } else if (mode === 'mastery') {
+        const state = masteryRef.current?.[n.id];
+        if (state === 'mastered') return '#34d399';
+        if (state === 'decaying') return '#fbbf24';
+        if (state === 'learning') return '#60a5fa';
       }
       return (n.deg ?? 0) > 0 ? '#6c8cff' : '#8b93a5';
     };
@@ -631,7 +643,7 @@ export default function GraphCanvas({
   // along so the playback (which fires while the sim is asleep) redraws live.
   useEffect(() => {
     drawRef.current();
-  }, [visibleIds, selectedId, colorMode, cliques, reveal]);
+  }, [visibleIds, selectedId, colorMode, cliques, mastery, reveal]);
 
   // external camera requests (search pick, clique legend, fit button)
   const flyNonce = flyTo?.nonce ?? 0;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Link2, ArrowUpRight, Download, MailQuestion, History, RotateCcw, Share2, Copy, Check, ExternalLink, Ban, Rocket } from 'lucide-react';
+import { Link2, ArrowUpRight, Download, MailQuestion, History, RotateCcw, Share2, Copy, Check, ExternalLink, Ban, Rocket, GraduationCap } from 'lucide-react';
 import Editor from '../components/Editor';
 import { useAgentContext } from '@copilotkit/react-core/v2';
 import { registerEditor } from '../lib/editorBridge';
@@ -237,6 +237,30 @@ function BuildMenu({ spaceId, pageId, pageTitle, onStarted }: { spaceId: string;
   );
 }
 
+/** Generate a page-scoped quiz (feeds the mastery map) and jump straight into it. */
+function QuizButton({ pageId, onDeck }: { pageId: string; onDeck: (deckId: string) => void }) {
+  const [busy, setBusy] = useState(false);
+
+  const generate = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await api.post(`/pages/${pageId}/generate`, { kind: 'quiz' });
+      if (r?.deck?.id) onDeck(r.deck.id);
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button className="set-btn-ghost inline-flex items-center gap-1" onClick={generate} disabled={busy} title="Generate a quiz from this page — results feed the mastery map">
+      <GraduationCap size={12} /> {busy ? 'generating…' : 'quiz me'}
+    </button>
+  );
+}
+
 function ShareMenu({ pageId }: { pageId: string }) {
   const [open, setOpen] = useState(false);
   const [shares, setShares] = useState<any[]>([]);
@@ -410,6 +434,7 @@ export default function PageView() {
                   <Download size={12} /> export .md
                 </button>
                 <ShareMenu pageId={page.id} />
+                <QuizButton pageId={page.id} onDeck={(deckId) => spaceId && navigate(`/app/space/${spaceId}/notebook/none/deck/${deckId}`)} />
                 {surfaces.wandgx && spaceId && (
                   <BuildMenu spaceId={spaceId} pageId={page.id} pageTitle={page.title} onStarted={load} />
                 )}

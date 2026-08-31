@@ -369,11 +369,12 @@ export const TOOLS: ToolDef2[] = [
   },
   {
     name: 'generate_study_material',
-    description: 'Generate study material (flashcards, quiz, study guide or audio overview script) from a notebook.',
+    description: 'Generate study material (flashcards, quiz, study guide or audio overview script) from a notebook — or from a specific page with pageRef. Page-scoped decks feed the mastery map.',
     parameters: {
       type: 'object',
       properties: {
         notebookId: { type: 'string' },
+        pageRef: { type: 'string', description: 'Page id or title to generate from (page markdown is the grounding source)' },
         kind: { type: 'string', enum: ['flashcards', 'quiz', 'studyguide', 'audio'] },
         topic: { type: 'string' },
         count: { type: 'number' },
@@ -382,8 +383,14 @@ export const TOOLS: ToolDef2[] = [
     },
     write: true,
     async run(args, ctx) {
-      const result = await generateDeck(ctx.spaceId, args.notebookId ?? null, args.kind, args.topic, args.count ?? 10);
-      const deck = await createDeckRecord(ctx.spaceId, args.notebookId ?? null, args.kind, `${args.kind}${args.topic ? ' — ' + args.topic : ''}`, result);
+      let pageId: string | null = null;
+      if (args.pageRef) {
+        const page = await findPageByTitleOrId(ctx, args.pageRef);
+        if (!page) return { ok: false, result: { error: `Page not found: ${args.pageRef}` } };
+        pageId = page.id;
+      }
+      const result = await generateDeck(ctx.spaceId, args.notebookId ?? null, args.kind, args.topic, args.count ?? 10, 0, pageId);
+      const deck = await createDeckRecord(ctx.spaceId, args.notebookId ?? null, args.kind, `${args.kind}${args.topic ? ' — ' + args.topic : ''}`, result, pageId);
       let a2ui: A2UIComponent | undefined;
       if (args.kind === 'flashcards') a2ui = { type: 'flashcards', props: { deckId: deck.id, title: deck.title, cards: (result as any).cards } };
       if (args.kind === 'quiz') a2ui = { type: 'quiz', props: { deckId: deck.id, title: deck.title, items: (result as any).items } };

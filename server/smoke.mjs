@@ -159,6 +159,19 @@ check('learning path seeded', paths.length === 1 && Number(paths[0].item_count) 
 const prog = await call('POST', '/paths/' + paths[0].id + '/progress', { itemIndex: 0, done: true });
 check('path progress toggle', prog.status === 200);
 
+// 14b. mastery map: the toggled path item's page turns mastered; pages with
+// no signals stay absent (untested). Page-generate needs an LLM, so the
+// quiz/review signals are exercised only where a provider exists.
+const masteryBefore = (await call('GET', `/spaces/${team.id}/mastery`)).json.mastery ?? {};
+const pathItem0Page = (await call('GET', `/paths/${paths[0].id}`)).json.path?.items?.[0]?.pageId;
+check('mastery: path-done page is mastered', masteryBefore[pathItem0Page]?.state === 'mastered', JSON.stringify(masteryBefore[pathItem0Page] ?? null));
+check('mastery: signal counts present', masteryBefore[pathItem0Page]?.signals?.paths?.done === 1);
+const freshPage = (await call('POST', '/pages', { spaceId: team.id, title: `Untested ${Date.now()}`, markdown: 'no signals here' })).json.page;
+const masteryAfter = (await call('GET', `/spaces/${team.id}/mastery`)).json.mastery ?? {};
+check('mastery: untested page omitted', !(freshPage.id in masteryAfter));
+const pageGen = await call('POST', `/pages/${freshPage.id}/generate`, { kind: 'quiz' });
+check('page quiz without LLM fails gracefully', pageGen.status === 502 && /provider/i.test(pageGen.json.error ?? ''), `${pageGen.status} ${String(pageGen.json.error ?? '').slice(0, 60)}`);
+
 // 15. search + export
 const search2 = (await call('GET', '/spaces/' + team.id + '/search?q=actuator')).json;
 check('workspace search', search2.pages.length >= 1);

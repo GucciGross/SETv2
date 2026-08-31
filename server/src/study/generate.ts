@@ -22,6 +22,23 @@ async function notebookContext(notebookId: string, provider: Provider | null, to
   return ctx.slice(0, 24000);
 }
 
+/** Page-scoped context: the page's own markdown is the grounding source. */
+async function pageContext(pageId: string, topic?: string): Promise<string> {
+  const page = await one<{ title: string; markdown: string | null }>(
+    `SELECT title, markdown FROM pages WHERE id = $1 AND deleted_at IS NULL`,
+    [pageId]
+  );
+  if (!page) throw new Error('Page not found');
+  const md = page.markdown ?? '';
+  const scoped = topic
+    ? md
+        .split(/\n(?=#{1,3}\s)/)
+        .filter((section) => section.toLowerCase().includes(topic.toLowerCase()))
+        .join('\n\n')
+    : md;
+  return `# ${page.title}\n\n${(scoped.trim() || md).slice(0, 24000)}`;
+}
+
 async function llmJson(p: Provider, messages: ChatMessage[], fallback: any): Promise<any> {
   const res = await chatCompletion(p, null, {
     messages: [...messages, { role: 'system', content: 'Reply with ONLY valid JSON, no markdown fences.' }],
@@ -45,12 +62,13 @@ export async function generateDeck(
   kind: 'flashcards' | 'quiz' | 'studyguide' | 'audio',
   topic: string | undefined,
   count = 12,
-  openCount = 0
+  openCount = 0,
+  pageId?: string | null
 ): Promise<any> {
   const provider = await getProvider(spaceId);
   if (!provider) throw new Error('No LLM provider configured — add one in Settings  AI Providers');
-  if (!notebookId) throw new Error('A notebook is required');
-  const ctx = await notebookContext(notebookId, provider, topic);
+  if (!notebookId && !pageId) throw new Error('A notebook or a page is required');
+  const ctx = pageId ? await pageContext(pageId, topic) : await notebookContext(notebookId!, provider, topic);
 
   if (kind === 'flashcards') {
     const out = await llmJson(
@@ -115,10 +133,17 @@ export function sm2(grade: number, ease: number, intervalDays: number, reps: num
   return { ease: e, intervalDays: interval, reps: reps2, dueAt: due };
 }
 
-export async function createDeckRecord(spaceId: string, notebookId: string | null, kind: string, title: string, items: any) {
+export async function createDeckRecord(
+  spaceId: string,
+  notebookId: string | null,
+  kind: string,
+  title: string,
+  items: any,
+  pageId?: string | null
+) {
   const deck = await one<any>(
-    `INSERT INTO decks (space_id, notebook_id, kind, title, items) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [spaceId, notebookId, kind, title, JSON.stringify(items)]
+    `INSERT INTO decks (space_id, notebook_id, kind, title, items, page_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [spaceId, notebookId, kind, title, JSON.stringify(items), pageId ?? null]
   );
   return deck;
 }

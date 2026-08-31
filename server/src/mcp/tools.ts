@@ -524,28 +524,36 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'generate_study_material',
     title: 'Generate study material',
-    description: 'Generate flashcards, a quiz, a study guide or an audio-overview script from a notebook\u2019s sources using the workspace LLM.',
+    description: 'Generate flashcards, a quiz, a study guide or an audio-overview script from a notebook\u2019s sources — or from a page\u2019s markdown with pageRef. Page-scoped decks feed the mastery map.',
     inputSchema: {
       type: 'object',
       properties: {
-        notebookId: { type: 'string', description: 'Notebook id' },
+        notebookId: { type: 'string', description: 'Notebook id (or use pageRef instead)' },
+        pageRef: { type: 'string', description: 'Page id or exact title to generate from — the page markdown is the grounding source' },
         kind: { type: 'string', enum: ['flashcards', 'quiz', 'studyguide', 'audio'], description: 'Material to generate' },
         topic: { type: 'string', description: 'Optional topic focus' },
         count: { type: 'number', description: 'Items to generate (3-40, default 10)' },
       },
-      required: ['notebookId', 'kind'],
+      required: ['kind'],
     },
     annotations: { readOnlyHint: false },
     scope: 'mcp:write',
     async run(args, ctx) {
       if (!canWrite(ctx)) throw new Error('Viewer role cannot write');
-      const nb = await one<any>(`SELECT id FROM notebooks WHERE id = $1 AND space_id = $2`, [args.notebookId, ctx.spaceId]);
-      if (!nb) throw new Error('Notebook not found');
-      const result = await generateDeck(ctx.spaceId, args.notebookId, args.kind, args.topic, Math.min(Math.max(args.count ?? 10, 3), 40));
-      const deck = await createDeckRecord(ctx.spaceId, args.notebookId, args.kind, `${args.kind}${args.topic ? ' - ' + args.topic : ''} (agent)`, result);
+      let pageId: string | null = null;
+      if (args.pageRef) {
+        const page = await pageByRef(ctx, args.pageRef);
+        if (!page) throw new Error(`Page not found: ${args.pageRef}`);
+        pageId = page.id;
+      } else {
+        const nb = await one<any>(`SELECT id FROM notebooks WHERE id = $1 AND space_id = $2`, [args.notebookId, ctx.spaceId]);
+        if (!nb) throw new Error('Notebook not found');
+      }
+      const result = await generateDeck(ctx.spaceId, args.notebookId ?? null, args.kind, args.topic, Math.min(Math.max(args.count ?? 10, 3), 40), 0, pageId);
+      const deck = await createDeckRecord(ctx.spaceId, args.notebookId ?? null, args.kind, `${args.kind}${args.topic ? ' - ' + args.topic : ''} (agent)`, result, pageId);
       bus.publish({ spaceId: ctx.spaceId, type: 'deck_created', payload: { deckId: deck.id } });
       void recordActivity(ctx.spaceId, ctx.userId, 'deck_generated', { deckId: deck.id, kind: args.kind, via: 'mcp' });
-      return { deckId: deck.id, kind: args.kind, preview: JSON.stringify(result).slice(0, 600) };
+      return { deckId: deck.id, kind: args.kind, pageId, preview: JSON.stringify(result).slice(0, 600) };
     },
   },
   {

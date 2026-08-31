@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence } from 'motion/react';
 import { Frame, Link2Off, Network, Pause, Play, RefreshCw, RotateCcw, Sparkles, X } from 'lucide-react';
-import GraphCanvas, { type FlyToRequest, type GraphColorMode } from '../components/graph/GraphCanvas';
+import GraphCanvas, { type FlyToRequest, type GraphColorMode, type MasteryState } from '../components/graph/GraphCanvas';
 import NodeCard from '../components/graph/NodeCard';
 import { filterGraph } from '../lib/graph/filter';
 import { edgeIds } from '../lib/graph/types';
@@ -20,7 +20,14 @@ const COLOR_KEY = 'set-graph-color';
 const COLOR_MODES: { id: GraphColorMode; label: string }[] = [
   { id: 'clique', label: 'Cliques' },
   { id: 'recency', label: 'Recent' },
+  { id: 'mastery', label: 'Mastery' },
   { id: 'off', label: 'Plain' },
+];
+
+const MASTERY_LEGEND: { state: import('../components/graph/GraphCanvas').MasteryState; label: string; color: string }[] = [
+  { state: 'mastered', label: 'mastered', color: '#34d399' },
+  { state: 'learning', label: 'learning', color: '#60a5fa' },
+  { state: 'decaying', label: 'needs review', color: '#fbbf24' },
 ];
 
 /** Knowledge graph: force-directed canvas with pan/zoom, hover, click-to-inspect. */
@@ -30,6 +37,7 @@ export default function GraphView() {
   const { data, error, loading, refresh, cliques } = useGraphData(spaceId);
   const [filter, setFilter] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mastery, setMastery] = useState<Record<string, MasteryState> | null>(null);
   const [colorMode, setColorMode] = useState<GraphColorMode>(
     () => (localStorage.getItem(COLOR_KEY) as GraphColorMode) || 'clique'
   );
@@ -169,6 +177,28 @@ export default function GraphView() {
     setColorMode(m);
     localStorage.setItem(COLOR_KEY, m);
   };
+
+  // mastery states for the Mastery color mode (paths + page quizzes + reviews)
+  const loadMastery = useCallback(() => {
+    if (!spaceId) return;
+    api
+      .get<{ mastery: Record<string, { state: MasteryState }> }>(`/spaces/${spaceId}/mastery`)
+      .then((r) => setMastery(Object.fromEntries(Object.entries(r.mastery ?? {}).map(([id, v]) => [id, v.state]))))
+      .catch(() => {});
+  }, [spaceId]);
+  useEffect(() => {
+    loadMastery();
+  }, [loadMastery]);
+  const refreshAll = useCallback(() => {
+    refresh();
+    loadMastery();
+  }, [refresh, loadMastery]);
+
+  const masteryCounts = useMemo(() => {
+    const counts: Record<MasteryState, number> = { mastered: 0, learning: 0, decaying: 0 };
+    for (const state of Object.values(mastery ?? {})) counts[state] += 1;
+    return counts;
+  }, [mastery]);
 
   const filtered = useMemo(() => (data ? filterGraph(data, filter) : null), [data, filter]);
   const visibleIds = useMemo(() => new Set(filtered?.nodes.map((n) => n.id) ?? []), [filtered]);
@@ -332,6 +362,20 @@ export default function GraphView() {
             </button>
           ))}
         </div>
+        {colorMode === 'mastery' && (
+          <div className="flex items-center gap-2.5 rounded-lg border border-set-border bg-set-panel px-2.5 py-1.5 text-[11px] text-set-dim">
+            {MASTERY_LEGEND.map((l) => (
+              <span key={l.state} className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: l.color }} />
+                {l.label} {masteryCounts[l.state] > 0 && <span className="text-set-text">{masteryCounts[l.state]}</span>}
+              </span>
+            ))}
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full bg-set-panel2 border border-set-border" />
+              untested
+            </span>
+          </div>
+        )}
         {focused ? (
           <span className="flex items-center gap-2 self-center rounded-lg border border-set-accent/40 bg-set-panel px-2 py-1 text-xs text-set-text">
             showing {filtered.nodes.length} pages near “{filter.trim()}”
@@ -562,6 +606,7 @@ export default function GraphView() {
         selectedId={selectedId}
         cliques={cliques}
         colorMode={colorMode}
+        mastery={mastery}
         flyTo={flyTo}
         pinsKey={spaceId ? `set-graph-pins:${spaceId}` : undefined}
         resetSignal={resetSignal}

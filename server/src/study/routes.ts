@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { one, q } from '../db.js';
 import { requireResourceSpace, requireSpace, rid } from '../lib/http.js';
 import { generateDeck, sm2, createDeckRecord } from './generate.js';
+import { computeMastery } from './mastery.js';
 import { deckToH5P } from './h5p.js';
 import { buildAttemptItems, gradeAttempt, normalizeQuizItems, stripAnswers, type QuizSettings } from './quiz.js';
 import { recordActivity } from '../team/activity.js';
@@ -134,6 +135,42 @@ export async function studyRoutes(app: FastifyInstance) {
     } catch (e: any) {
       return reply.code(502).send({ error: e.message ?? String(e) });
     }
+  });
+
+  // Page-scoped study material: the page's markdown is the grounding source,
+  // and the deck links back to the page so quiz/SRS results feed the
+  // mastery map (GET /spaces/:id/mastery).
+  app.post('/pages/:id/generate', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'pages', id, 'editor');
+    if (!ctx) return;
+    const body = z
+      .object({ kind: z.enum(['flashcards', 'quiz', 'studyguide', 'audio']), topic: z.string().optional(), count: z.number().int().min(3).max(40).optional(), openCount: z.number().int().min(0).max(10).optional() })
+      .parse(req.body);
+    try {
+      const page = await one<{ title: string }>(`SELECT title FROM pages WHERE id = $1`, [id]);
+      const result = await generateDeck(ctx.spaceId, null, body.kind, body.topic, body.count ?? 12, body.openCount ?? 0, id);
+      const titles: Record<string, string> = {
+        flashcards: 'Flashcards',
+        quiz: 'Quiz',
+        studyguide: 'Study guide',
+        audio: 'Audio overview',
+      };
+      const deck = await createDeckRecord(ctx.spaceId, null, body.kind, `${titles[body.kind]} — ${page?.title ?? 'Page'}${body.topic ? ` — ${body.topic}` : ''}`, result, id);
+      const { bus } = await import('../lib/events.js');
+      bus.publish({ spaceId: ctx.spaceId, type: 'deck_created', payload: { deckId: deck.id } });
+      return { deck };
+    } catch (e: any) {
+      return reply.code(502).send({ error: e.message ?? String(e) });
+    }
+  });
+
+  /** Per-page mastery states (paths + page-linked quizzes + SM-2) for the graph's Mastery color mode. */
+  app.get('/spaces/:spaceId/mastery', async (req, reply) => {
+    const spaceId = (req.params as any).spaceId;
+    if (!(await requireSpace(req, reply, spaceId))) return;
+    const mastery = await computeMastery(spaceId, req.user!.id);
+    return { mastery };
   });
 
   app.get('/decks/:id', async (req, reply) => {
