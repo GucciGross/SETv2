@@ -225,53 +225,65 @@ function BuildMenu({ spaceId, pageId, pageTitle, onStarted }: { spaceId: string;
     }
   };
 
+  const body = (
+    <>
+      <div className="text-xs text-set-dim mb-2">
+        Describe what to build — WandGx generates the app and the repo + live links land in this page's Build log.
+      </div>
+      <textarea
+        className="set-input resize-none text-sm"
+        rows={3}
+        placeholder={`e.g. a starter for “${pageTitle}” with tests and a README`}
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) start();
+        }}
+      />
+      {err && <div className="text-xs text-red-400 mt-1">{err}</div>}
+      <button className="set-btn-primary text-xs w-full mt-2 inline-flex items-center justify-center gap-1" onClick={start} disabled={busy || !prompt.trim()}>
+        <Rocket size={12} /> {busy ? 'Starting…' : 'Start WandGx build'}
+      </button>
+      <div className="border-t border-set-border mt-2.5 pt-2.5">
+        <div className="text-xs text-set-dim mb-1.5">Or rebuild this page's spec in another language:</div>
+        <div className="flex flex-wrap gap-1">
+          {['Rust', 'Go', 'Python', 'TypeScript'].map((lang) => (
+            <button key={lang} className="rounded-full bg-set-panel2 px-2.5 py-1 text-[11px] text-set-text active:scale-95 transition-transform hover:bg-set-accent/25 disabled:opacity-50" onClick={() => variant(lang)} disabled={busy}>
+              {lang}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1 mt-1.5">
+          <input
+            className="set-input flex-1 text-[11px] py-1"
+            placeholder="any language — e.g. Elixir"
+            value={customLang}
+            onChange={(e) => setCustomLang(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && variant(customLang)}
+          />
+          <button className="set-btn text-[11px] px-2" onClick={() => variant(customLang)} disabled={busy || !customLang.trim()}>
+            variant
+          </button>
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <span className="relative inline-block">
-      <button className="set-btn-ghost inline-flex items-center gap-1" onClick={() => setOpen((o) => !o)}>
+      <button className="set-btn-ghost inline-flex items-center gap-1 py-1.5" onClick={() => setOpen((o) => !o)}>
         <Rocket size={12} /> build
       </button>
       {open && (
-        <div className="absolute z-30 mt-1 left-0 w-80 set-card p-2.5 shadow-xl">
-          <div className="text-xs text-set-dim mb-2">
-            Describe what to build — WandGx generates the app and the repo + live links land in this page's Build log.
+        <>
+          {/* mobile: bottom sheet — never wider than the screen, dismiss on backdrop */}
+          <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setOpen(false)} />
+          <div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+12px)] z-40 set-card p-3.5 pb-[calc(env(safe-area-inset-bottom)+14px)] rounded-2xl shadow-2xl sheet-in md:hidden max-h-[calc(100dvh-24px)] overflow-y-auto">
+            {body}
           </div>
-          <textarea
-            className="set-input resize-none text-sm"
-            rows={3}
-            placeholder={`e.g. a starter for “${pageTitle}” with tests and a README`}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) start();
-            }}
-          />
-          {err && <div className="text-xs text-red-400 mt-1">{err}</div>}
-          <button className="set-btn-primary text-xs w-full mt-2 inline-flex items-center justify-center gap-1" onClick={start} disabled={busy || !prompt.trim()}>
-            <Rocket size={12} /> {busy ? 'Starting…' : 'Start WandGx build'}
-          </button>
-          <div className="border-t border-set-border mt-2.5 pt-2.5">
-            <div className="text-xs text-set-dim mb-1.5">Or rebuild this page's spec in another language:</div>
-            <div className="flex flex-wrap gap-1">
-              {['Rust', 'Go', 'Python', 'TypeScript'].map((lang) => (
-                <button key={lang} className="rounded-full bg-set-panel2 px-2 py-0.5 text-[11px] text-set-text hover:bg-set-accent/25 disabled:opacity-50" onClick={() => variant(lang)} disabled={busy}>
-                  {lang}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-1 mt-1.5">
-              <input
-                className="set-input flex-1 text-[11px] py-1"
-                placeholder="any language — e.g. Elixir"
-                value={customLang}
-                onChange={(e) => setCustomLang(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && variant(customLang)}
-              />
-              <button className="set-btn text-[11px] px-2" onClick={() => variant(customLang)} disabled={busy || !customLang.trim()}>
-                variant
-              </button>
-            </div>
-          </div>
-        </div>
+          {/* desktop: anchored popover */}
+          <div className="hidden md:block absolute z-30 mt-1 left-0 w-80 set-card p-2.5 shadow-xl">{body}</div>
+        </>
       )}
     </span>
   );
@@ -408,40 +420,52 @@ function ShareMenu({ pageId }: { pageId: string }) {
 
   const active = shares.filter((s) => !s.revoked_at);
 
+  const body = (
+    <>
+      <div className="text-xs text-set-dim mb-2">
+        Publish this page to a read-only link anyone can open — no account needed.
+      </div>
+      <button className="set-btn-primary text-xs w-full mb-2" onClick={create}>
+        {active.length > 0 ? 'New link' : 'Create public link'}
+      </button>
+      <div className="space-y-1 max-h-52 overflow-auto">
+        {shares.map((s) => (
+          <div key={s.id} className={`flex items-center gap-1.5 text-xs px-1.5 py-1 rounded ${s.revoked_at ? 'opacity-50' : 'hover:bg-set-panel2'}`}>
+            <button className="flex-1 text-left truncate font-mono" onClick={() => !s.revoked_at && copy(s.token)} title={s.revoked_at ? 'revoked' : 'click to copy'}>
+              /share/{s.token.slice(0, 10)}…
+            </button>
+            <span className="text-set-dim whitespace-nowrap" title="views">
+              {s.view_count}
+              <ExternalLink size={10} className="inline ml-0.5 -mt-0.5" />
+            </span>
+            {copied === s.token ? (
+              <Check size={12} className="text-green-400" />
+            ) : (
+              !s.revoked_at && <Copy size={12} className="text-set-dim cursor-pointer hover:text-set-text" onClick={() => copy(s.token)} />
+            )}
+            {!s.revoked_at && <Ban size={12} className="text-set-dim cursor-pointer hover:text-red-400" onClick={() => revoke(s.id)} />}
+          </div>
+        ))}
+        {shares.length === 0 && <div className="text-xs text-set-dim px-1.5 py-1">No links yet.</div>}
+      </div>
+    </>
+  );
+
   return (
     <span className="relative inline-block">
-      <button className="set-btn-ghost inline-flex items-center gap-1" onClick={() => setOpen((o) => !o)}>
+      <button className="set-btn-ghost inline-flex items-center gap-1 py-1.5" onClick={() => setOpen((o) => !o)}>
         <Share2 size={12} /> share {active.length > 0 && <span className="text-green-400">{active.length}</span>}
       </button>
       {open && (
-        <div className="absolute z-30 mt-1 left-0 w-72 set-card p-2.5 shadow-xl">
-          <div className="text-xs text-set-dim mb-2">
-            Publish this page to a read-only link anyone can open — no account needed.
+        <>
+          {/* mobile: bottom sheet */}
+          <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setOpen(false)} />
+          <div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+12px)] z-40 set-card p-3.5 pb-[calc(env(safe-area-inset-bottom)+14px)] rounded-2xl shadow-2xl sheet-in md:hidden max-h-[calc(100dvh-24px)] overflow-y-auto">
+            {body}
           </div>
-          <button className="set-btn-primary text-xs w-full mb-2" onClick={create}>
-            {active.length > 0 ? 'New link' : 'Create public link'}
-          </button>
-          <div className="space-y-1 max-h-52 overflow-auto">
-            {shares.map((s) => (
-              <div key={s.id} className={`flex items-center gap-1.5 text-xs px-1.5 py-1 rounded ${s.revoked_at ? 'opacity-50' : 'hover:bg-set-panel2'}`}>
-                <button className="flex-1 text-left truncate font-mono" onClick={() => !s.revoked_at && copy(s.token)} title={s.revoked_at ? 'revoked' : 'click to copy'}>
-                  /share/{s.token.slice(0, 10)}…
-                </button>
-                <span className="text-set-dim whitespace-nowrap" title="views">
-                  {s.view_count}
-                  <ExternalLink size={10} className="inline ml-0.5 -mt-0.5" />
-                </span>
-                {copied === s.token ? (
-                  <Check size={12} className="text-green-400" />
-                ) : (
-                  !s.revoked_at && <Copy size={12} className="text-set-dim cursor-pointer hover:text-set-text" onClick={() => copy(s.token)} />
-                )}
-                {!s.revoked_at && <Ban size={12} className="text-set-dim cursor-pointer hover:text-red-400" onClick={() => revoke(s.id)} />}
-              </div>
-            ))}
-            {shares.length === 0 && <div className="text-xs text-set-dim px-1.5 py-1">No links yet.</div>}
-          </div>
-        </div>
+          {/* desktop: anchored popover */}
+          <div className="hidden md:block absolute z-30 mt-1 left-0 w-72 set-card p-2.5 shadow-xl">{body}</div>
+        </>
       )}
     </span>
   );
@@ -534,9 +558,10 @@ export default function PageView() {
                 onBlur={saveTitle}
                 onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
               />
-              <div className="text-xs text-set-dim mt-1 flex items-center gap-3">
+              <div className="text-xs text-set-dim mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 {page.is_daily && <span className="text-amber-300">daily note</span>}
-                updated {new Date(page.updated_at).toLocaleString()}
+                <span className="hidden sm:inline">updated {new Date(page.updated_at).toLocaleString()}</span>
+                <span className="sm:hidden">updated {new Date(page.updated_at).toLocaleDateString()}</span>
                 <button
                   className="set-btn-ghost inline-flex items-center gap-1"
                   onClick={async () => {

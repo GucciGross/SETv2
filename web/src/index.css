@@ -1036,3 +1036,15 @@ sup.cite { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: 
   .set-mono-dim { color: #666 !important; }
   a { color: #2244aa !important; text-decoration: none; }
 }
+
+/* Touch: kill the double-tap-zoom delay on controls (native press feel) */
+button, [role='button'], .set-btn, .set-btn-ghost, .set-btn-primary {
+  touch-action: manipulation;
+}
+
+/* Mobile bottom sheets (share/build menus on small screens) */
+@keyframes sheet-in {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.sheet-in { animation: sheet-in 0.18s ease-out; }
