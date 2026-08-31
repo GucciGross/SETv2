@@ -573,21 +573,22 @@ function AppShellInner() {
 
           {/* reachable without a keyboard: on touch devices the command
               palette (Cmd/Ctrl+K) doesn't exist, so Settings lives here too */}
-          <button
-            className={`set-btn-ghost flex items-center gap-1.5 w-full ${railMode ? 'justify-center' : ''}`}
-            title="Settings"
-            onClick={() => {
-              navigate(`/app/space/${currentSpaceId}/settings`);
-              setMobileNav(false);
-            }}
-          >
-            <Settings size={14} /> {!railMode && 'Settings'}
-          </button>
         </div>
 
         <div className="p-3 border-t border-set-border flex items-center justify-between text-sm">
           {!railMode && <span className="truncate text-set-dim">{user?.name}</span>}
           <div className="flex items-center gap-1">
+            <button
+              className="set-btn-ghost flex items-center gap-1"
+              title="Settings"
+              aria-label="Settings"
+              onClick={() => {
+                navigate(`/app/space/${currentSpaceId}/settings`);
+                setMobileNav(false);
+              }}
+            >
+              <Settings size={15} />
+            </button>
             <button
               className="set-btn-ghost flex items-center gap-1"
               title={simple ? 'Studio mode — every surface, tree and tool' : 'Simple mode — just the essentials'}
