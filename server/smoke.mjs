@@ -195,6 +195,26 @@ check('deliver pipeline runs (skips — note already stamped today)', deliver.st
 const briefNotifs = (await call('GET', '/notifications')).json.notifications ?? [];
 check('brief notification created', briefNotifs.some((n) => n.type === 'brief'), `${briefNotifs.length} notifications, types: ${[...new Set(briefNotifs.map((n) => n.type))].join(',')}`);
 
+// 14e. checkpoints: parse + grade + mastery signal + path auto-tick
+const cpMd = '# Checkpoint page\n\nSome prose.\n\n```js\n// checkpoint: Reverse a string | expect: "olleh"\nreturn "hello"\n```\n\n```js\n// checkpoint: Always fine\n42\n```';
+const cpPage = (await call('POST', '/pages', { spaceId: team.id, title: 'Checkpoint Lab', markdown: cpMd })).json.page;
+const cpList = (await call('GET', `/pages/${cpPage.id}/checkpoints`)).json.checkpoints ?? [];
+check('checkpoints parsed from page', cpList.length === 2 && cpList[0].title === 'Reverse a string' && cpList[1].expect === null, JSON.stringify(cpList.map((c) => c.title)));
+const cpRun1 = await call('POST', `/pages/${cpPage.id}/checkpoints/0/run`);
+check('wrong solution fails with diff', cpRun1.status === 200 && cpRun1.json.run.passed === false && cpRun1.json.run.actual === 'hello' && cpRun1.json.run.expected === 'olleh', JSON.stringify(cpRun1.json.run ?? {}).slice(0, 80));
+const cpFix = await call('PATCH', `/pages/${cpPage.id}`, { markdown: cpMd.replace('return "hello"', `return 'hello'.split('').reverse().join('')`) });
+check('fix the code in the page', cpFix.status === 200);
+const cpRun2 = await call('POST', `/pages/${cpPage.id}/checkpoints/0/run`);
+check('fixed solution passes', cpRun2.json.run.passed === true && cpRun2.json.allPassed === false);
+const cpRun3 = await call('POST', `/pages/${cpPage.id}/checkpoints/1/run`);
+check('run-without-error checkpoint passes', cpRun3.json.run.passed === true && cpRun3.json.allPassed === true);
+const cpMastery = (await call('GET', `/spaces/${team.id}/mastery`)).json.mastery ?? {};
+check('checkpoints feed mastery (mastered)', cpMastery[cpPage.id]?.state === 'mastered' && cpMastery[cpPage.id]?.signals?.checkpoints?.passed === 2, JSON.stringify(cpMastery[cpPage.id]?.signals?.checkpoints ?? null));
+const cpPath = (await call('POST', `/spaces/${team.id}/paths`, { title: 'Checkpoint path', items: [{ pageId: cpPage.id }] })).json.path;
+check('path with checkpoint page created', !!cpPath?.id, String(cpPath?.item_count ?? ''));
+const cpTick = await call('POST', `/pages/${cpPage.id}/checkpoints/0/run`);
+check('all-passed auto-ticks path item', cpTick.json.pathsTicked?.length === 1 && cpTick.json.pathsTicked[0] === cpPath.id, JSON.stringify(cpTick.json.pathsTicked ?? []));
+
 // 15. search + export
 const search2 = (await call('GET', '/spaces/' + team.id + '/search?q=actuator')).json;
 check('workspace search', search2.pages.length >= 1);

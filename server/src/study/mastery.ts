@@ -1,15 +1,17 @@
 import { q } from '../db.js';
 
 /**
- * Per-page mastery for the graph's "Mastery" color mode. Three signals, all
+ * Per-page mastery for the graph's "Mastery" color mode. Four signals, all
  * user-scoped:
  *
- * - paths:    learning-path item progress (any done item → strong; assigned
- *             but unfinished → learning)
- * - quizzes:  best graded/submitted attempt on a page-linked deck
- *             (≥80% mastered, ≥50% learning, below → decaying)
- * - reviews:  SM-2 state on page-linked decks (≥1/3 overdue → decaying;
- *             else ease ≥ 2.3 with reps → mastered; else learning)
+ * - paths:        learning-path item progress (any done item → strong;
+ *                 assigned but unfinished → learning)
+ * - quizzes:      best graded/submitted attempt on a page-linked deck
+ *                 (≥80% mastered, ≥50% learning, below → decaying)
+ * - reviews:      SM-2 state on page-linked decks (≥1/3 overdue → decaying;
+ *                 else ease ≥ 2.3 with reps → mastered; else learning)
+ * - checkpoints:  runnable milestones on the page (all passed → mastered,
+ *                 some passed → learning)
  *
  * Decaying outranks everything (needs attention now), then mastered, then
  * learning. Untested pages are omitted from the map — the client renders
@@ -24,6 +26,7 @@ export interface PageMastery {
     paths: { done: number; total: number };
     quizzes: { attempts: number; bestRatio: number };
     reviews: { total: number; overdue: number; avgEase: number };
+    checkpoints: { passed: number; total: number };
   };
 }
 
@@ -42,7 +45,7 @@ export async function computeMastery(spaceId: string, userId: string): Promise<R
     if (!m) {
       m = {
         state: 'learning',
-        signals: { paths: { done: 0, total: 0 }, quizzes: { attempts: 0, bestRatio: 0 }, reviews: { total: 0, overdue: 0, avgEase: 0 } },
+        signals: { paths: { done: 0, total: 0 }, quizzes: { attempts: 0, bestRatio: 0 }, reviews: { total: 0, overdue: 0, avgEase: 0 }, checkpoints: { passed: 0, total: 0 } },
       };
       byPage.set(pageId, m);
     }
@@ -113,6 +116,21 @@ export async function computeMastery(spaceId: string, userId: string): Promise<R
     }
   }
 
+  // 4. runnable checkpoints: DB rows per (page, checkpoint). Rows for markers
+  //    since removed from the markdown still count — a page you proved once
+  //    keeps the credit; re-adding a failing marker overwrites its row.
+  const checkpointRows = await q<{ page_id: string; passed: boolean }>(
+    `SELECT cr.page_id, cr.passed FROM checkpoint_results cr
+     JOIN pages p ON p.id = cr.page_id
+     WHERE p.space_id = $1 AND cr.user_id = $2`,
+    [spaceId, userId]
+  );
+  for (const row of checkpointRows) {
+    const m = touch(row.page_id);
+    m.signals.checkpoints.total += 1;
+    if (row.passed) m.signals.checkpoints.passed += 1;
+  }
+
   // aggregate signal states
   const out: Record<string, PageMastery> = {};
   for (const [pageId, m] of byPage) {
@@ -130,6 +148,11 @@ export async function computeMastery(spaceId: string, userId: string): Promise<R
     if (total > 0) {
       const reviewState: MasteryState = overdue / total >= (1 / 3) ? 'decaying' : avgEase >= 2.3 ? 'mastered' : 'learning';
       state = combine(state, reviewState);
+    }
+
+    const checkpoints = m.signals.checkpoints;
+    if (checkpoints.total > 0) {
+      state = combine(state, checkpoints.passed >= checkpoints.total ? 'mastered' : 'learning');
     }
     m.state = state ?? 'learning';
     out[pageId] = m;

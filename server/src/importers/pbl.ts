@@ -152,9 +152,17 @@ What will exist when this project is done, and why it's worth building.
 
 ## Plan
 
-- [ ] Milestone 1
+Milestones are **checkpoints** — runnable js code blocks with a \`// checkpoint:\` marker. Run them from the page's *checkpoints* panel; passing every one marks this project's path items done.
+
+- [ ] Milestone 1 — warm-up
 - [ ] Milestone 2
 - [ ] Milestone 3
+
+\`\`\`js
+// checkpoint: Milestone 1 — reverse a string | expect: "olleh"
+// Replace the return so the checkpoint passes, then run it from the panel.
+return 'hello'
+\`\`\`
 
 ## Build Log
 

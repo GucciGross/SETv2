@@ -5,6 +5,7 @@ import { requireResourceSpace, requireSpace, rid } from '../lib/http.js';
 import { generateDeck, sm2, createDeckRecord } from './generate.js';
 import { computeMastery } from './mastery.js';
 import { computeBrief, writeBriefToDaily } from './brief.js';
+import { getCheckpointStates, parseCheckpoints, gradeCheckpoint, recordCheckpointRun, allCheckpointsPassed, autoTickPathsForPage } from './checkpoints.js';
 import { deckToH5P } from './h5p.js';
 import { buildAttemptItems, gradeAttempt, normalizeQuizItems, stripAnswers, type QuizSettings } from './quiz.js';
 import { recordActivity } from '../team/activity.js';
@@ -201,6 +202,35 @@ export async function studyRoutes(app: FastifyInstance) {
     const { deliverBrief } = await import('./briefScheduler.js');
     const results = await deliverBrief(req.user!.id, spaceId);
     return { delivered: results.filter((r) => r.written).length, results };
+  });
+
+  // ---- project checkpoints (runnable milestones inside ```js blocks) ----
+
+  app.get('/pages/:id/checkpoints', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'pages', id);
+    if (!ctx) return;
+    return { checkpoints: await getCheckpointStates(id, req.user!.id) };
+  });
+
+  app.post('/pages/:id/checkpoints/:index/run', async (req, reply) => {
+    const id = rid((req.params as any).id);
+    const ctx = await requireResourceSpace(req, reply, 'pages', id, 'editor');
+    if (!ctx) return;
+    const index = Number((req.params as any).index);
+    const page = await one<{ markdown: string | null }>(`SELECT markdown FROM pages WHERE id = $1`, [id]);
+    const checkpoints = parseCheckpoints(page?.markdown ?? '');
+    const checkpoint = checkpoints[index];
+    if (!checkpoint) return reply.code(404).send({ error: 'No such checkpoint on this page' });
+    const run = gradeCheckpoint(checkpoint);
+    await recordCheckpointRun(id, req.user!.id, run);
+    const allPassed = await allCheckpointsPassed(id, req.user!.id);
+    const pathsTicked = allPassed ? await autoTickPathsForPage(ctx.spaceId, id, req.user!.id) : [];
+    if (run.passed || pathsTicked.length) {
+      const { bus } = await import('../lib/events.js');
+      bus.publish({ spaceId: ctx.spaceId, type: 'db_updated', payload: { pageId: id } });
+    }
+    return { run, allPassed, pathsTicked };
   });
 
   app.get('/decks/:id', async (req, reply) => {

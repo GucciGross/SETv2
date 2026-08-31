@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Link2, ArrowUpRight, Download, MailQuestion, History, RotateCcw, Share2, Copy, Check, ExternalLink, Ban, Rocket, GraduationCap } from 'lucide-react';
+import { Link2, ArrowUpRight, Download, MailQuestion, History, RotateCcw, Share2, Copy, Check, ExternalLink, Ban, Rocket, GraduationCap, Flag, Play } from 'lucide-react';
 import Editor from '../components/Editor';
 import { useAgentContext } from '@copilotkit/react-core/v2';
 import { registerEditor } from '../lib/editorBridge';
@@ -261,6 +261,84 @@ function QuizButton({ pageId, onDeck }: { pageId: string; onDeck: (deckId: strin
   );
 }
 
+/** Runnable milestones (```js "// checkpoint:" blocks) — run, grade, track. */
+function CheckpointsPanel({ pageId, onPassed }: { pageId: string; onPassed: () => void }) {
+  const [checkpoints, setCheckpoints] = useState<any[]>([]);
+  const [running, setRunning] = useState<number | null>(null);
+  const [lastRun, setLastRun] = useState<Record<number, any>>({});
+
+  const load = () => api.get(`/pages/${pageId}/checkpoints`).then((r) => setCheckpoints(r.checkpoints ?? [])).catch(() => {});
+  useEffect(() => {
+    load();
+  }, [pageId]);
+
+  const run = async (index: number) => {
+    if (running !== null) return;
+    setRunning(index);
+    try {
+      const r = await api.post(`/pages/${pageId}/checkpoints/${index}/run`);
+      setLastRun((prev) => ({ ...prev, [index]: r }));
+      load();
+      if (r?.run?.passed && r?.allPassed) onPassed();
+    } catch (e: any) {
+      setLastRun((prev) => ({ ...prev, [index]: { run: { passed: false, actual: e.message, logs: [] } } }));
+    } finally {
+      setRunning(null);
+    }
+  };
+
+  if (checkpoints.length === 0) {
+    return (
+      <p className="text-xs text-set-dim p-2 leading-relaxed">
+        No checkpoints yet. Add a js code block starting with{' '}
+        <code className="rounded bg-set-panel2 px-1">{'// checkpoint: Title | expect: "result"'}</code>{' '}
+        and it becomes a runnable, graded milestone.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {checkpoints.map((c) => {
+        const result = lastRun[c.index];
+        return (
+          <div key={c.index} className="rounded-lg border border-set-border p-2">
+            <div className="flex items-center gap-1.5">
+              <span className={`w-4 h-4 rounded-full shrink-0 flex items-center justify-center text-[10px] ${c.passed ? 'bg-green-500/20 text-green-300' : c.attempts > 0 ? 'bg-red-500/20 text-red-300' : 'bg-set-panel2 text-set-dim'}`}>
+                {c.passed ? '✓' : c.attempts > 0 ? '✗' : c.index + 1}
+              </span>
+              <span className="text-xs text-set-text truncate flex-1" title={c.title}>{c.title}</span>
+              <button
+                className="set-btn text-[10px] px-1.5 py-0.5 flex items-center gap-0.5"
+                onClick={() => run(c.index)}
+                disabled={running !== null}
+              >
+                <Play size={9} /> {running === c.index ? '…' : 'run'}
+              </button>
+            </div>
+            <div className="text-[10px] text-set-dim mt-1 font-mono truncate">
+              {c.expect !== null ? `expect: ${c.expect}` : 'runs without error'}
+              {c.attempts > 0 && ` · ${c.attempts} attempt${c.attempts > 1 ? 's' : ''}`}
+            </div>
+            {result && (
+              <div className="mt-1.5 text-[10px] leading-relaxed">
+                {result.run?.passed ? (
+                  <span className="text-green-300">✓ passed{result.allPassed ? ' — all checkpoints done' : ''}{result.pathsTicked?.length ? ' · path item ticked' : ''}</span>
+                ) : (
+                  <div>
+                    <span className="text-red-300">✗ {result.run?.actual?.slice(0, 140) || 'failed'}</span>
+                    {result.run?.expected != null && <div className="text-set-dim">expected: {String(result.run.expected).slice(0, 140)}</div>}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ShareMenu({ pageId }: { pageId: string }) {
   const [open, setOpen] = useState(false);
   const [shares, setShares] = useState<any[]>([]);
@@ -335,10 +413,11 @@ export default function PageView() {
   const { pages, createPage, loadPages, surfaces } = useApp();
   const [page, setPage] = useState<PageData | null>(null);
   const [title, setTitle] = useState('');
-  const [tab, setTab] = useState<'backlinks' | 'mentions' | 'history'>('backlinks');
+  const [tab, setTab] = useState<'backlinks' | 'mentions' | 'history' | 'checkpoints'>('backlinks');
   const [backlinks, setBacklinks] = useState<any[]>([]);
   const [outgoing, setOutgoing] = useState<any[]>([]);
   const [mentions, setMentions] = useState<any[]>([]);
+  const [checkpoints, setCheckpoints] = useState<any[]>([]);
 
   // give the guide/copilot agents the note being edited (outline for context)
   useAgentContext({
@@ -364,6 +443,7 @@ export default function PageView() {
       setOutgoing(r.outgoing);
     }).catch(() => {});
     api.get(`/pages/${pageId}/mentions`).then((r) => setMentions(r.mentions)).catch(() => {});
+    api.get(`/pages/${pageId}/checkpoints`).then((r) => setCheckpoints(r.checkpoints ?? [])).catch(() => {});
   }, [pageId, page?.markdown]);
 
   // live collab refresh
@@ -451,13 +531,13 @@ export default function PageView() {
       {/* Linked mentions side panel */}
       <div className="w-64 shrink-0 border-l border-set-border bg-set-panel/60 overflow-y-auto hidden xl:block">
         <div className="flex border-b border-set-border text-sm">
-          {(['backlinks', 'mentions', 'history'] as const).map((t) => (
+          {(['backlinks', 'mentions', 'history', 'checkpoints'] as const).map((t) => (
             <button
               key={t}
               className={`flex-1 py-2.5 px-2 capitalize ${tab === t ? 'text-white border-b-2 border-set-accent' : 'text-set-dim hover:text-set-text'}`}
               onClick={() => setTab(t)}
             >
-              {t === 'backlinks' ? <span className="flex items-center justify-center gap-1"><Link2 size={12} /> {backlinks.length}</span> : t === 'mentions' ? <span className="flex items-center justify-center gap-1"><MailQuestion size={12} /> {mentions.length}</span> : <span className="flex items-center justify-center gap-1"><History size={12} /></span>}
+              {t === 'backlinks' ? <span className="flex items-center justify-center gap-1"><Link2 size={12} /> {backlinks.length}</span> : t === 'mentions' ? <span className="flex items-center justify-center gap-1"><MailQuestion size={12} /> {mentions.length}</span> : t === 'history' ? <span className="flex items-center justify-center gap-1"><History size={12} /></span> : <span className="flex items-center justify-center gap-1"><Flag size={12} /> {checkpoints.length}</span>}
             </button>
           ))}
         </div>
@@ -498,6 +578,7 @@ export default function PageView() {
             </>
           )}
           {tab === 'history' && <VersionHistory pageId={page.id} currentMarkdown={page.markdown} onRestored={load} />}
+          {tab === 'checkpoints' && <CheckpointsPanel pageId={page.id} onPassed={load} />}
         </div>
       </div>
     </div>
