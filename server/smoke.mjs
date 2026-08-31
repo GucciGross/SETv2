@@ -185,6 +185,16 @@ check('daily note contains brief markdown', dailyPage.markdown.includes("Todayâ€
 const toDaily2 = await call('POST', `/spaces/${team.id}/brief/to-daily`);
 check('brief stamp is idempotent per day', toDaily2.status === 200 && toDaily2.json.written === false && toDaily2.json.pageId === toDaily1.json.pageId);
 
+// 14d. scheduled delivery: preferences + the deliver pipeline the scheduler runs
+const prefsPut = await call('PUT', '/users/preferences', { briefEnabled: true, briefHour: new Date().getHours(), briefTz: 'UTC' });
+check('brief preferences saved', prefsPut.status === 200 && prefsPut.json.preferences?.briefEnabled === true && !('briefLastDate' in (prefsPut.json.preferences ?? {})));
+const prefsGet = await call('GET', '/users/preferences');
+check('brief preferences roundtrip', prefsGet.json.preferences?.briefHour === new Date().getHours());
+const deliver = await call('POST', `/spaces/${team.id}/brief/deliver`);
+check('deliver pipeline runs (skips â€” note already stamped today)', deliver.status === 200 && Array.isArray(deliver.json.results));
+const briefNotifs = (await call('GET', '/notifications')).json.notifications ?? [];
+check('brief notification created', briefNotifs.some((n) => n.type === 'brief'), `${briefNotifs.length} notifications, types: ${[...new Set(briefNotifs.map((n) => n.type))].join(',')}`);
+
 // 15. search + export
 const search2 = (await call('GET', '/spaces/' + team.id + '/search?q=actuator')).json;
 check('workspace search', search2.pages.length >= 1);

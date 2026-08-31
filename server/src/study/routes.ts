@@ -194,6 +194,15 @@ export async function studyRoutes(app: FastifyInstance) {
     }
   });
 
+  /** Deliver the brief to the requesting user right now: daily note + notification + push (what the scheduler runs). */
+  app.post('/spaces/:spaceId/brief/deliver', async (req, reply) => {
+    const spaceId = (req.params as any).spaceId;
+    if (!(await requireSpace(req, reply, spaceId, 'editor'))) return;
+    const { deliverBrief } = await import('./briefScheduler.js');
+    const results = await deliverBrief(req.user!.id, spaceId);
+    return { delivered: results.filter((r) => r.written).length, results };
+  });
+
   app.get('/decks/:id', async (req, reply) => {
     const id = rid((req.params as any).id);
     const ctx = await requireResourceSpace(req, reply, 'decks', id);

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera, Gauge, Cloud, Scissors, Trash2, Bell, Upload, CreditCard, Coins, Download } from 'lucide-react';
+import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera, Gauge, Cloud, Scissors, Trash2, Bell, Upload, CreditCard, Coins, Download, CloudSun } from 'lucide-react';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 import McpSettings from '../components/McpSettings';
@@ -1296,6 +1296,81 @@ function NotificationsTab() {
         )}
       </div>
       {permission === 'denied' && <p className="text-xs text-red-300 mt-2">Notifications are blocked for this site — unblock them in your browser's site settings, then retry.</p>}
+      {msg && <p className="text-xs text-set-dim mt-2">{msg}</p>}
+
+      <BriefSchedule />
+    </div>
+  );
+}
+
+/** Daily-brief scheduling: server stamps the brief into the daily note at your hour + pushes it. */
+function BriefSchedule() {
+  const { spaceId } = useParams();
+  const navigate = useNavigate();
+  const [prefs, setPrefs] = useState<any>(null);
+  const [hour, setHour] = useState('8');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time';
+
+  useEffect(() => {
+    api.get('/users/preferences').then((r) => {
+      setPrefs(r.preferences);
+      if (typeof r.preferences?.briefHour === 'number') setHour(String(r.preferences.briefHour));
+    }).catch(() => setPrefs({}));
+  }, []);
+
+  const save = async (enabled: boolean) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await api.put('/users/preferences', { briefEnabled: enabled, briefHour: Number(hour), briefTz: tz });
+      setPrefs(r.preferences);
+      setMsg(enabled ? `On — the brief lands at ${hour.padStart(2, '0')}:00 (${tz}) in every space you can edit.` : 'Brief scheduling off.');
+    } catch (e: any) {
+      setMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deliverNow = async () => {
+    if (!spaceId || busy) return;
+    setBusy(true);
+    try {
+      const r = await api.post(`/spaces/${spaceId}/brief/deliver`);
+      if (r?.results?.[0]?.pageId || r?.delivered) {
+        const pageId = r.results.find((x: any) => x.pageId)?.pageId;
+        if (pageId) return navigate(`/app/space/${spaceId}/page/${pageId}`);
+      }
+      setMsg(r?.delivered ? 'Delivered.' : 'Nothing to deliver today — no reviews due, nothing decaying, no builds.');
+    } catch (e: any) {
+      setMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const enabled = prefs?.briefEnabled === true;
+  return (
+    <div className="border-t border-set-border mt-4 pt-4">
+      <h3 className="font-semibold text-white mb-1 flex items-center gap-1.5"><CloudSun size={14} /> Daily brief</h3>
+      <p className="text-sm text-set-dim mb-3">
+        Each morning SET writes your brief into the daily note — reviews due, pages going amber, ranked next steps, recent builds — and pushes it to this device.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="set-input w-24 text-sm" value={hour} onChange={(e) => setHour(e.target.value)}>
+          {Array.from({ length: 24 }, (_, h) => (
+            <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
+          ))}
+        </select>
+        <span className="text-xs text-set-dim">{tz}</span>
+        <button className="set-btn-primary text-sm" disabled={busy || prefs === null} onClick={() => save(!enabled)}>
+          {enabled ? 'Turn off' : 'Turn on'}
+        </button>
+        <button className="set-btn text-sm" disabled={busy || !spaceId} onClick={deliverNow}>Deliver now</button>
+      </div>
+      {enabled && <p className="text-xs text-green-400 mt-2">Scheduled at {String(prefs.briefHour ?? hour).padStart(2, '0')}:00 {prefs.briefTz ?? tz}</p>}
       {msg && <p className="text-xs text-set-dim mt-2">{msg}</p>}
     </div>
   );

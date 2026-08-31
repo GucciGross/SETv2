@@ -146,6 +146,8 @@ async function main() {
   await migrate();
   await bus.init();
   if (config.seedDemo) await seed();
+  const { initBriefScheduler } = await import('./study/briefScheduler.js');
+  initBriefScheduler();
 
   await app.listen({ port: config.port, host: config.host });
   console.log(`[SET] server listening on :${config.port}`);

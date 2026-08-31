@@ -176,6 +176,28 @@ export async function authRoutes(app: FastifyInstance) {
     await q(`UPDATE users SET mascot = $2 WHERE id = $1`, [user.id, JSON.stringify(body)]);
     return { mascot: body };
   });
+
+  // per-account preferences (daily-brief scheduling today, more later)
+  app.get('/users/preferences', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { getPreferences } = await import('../study/briefScheduler.js');
+    return { preferences: await getPreferences(user.id) };
+  });
+
+  app.put('/users/preferences', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const body = z
+      .object({
+        briefEnabled: z.boolean().optional(),
+        briefHour: z.number().int().min(0).max(23).nullable().optional(),
+        briefTz: z.string().max(64).optional(),
+      })
+      .parse(req.body);
+    const { setPreferences } = await import('../study/briefScheduler.js');
+    return { preferences: await setPreferences(user.id, body) };
+  });
 }
 
 export { createPersonalSpace };
