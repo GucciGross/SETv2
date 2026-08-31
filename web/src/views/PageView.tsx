@@ -564,6 +564,18 @@ export default function PageView() {
           <div className="mt-4">
             <Editor markdown={page.markdown} onSave={saveMarkdown} onWikiClick={openWikiLink} onReady={registerEditor} />
           </div>
+          {/* checkpoints on small screens: the side panel is xl-only, so stack
+              the same panel under the editor where phones/tablets can reach it */}
+          {checkpoints.length > 0 && (
+            <details className="mt-6 border-t border-set-border pt-3 xl:hidden">
+              <summary className="cursor-pointer select-none flex items-center gap-1.5 text-sm text-set-dim hover:text-set-text">
+                <Flag size={13} /> Checkpoints ({checkpoints.filter((c) => c.passed).length}/{checkpoints.length} passed)
+              </summary>
+              <div className="mt-3">
+                <CheckpointsPanel pageId={page.id} onPassed={load} />
+              </div>
+            </details>
+          )}
           <Comments pageId={page.id} />
         </div>
       </div>
