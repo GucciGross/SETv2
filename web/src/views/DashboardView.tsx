@@ -8,8 +8,87 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, DitherGr
 import ErrorBoundary from '../components/ErrorBoundary';
 import Checklist from '../components/onboarding/Checklist';
 import {
-  FileText, BookOpen, Database, Users, Bell, ListTodo, ArrowRight, Sparkles, TrendingUp, ChevronDown,
+  FileText, BookOpen, Database, Users, Bell, ListTodo, ArrowRight, Sparkles, TrendingUp, ChevronDown, CloudSun, Zap, NotebookPen,
 } from 'lucide-react';
+
+/** Today's brief strip: reviews due, amber pages, ranked next steps, recent builds. */
+function BriefCard({ spaceId }: { spaceId: string }) {
+  const navigate = useNavigate();
+  const [brief, setBrief] = useState<any>(null);
+  const [writing, setWriting] = useState(false);
+
+  useEffect(() => {
+    if (!spaceId) return;
+    api.get(`/spaces/${spaceId}/brief`).then((r) => setBrief(r.brief)).catch(() => {});
+  }, [spaceId]);
+
+  if (!brief) return null;
+  const empty = brief.reviews?.dueNow === 0 && !brief.decaying?.length && !brief.next?.length && !brief.builds?.length;
+  if (empty) return null;
+
+  const write = async () => {
+    if (writing) return;
+    setWriting(true);
+    try {
+      const r = await api.post(`/spaces/${spaceId}/brief/to-daily`);
+      if (r?.pageId) navigate(`/app/space/${spaceId}/page/${r.pageId}`);
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setWriting(false);
+    }
+  };
+
+  return (
+    <div data-tour="brief" className="set-card p-4 mb-6">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <CloudSun size={15} className="text-amber-300" />
+        <span className="text-sm text-white">Today’s brief</span>
+        <div className="flex flex-wrap items-center gap-1.5 ml-1">
+          {brief.reviews?.dueNow > 0 && (
+            <button
+              className="rounded-full bg-amber-400/15 text-amber-300 px-2 py-0.5 text-[11px] hover:bg-amber-400/25"
+              onClick={() => {
+                const worst = brief.reviews.decks[0];
+                if (worst) navigate(`/app/space/${spaceId}/notebook/${worst.notebookId ?? 'none'}/deck/${worst.id}`);
+              }}
+            >
+              <Zap size={10} className="inline -mt-0.5 mr-1" />{brief.reviews.dueNow} cards due
+            </button>
+          )}
+          {brief.decaying?.length > 0 && (
+            <button className="rounded-full bg-amber-400/10 text-amber-200/80 px-2 py-0.5 text-[11px] hover:bg-amber-400/20" onClick={() => navigate(`/app/space/${spaceId}/graph`)}>
+              {brief.decaying.length} going amber
+            </button>
+          )}
+          {brief.builds?.length > 0 && (
+            <span className="rounded-full bg-set-panel2 text-set-dim px-2 py-0.5 text-[11px]">
+              {brief.builds.length} build{brief.builds.length > 1 ? 's' : ''} · latest {brief.builds[0].status}
+            </span>
+          )}
+        </div>
+        <button className="ml-auto set-btn text-[11px] flex items-center gap-1" onClick={write} disabled={writing}>
+          <NotebookPen size={12} /> {writing ? 'writing…' : 'write to today’s note'}
+        </button>
+      </div>
+      {brief.next?.length > 0 && (
+        <div className="space-y-1">
+          {brief.next.slice(0, 3).map((n: any) => (
+            <button
+              key={n.pageId}
+              className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-set-panel2 group"
+              onClick={() => navigate(`/app/space/${spaceId}/page/${n.pageId}`)}
+            >
+              <ArrowRight size={12} className="text-set-dim group-hover:text-set-accent shrink-0" />
+              <span className="text-sm text-set-text truncate">{n.title}</span>
+              <span className="text-[11px] text-set-dim truncate ml-auto shrink-0 max-w-[55%]">{n.reason}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Space dashboard: the home view with dithered analytics, tasks, and quick actions. */
 export default function DashboardView() {
@@ -83,6 +162,8 @@ export default function DashboardView() {
           }} />
         </div>
       </details>
+
+      <BriefCard spaceId={spaceId!} />
 
       {/* Hero greeting — the dither wash gives the canvas its brand texture */}
       <div className="relative overflow-hidden rounded-xl border border-set-border bg-set-panel mb-6 shadow-card">

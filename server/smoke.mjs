@@ -163,7 +163,8 @@ check('path progress toggle', prog.status === 200);
 // no signals stay absent (untested). Page-generate needs an LLM, so the
 // quiz/review signals are exercised only where a provider exists.
 const masteryBefore = (await call('GET', `/spaces/${team.id}/mastery`)).json.mastery ?? {};
-const pathItem0Page = (await call('GET', `/paths/${paths[0].id}`)).json.path?.items?.[0]?.pageId;
+const pathItems = (await call('GET', `/paths/${paths[0].id}`)).json.path?.items ?? [];
+const pathItem0Page = pathItems[0]?.pageId;
 check('mastery: path-done page is mastered', masteryBefore[pathItem0Page]?.state === 'mastered', JSON.stringify(masteryBefore[pathItem0Page] ?? null));
 check('mastery: signal counts present', masteryBefore[pathItem0Page]?.signals?.paths?.done === 1);
 const freshPage = (await call('POST', '/pages', { spaceId: team.id, title: `Untested ${Date.now()}`, markdown: 'no signals here' })).json.page;
@@ -171,6 +172,18 @@ const masteryAfter = (await call('GET', `/spaces/${team.id}/mastery`)).json.mast
 check('mastery: untested page omitted', !(freshPage.id in masteryAfter));
 const pageGen = await call('POST', `/pages/${freshPage.id}/generate`, { kind: 'quiz' });
 check('page quiz without LLM fails gracefully', pageGen.status === 502 && /provider/i.test(pageGen.json.error ?? ''), `${pageGen.status} ${String(pageGen.json.error ?? '').slice(0, 60)}`);
+
+// 14c. daily brief: computed from the same signals; writable into the daily note once
+const briefRes = await call('GET', `/spaces/${team.id}/brief`);
+const brief = briefRes.json.brief ?? {};
+check('brief computed', briefRes.status === 200 && typeof brief.reviews?.dueNow === 'number' && Array.isArray(brief.next));
+check('brief suggests the next unfinished path item', brief.next.some((n) => n.pageId === pathItems[1]?.pageId), JSON.stringify(brief.next?.map((n) => n.title) ?? []));
+const toDaily1 = await call('POST', `/spaces/${team.id}/brief/to-daily`);
+check('brief written to daily note', toDaily1.status === 200 && toDaily1.json.written === true && !!toDaily1.json.pageId);
+const dailyPage = (await call('GET', `/pages/${toDaily1.json.pageId}`)).json.page;
+check('daily note contains brief markdown', dailyPage.markdown.includes("Today’s brief") && /\[\[.+\]\]/.test(dailyPage.markdown));
+const toDaily2 = await call('POST', `/spaces/${team.id}/brief/to-daily`);
+check('brief stamp is idempotent per day', toDaily2.status === 200 && toDaily2.json.written === false && toDaily2.json.pageId === toDaily1.json.pageId);
 
 // 15. search + export
 const search2 = (await call('GET', '/spaces/' + team.id + '/search?q=actuator')).json;

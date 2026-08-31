@@ -4,6 +4,7 @@ import { one, q } from '../db.js';
 import { requireResourceSpace, requireSpace, rid } from '../lib/http.js';
 import { generateDeck, sm2, createDeckRecord } from './generate.js';
 import { computeMastery } from './mastery.js';
+import { computeBrief, writeBriefToDaily } from './brief.js';
 import { deckToH5P } from './h5p.js';
 import { buildAttemptItems, gradeAttempt, normalizeQuizItems, stripAnswers, type QuizSettings } from './quiz.js';
 import { recordActivity } from '../team/activity.js';
@@ -171,6 +172,26 @@ export async function studyRoutes(app: FastifyInstance) {
     if (!(await requireSpace(req, reply, spaceId))) return;
     const mastery = await computeMastery(spaceId, req.user!.id);
     return { mastery };
+  });
+
+  /** Daily Brief: reviews due, decaying pages, ranked next-steps, recent builds, stale-but-linked pages. */
+  app.get('/spaces/:spaceId/brief', async (req, reply) => {
+    const spaceId = (req.params as any).spaceId;
+    if (!(await requireSpace(req, reply, spaceId))) return;
+    const brief = await computeBrief(spaceId, req.user!.id);
+    return { brief };
+  });
+
+  /** Stamp the brief into today's daily note (idempotent per day — marked with an HTML comment). */
+  app.post('/spaces/:spaceId/brief/to-daily', async (req, reply) => {
+    const spaceId = (req.params as any).spaceId;
+    if (!(await requireSpace(req, reply, spaceId, 'editor'))) return;
+    try {
+      const result = await writeBriefToDaily(spaceId, req.user!.id);
+      return result;
+    } catch (e: any) {
+      return reply.code(500).send({ error: e.message ?? String(e) });
+    }
   });
 
   app.get('/decks/:id', async (req, reply) => {

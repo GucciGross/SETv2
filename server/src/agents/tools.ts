@@ -601,6 +601,27 @@ export const TOOLS: ToolDef2[] = [
     },
   },
   {
+    name: 'daily_brief',
+    description: 'Get the workspace daily brief: SM-2 reviews due now, pages going amber on the mastery map, ranked next steps (due-soon path items, decaying pages, backlog projects near fresh work), recent WandGx builds, and stale pages linked from recent work.',
+    parameters: { type: 'object', properties: {} },
+    write: false,
+    async run(_args, ctx) {
+      const { computeBrief } = await import('../study/brief.js');
+      const brief = await computeBrief(ctx.spaceId, ctx.userId);
+      const summary = [
+        brief.reviews.dueNow > 0 ? `${brief.reviews.dueNow} cards due${brief.reviews.decks[0] ? ` (worst: ${brief.reviews.decks[0].title})` : ''}` : 'no reviews due',
+        brief.decaying.length ? `${brief.decaying.length} page(s) going amber` : null,
+        brief.next.length ? `next: ${brief.next.slice(0, 3).map((n) => `${n.title} (${n.reason})`).join('; ')}` : null,
+        brief.builds.length ? `${brief.builds.length} build(s) in the last 48h` : null,
+      ].filter(Boolean).join(' · ');
+      return {
+        ok: true,
+        result: { ...brief, summary },
+        a2ui: [{ type: 'card', props: { title: 'Today’s brief', icon: '🌤', body: summary.slice(0, 900) } }],
+      };
+    },
+  },
+  {
     name: 'wandgx_build',
     description:
       'Start a WandGx app build from a prompt. WandGx generates a real app (GitHub repo, Docker setup, live URL); progress and result links are appended to the linked page\'s Build log. Great for project-based learning: generate a starter or a variant of the tutorial the user is working through.',

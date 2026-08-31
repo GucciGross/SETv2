@@ -915,6 +915,18 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'daily_brief',
+    title: 'Get daily brief',
+    description: 'The workspace daily brief: SM-2 reviews due now, pages decaying on the mastery map, ranked next steps (due-soon path items, decaying pages, backlog projects near fresh work), recent WandGx builds, and stale pages linked from recent work.',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true },
+    scope: 'mcp:read',
+    async run(_a, ctx) {
+      const { computeBrief } = await import('../study/brief.js');
+      return computeBrief(ctx.spaceId, ctx.userId);
+    },
+  },
+  {
     name: 'wandgx_build',
     title: 'Start WandGx app build',
     description:
