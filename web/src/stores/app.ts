@@ -32,8 +32,8 @@ interface AppState {
   presence: { userId: string; name: string; pageId?: string }[];
   copilotOpen: boolean;
   surfaces: Record<string, boolean>;
-  /** Shell density: 'simple' shows a task-shaped nav (Home/Subjects/Ask),
-   *  'studio' exposes every surface. Persisted locally. */
+  /** Shell density: 'simple' shows a task-shaped nav (Home/Notebooks/Tasks/Ask)
+   *  and is the default; 'studio' exposes every surface. Persisted locally. */
   shellMode: 'simple' | 'studio';
   setShellMode: (m: 'simple' | 'studio') => void;
   loadSpaces: () => Promise<void>;
@@ -65,7 +65,9 @@ export const useApp = create<AppState>((set, get) => ({
   presence: [],
   copilotOpen: typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,
   surfaces: DEFAULT_SURFACES,
-  shellMode: (typeof window !== 'undefined' && localStorage.getItem('set_shell_mode') === 'simple' ? 'simple' : 'studio'),
+  // default to simple mode — studio is opt-in (an explicit choice is persisted;
+  // no stored preference means the calm shell)
+  shellMode: (typeof window !== 'undefined' && localStorage.getItem('set_shell_mode') === 'studio' ? 'studio' : 'simple'),
 
   setShellMode: (m) => {
     set({ shellMode: m });

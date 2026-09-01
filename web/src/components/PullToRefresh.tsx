@@ -5,8 +5,12 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
  * pull past 64px (rubber-banded) while at the top → spinner fills, release
  * triggers onRefresh, content rides along partway like a native list.
  * Touch-only, so desktop is untouched.
+ *
+ * `stretch` makes the content wrapper fill the scroll container's height —
+ * needed by full-viewport views (the graph) whose `h-full` children would
+ * otherwise collapse to intrinsic height inside this auto-height div.
  */
-export function PullToRefresh({ onRefresh, children }: { onRefresh: () => void | Promise<void>; children: ReactNode }) {
+export function PullToRefresh({ onRefresh, children, stretch = false }: { onRefresh: () => void | Promise<void>; children: ReactNode; stretch?: boolean }) {
   const [pull, setPull] = useState(0);
   const [busy, setBusy] = useState(false);
   const pullRef = useRef(0);
@@ -95,6 +99,7 @@ export function PullToRefresh({ onRefresh, children }: { onRefresh: () => void |
         </div>
       </div>
       <div
+        className={stretch ? 'h-full' : undefined}
         style={{
           transform: pull > 0 ? `translateY(${pull * 0.4}px)` : undefined,
           transition: start.current == null ? 'transform 0.2s ease-out' : 'none',

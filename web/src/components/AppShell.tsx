@@ -5,10 +5,11 @@ import {
   LogOut, ChevronRight, ChevronDown, Trash2, Import, PenLine,
   Code2, SquareTerminal, LibraryBig, Database as DatabaseIcon, Menu, X, ListTodo, Activity as ActivityIcon,
   ChevronsLeft, ChevronsRight, FileText, LayoutDashboard, Telescope,
-  Mic, Sparkles, Wrench, MessageCircle, Zap,
+  Mic, MessageCircle, Zap,
 } from 'lucide-react';
 import { useApp, type PageMeta } from '../stores/app';
 import { api } from '../lib/api';
+import { isRunNotebook } from '../lib/utils';
 import { startTour } from '../lib/tour';
 import { Toasts } from './Toast';
 import { haptic } from '../lib/haptic';
@@ -94,7 +95,10 @@ function NavGroup({ label, items, surfaces, railMode, onNavigate }: { label: str
 
 function PageTree() {
   const { spaceId: routeSpaceId, pageId } = useParams();
-  const { pages, createPage, deletePage, currentSpaceId } = useApp();
+  const pages = useApp((s) => s.pages);
+  const createPage = useApp((s) => s.createPage);
+  const deletePage = useApp((s) => s.deletePage);
+  const currentSpaceId = useApp((s) => s.currentSpaceId);
   const navigate = useNavigate();
   const spaceId = routeSpaceId ?? currentSpaceId ?? '';
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -163,7 +167,7 @@ function PageTree() {
 }
 
 function SearchBox() {
-  const { currentSpaceId } = useApp();
+  const currentSpaceId = useApp((s) => s.currentSpaceId);
   const [q, setQ] = useState('');
   const [results, setResults] = useState<any | null>(null);
   const navigate = useNavigate();
@@ -224,7 +228,20 @@ function AppShellInner() {
   useSetScreenContext();
   const { spaceId } = useParams();
   const location = useLocation();
-  const { spaces, currentSpaceId, setCurrentSpace, user, presence, logout, createPage, surfaces, loadSurfaces, pages, shellMode, setShellMode } = useApp();
+  // individual selectors: the shell must not re-render on every store tick
+  // (presence pings, page reloads) — only on what it actually shows
+  const spaces = useApp((s) => s.spaces);
+  const currentSpaceId = useApp((s) => s.currentSpaceId);
+  const setCurrentSpace = useApp((s) => s.setCurrentSpace);
+  const user = useApp((s) => s.user);
+  const presence = useApp((s) => s.presence);
+  const logout = useApp((s) => s.logout);
+  const createPage = useApp((s) => s.createPage);
+  const surfaces = useApp((s) => s.surfaces);
+  const loadSurfaces = useApp((s) => s.loadSurfaces);
+  const pages = useApp((s) => s.pages);
+  const shellMode = useApp((s) => s.shellMode);
+  const setShellMode = useApp((s) => s.setShellMode);
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dbs, setDbs] = useState<any[]>([]);
@@ -284,7 +301,7 @@ function AppShellInner() {
   const loadMeta = useCallback(() => {
     if (!currentSpaceId) return;
     api.get(`/spaces/${currentSpaceId}/databases`).then((r) => setDbs(r.databases)).catch(() => {});
-    api.get(`/spaces/${currentSpaceId}/notebooks`).then((r) => setNbs(r.notebooks)).catch(() => {});
+    api.get(`/spaces/${currentSpaceId}/notebooks`).then((r) => setNbs(r.notebooks.filter((n: any) => !isRunNotebook(n)))).catch(() => {});
     api.get(`/spaces/${currentSpaceId}/subjects`).then((r) => setSubjects(r.subjects)).catch(() => {});
   }, [currentSpaceId]);
   useEffect(() => {
@@ -474,6 +491,26 @@ function AppShellInner() {
               </button>
             )}
           </div>
+          {/* Interface mode: always one visible click away — Simple is the
+              calm default, Studio reveals every surface. */}
+          {!railMode && (
+            <div className="flex rounded-lg border border-set-border bg-set-panel2/40 p-0.5" role="group" aria-label="Interface mode">
+              <button
+                className={`flex-1 rounded-md px-2 py-1 text-[11px] transition-colors ${simple ? 'bg-set-panel text-set-text shadow-sm' : 'text-set-dim hover:text-set-text'}`}
+                onClick={() => setShellMode('simple')}
+                title="Just the essentials — Home, Notebooks, Tasks and Ask SET"
+              >
+                Simple
+              </button>
+              <button
+                className={`flex-1 rounded-md px-2 py-1 text-[11px] transition-colors ${!simple ? 'bg-set-panel text-set-text shadow-sm' : 'text-set-dim hover:text-set-text'}`}
+                onClick={() => setShellMode('studio')}
+                title="Every surface, tree and tool"
+              >
+                Studio
+              </button>
+            </div>
+          )}
           <button
             className="hidden md:flex w-full items-center gap-2 text-xs text-set-dim hover:text-set-text mt-2"
             onClick={() => setRailMode((r) => !r)}
@@ -530,10 +567,10 @@ function AppShellInner() {
             {[
               { label: null, items: simple ? [
                 { icon: <LayoutDashboard size={15} />, label: 'Home', to: link(''), surface: null, exact: true },
-                { icon: <BookOpen size={15} />, label: 'Subjects', to: link('/notebooks'), surface: null },
+                { icon: <BookOpen size={15} />, label: 'Notebooks', to: link('/notebooks'), surface: null },
                 { icon: <ListTodo size={15} />, label: 'My Tasks', to: link('/tasks'), surface: null },
               ] : [
-                { icon: <LayoutDashboard size={15} />, label: 'Dashboard', to: link(''), surface: null, exact: true },
+                { icon: <LayoutDashboard size={15} />, label: 'Home', to: link(''), surface: null, exact: true },
                 { icon: <FileText size={15} />, label: 'Pages', to: link('/pages'), surface: null },
                 { icon: <BookOpen size={15} />, label: 'Notebooks', to: link('/notebooks'), surface: null },
                 { icon: <Telescope size={15} />, label: 'Deep Research', to: link('/research'), surface: null },
@@ -579,7 +616,7 @@ function AppShellInner() {
             </NavList>
           )}
           {!railMode && (nbs.length > 0 || subjects.length > 0) && (
-            <NavList title={simple ? 'Subjects' : 'Notebooks'} defaultOpen={simple}>
+            <NavList title="Notebooks" defaultOpen={simple}>
               {subjects.map((s) => (
                 <div key={s.id}>
                   <div className="flex items-center gap-1.5 px-2 pt-1.5 pb-0.5 text-[11px] font-medium text-set-dim">
@@ -646,13 +683,6 @@ function AppShellInner() {
             >
               <Settings size={15} />
             </button>
-            <button
-              className="set-btn-ghost flex items-center gap-1"
-              title={simple ? 'Studio mode — every surface, tree and tool' : 'Simple mode — just the essentials'}
-              onClick={() => setShellMode(simple ? 'studio' : 'simple')}
-            >
-              {simple ? <Wrench size={15} /> : <Sparkles size={15} />} {!railMode && (simple ? 'Studio' : 'Simple')}
-            </button>
             <button className="md:hidden set-btn-ghost" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={15} /></button>
             <button className="set-btn-ghost" title="Sign out" onClick={logout}><LogOut size={15} /></button>
           </div>
@@ -691,7 +721,7 @@ function AppShellInner() {
             <span className="text-set-accent/90">SET://</span>
             <span className="text-set-text/80">{spaces.find((s) => s.id === currentSpaceId)?.name ?? 'space'}</span>
             <span className="text-set-border">/</span>
-            <span>{location.pathname.replace(/^\/app\/space\/[^/]+\/?/, '').replace(/-/g, ' ') || 'dashboard'}</span>
+            <span>{location.pathname.replace(/^\/app\/space\/[^/]+\/?/, '').replace(/-/g, ' ') || 'home'}</span>
           </div>
           <span className={`md:hidden flex-1 text-center truncate text-sm text-set-text/90 min-w-0 transition-opacity ${scrolled && headerTitle ? 'opacity-100' : 'opacity-0'}`}>
             {headerTitle}
@@ -703,13 +733,18 @@ function AppShellInner() {
         </div>
 
         {/* Mobile bottom tab bar — takes layout space (content scrolls above
-            it), matching a native app's primary navigation. The drawer keeps
-            everything else; Ask SET opens the copilot. */}
+            it), matching a native app's primary navigation. Mode-aware: Simple
+            shows the task-shaped trio, Studio keeps Pages + Graph. */}
         <nav className="md:hidden border-t border-set-border bg-set-panel/95 backdrop-blur flex pb-[env(safe-area-inset-bottom)]">
           {([
             { icon: <LayoutDashboard size={19} />, label: 'Home', to: link(''), active: subPath === '' },
-            { icon: <FileText size={19} />, label: 'Pages', to: link('/pages'), active: subPath.startsWith('/pages') || subPath.startsWith('/page/') },
-            { icon: <Network size={19} />, label: 'Graph', to: link('/graph'), active: subPath.startsWith('/graph') },
+            ...(simple ? [
+              { icon: <BookOpen size={19} />, label: 'Notebooks', to: link('/notebooks'), active: subPath.startsWith('/notebook') },
+              { icon: <ListTodo size={19} />, label: 'Tasks', to: link('/tasks'), active: subPath.startsWith('/tasks') },
+            ] : [
+              { icon: <FileText size={19} />, label: 'Pages', to: link('/pages'), active: subPath.startsWith('/pages') || subPath.startsWith('/page/') },
+              { icon: <Network size={19} />, label: 'Graph', to: link('/graph'), active: subPath.startsWith('/graph') },
+            ]),
           ] as const).map((t) => (
             <Link
               key={t.label}
@@ -833,7 +868,8 @@ function QuickCapture({ onClose, spaceId }: { onClose: () => void; spaceId: stri
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
-  const { loadPages, pages } = useApp();
+  const loadPages = useApp((s) => s.loadPages);
+  const pages = useApp((s) => s.pages);
 
   const save = async () => {
     if (!text.trim() || !spaceId || saving) return;

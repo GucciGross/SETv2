@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PullToRefresh } from '../components/PullToRefresh';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -9,7 +9,7 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, DitherGr
 import ErrorBoundary from '../components/ErrorBoundary';
 import Checklist from '../components/onboarding/Checklist';
 import {
-  FileText, BookOpen, Database, Users, Bell, ListTodo, ArrowRight, Sparkles, TrendingUp, ChevronDown, CloudSun, Zap, NotebookPen,
+  FileText, BookOpen, Database, ListTodo, ArrowRight, Sparkles, TrendingUp, ChevronDown, CloudSun, Zap, NotebookPen, History, Square,
 } from 'lucide-react';
 
 /** Today's brief strip: reviews due, amber pages, ranked next steps, recent builds. */
@@ -95,7 +95,9 @@ function BriefCard({ spaceId }: { spaceId: string }) {
 export default function DashboardView() {
   const { spaceId } = useParams();
   const navigate = useNavigate();
-  const { user, spaces, pages } = useApp();
+  const user = useApp((s) => s.user);
+  const spaces = useApp((s) => s.spaces);
+  const pages = useApp((s) => s.pages);
   const [stats, setStats] = useState<any>(null);
   const [tasks, setTasks] = useState<any>(null);
   const [activity, setActivity] = useState<any[]>([]);
@@ -124,9 +126,28 @@ export default function DashboardView() {
     load();
   }, [load]);
 
-  const openTasks = tasks?.tasks?.length ?? 0;
+  const taskItems: any[] = tasks?.tasks ?? [];
+  const openTasks = taskItems.length;
   const assignedPaths = tasks?.paths?.length ?? 0;
   const overdue = (tasks?.paths ?? []).filter((p: any) => p.due_date && new Date(p.due_date) < new Date() && p.done < p.total);
+
+  // Jump back in: the pages you touched last, freshest first
+  const recentPages = useMemo(() => {
+    return [...pages]
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+      .slice(0, 5);
+  }, [pages]);
+
+  const ago = (ts: string) => {
+    const m = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+    if (m < 1) return 'now';
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24);
+    if (d < 7) return `${d}d ago`;
+    return new Date(ts).toLocaleDateString();
+  };
 
   // build chart data from activity (last 7 days)
   const chartData = (() => {
@@ -221,135 +242,138 @@ export default function DashboardView() {
         ))}
       </div>
 
-      {/* Charts row — hidden entirely until there is something to show */}
-      {(mcpData.length > 0 || chartData.some((d) => d.events > 0)) && (
-      <div className={`grid gap-4 mb-6 ${mcpData.length > 0 && chartData.some((d) => d.events > 0) ? 'lg:grid-cols-2' : ''}`}>
-        {/* Activity chart (dithered area) */}
-        <div className="set-card p-4">
+      {/* Charts — every card must earn its place with data; no jargon empty states */}
+      {chartData.some((d) => d.events > 0) && (
+        <div className="set-card p-4 mb-6">
           <div className="flex items-center gap-2 mb-3">
             <TrendingUp size={15} className="text-blue-300" />
             <h3 className="set-mono set-mono-dim">Activity — last 7 days</h3>
           </div>
-          {chartData.some((d) => d.events > 0) ? (
-            <ErrorBoundary>
-              <div className="rounded-xl border border-set-border overflow-hidden h-60">
-                <AreaChart data={chartData} config={{ events: { label: 'Events', color: 'blue' }, pages: { label: 'Pages created', color: 'purple' } }} bloom="low">
-                  <XAxis dataKey="day" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Area dataKey="events" variant="gradient" />
-                  <Area dataKey="pages" variant="dotted" />
-                </AreaChart>
-              </div>
-            </ErrorBoundary>
-          ) : (
-            <p className="text-sm text-set-dim py-8 text-center">No activity yet — start creating pages or commenting.</p>
-          )}
+          <ErrorBoundary>
+            <div className="rounded-xl border border-set-border overflow-hidden h-56">
+              <BarChart data={chartData} config={{ events: { label: 'Events', color: 'blue' } }} bloom="low">
+                <XAxis dataKey="day" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="events" variant="gradient" />
+              </BarChart>
+            </div>
+          </ErrorBoundary>
         </div>
+      )}
 
-        {/* MCP tool usage (dithered bars) */}
-        <div className="set-card p-4">
+      {mcpData.length > 0 && (
+        <div className="set-card p-4 mb-6">
           <div className="flex items-center gap-2 mb-3">
             <Sparkles size={15} className="text-violet-300" />
             <h3 className="set-mono set-mono-dim">Agent tool usage</h3>
           </div>
-          {mcpData.length > 0 && chartData.some((d) => d.events > 0) ? (
-            <ErrorBoundary>
-              <div className="rounded-xl border border-set-border overflow-hidden h-60">
-                <BarChart data={mcpData} config={{ calls: { label: 'Calls', color: 'green' }, success: { label: 'Success %', color: 'blue' } }} bloom="low">
-                  <XAxis dataKey="tool" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="calls" variant="gradient" />
-                  <Bar dataKey="success" variant="dotted" />
-                </BarChart>
-              </div>
-            </ErrorBoundary>
-          ) : (
-            <div className="py-8 text-center">
-              <p className="text-sm text-set-dim mb-3">No agent calls yet.</p>
-              <a href="/agents" className="set-btn text-xs inline-flex items-center gap-1.5">
-                <Sparkles size={12} /> Connect an agent
-              </a>
+          <ErrorBoundary>
+            <div className="rounded-xl border border-set-border overflow-hidden h-56">
+              <BarChart data={mcpData} config={{ calls: { label: 'Calls', color: 'green' }, success: { label: 'Success %', color: 'blue' } }} bloom="low">
+                <XAxis dataKey="tool" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="calls" variant="gradient" />
+                <Bar dataKey="success" variant="dotted" />
+              </BarChart>
             </div>
-          )}
+          </ErrorBoundary>
         </div>
-      </div>
       )}
 
-      {/* Bottom row: tasks + activity feed */}
-      <div className="grid lg:grid-cols-2 gap-4">
-        {/* My assignments */}
-        <div className="set-card p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <ListTodo size={15} className="text-green-300" />
-            <h3 className="set-mono set-mono-dim">My assignments</h3>
-          </div>
-          {(tasks?.paths ?? []).length === 0 && (
-            <div className="flex items-center gap-3 py-1">
-              <DitherAvatar name={space?.name ?? 'set'} hue={222} size={28} className="rounded shrink-0 opacity-70" />
-              <p className="text-sm text-set-dim">No assignments.</p>
+      {/* Bottom row: jump back in, open tasks — and assignments only when they exist */}
+      {(() => {
+        const cards = [
+          <div className="set-card p-4" key="jump">
+            <div className="flex items-center gap-2 mb-3">
+              <History size={15} className="text-amber-300" />
+              <h3 className="set-mono set-mono-dim">Jump back in</h3>
             </div>
-          )}
-          {(tasks?.paths ?? []).slice(0, 4).map((p: any) => {
-            const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
-            const isOverdue = p.due_date && new Date(p.due_date) < new Date() && pct < 100;
-            return (
+            {recentPages.length === 0 && (
+              <p className="text-sm text-set-dim">Create your first page and it will show up here.</p>
+            )}
+            {recentPages.map((p) => (
               <button
                 key={p.id}
-                className="w-full text-left py-2 border-t border-set-border/40 first:border-t-0 hover:bg-set-panel2/30 px-1 rounded"
-                onClick={() => navigate(`/app/space/${spaceId}/paths`)}
+                className="w-full flex items-center gap-2 py-2 border-t border-set-border/30 first:border-t-0 text-sm text-left hover:bg-set-panel2/30 px-1 rounded"
+                onClick={() => navigate(`/app/space/${spaceId}/page/${p.id}`)}
               >
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-white truncate">{p.title}</span>
-                  {p.due_date && (
-                    <span className={`text-xs ml-2 shrink-0 ${isOverdue ? 'text-red-400' : 'text-set-dim'}`}>
-                      {new Date(p.due_date).toLocaleDateString()}
-                    </span>
-                  )}
-                </div>
-                <div className="mt-1.5 h-1 bg-set-panel2 rounded-full overflow-hidden">
-                  <div className={`h-full ${isOverdue ? 'bg-red-500/70' : 'bg-green-500/70'}`} style={{ width: `${pct}%` }} />
-                </div>
-                <div className="text-[10px] text-set-dim mt-0.5">{p.done}/{p.total} complete</div>
+                <span className="shrink-0">{p.icon ?? '📄'}</span>
+                <span className="text-white truncate flex-1 min-w-0">{p.title || 'Untitled'}</span>
+                <span className="text-[10px] text-set-dim shrink-0">{ago(p.updated_at)}</span>
               </button>
-            );
-          })}
-        </div>
-
-        {/* Recent activity */}
-        <div className="set-card p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Users size={15} className="text-amber-300" />
-            <h3 className="set-mono set-mono-dim">Recent activity</h3>
-          </div>
-          {activity.length === 0 && (
-            <div className="flex items-center gap-3 py-1">
-              <DitherAvatar name={(user?.name ?? 'set') + ':act'} hue={222} size={28} className="rounded shrink-0 opacity-70" />
-              <p className="text-sm text-set-dim">Nothing yet.</p>
-            </div>
-          )}
-          {activity.slice(0, 6).map((a, i) => (
-            <div key={i} className="flex items-start gap-2.5 py-1.5 border-t border-set-border/30 first:border-t-0 text-sm">
-              <Bell size={12} className="mt-1 text-set-dim shrink-0" />
-              <span className="flex-1 min-w-0">
-                <span className="text-white">{a.actor_name || a.actor}</span>{' '}
-                <span className="text-set-dim">{a.type.replace(/_/g, ' ')}</span>
-              </span>
-              <span className="text-[10px] text-set-dim shrink-0">
-                {new Date(a.created_at).toLocaleDateString()}
-              </span>
-            </div>
-          ))}
-          <button
-            className="set-btn-ghost text-xs mt-2 w-full flex items-center justify-center gap-1"
-            onClick={() => navigate(`/app/space/${spaceId}/activity`)}
-          >
-            View all <ArrowRight size={11} />
-          </button>
-        </div>
-      </div>
+            ))}
+            <button
+              className="set-btn-ghost text-xs mt-2 w-full flex items-center justify-center gap-1"
+              onClick={() => navigate(`/app/space/${spaceId}/pages`)}
+            >
+              All pages <ArrowRight size={11} />
+            </button>
+          </div>,
+          ...(taskItems.length > 0 ? [
+            <div className="set-card p-4" key="tasks">
+              <div className="flex items-center gap-2 mb-3">
+                <ListTodo size={15} className="text-green-300" />
+                <h3 className="set-mono set-mono-dim">Open tasks</h3>
+                <span className="ml-auto text-xs text-set-dim">{taskItems.length}</span>
+              </div>
+              {taskItems.slice(0, 5).map((t, i) => (
+                <button
+                  key={`${t.pageId}-${t.index}-${i}`}
+                  className="w-full flex items-start gap-2 py-2 border-t border-set-border/30 first:border-t-0 text-sm text-left hover:bg-set-panel2/30 px-1 rounded"
+                  onClick={() => navigate(`/app/space/${spaceId}/page/${t.pageId}`)}
+                >
+                  <Square size={13} className="mt-0.5 text-set-dim shrink-0" />
+                  <span className="flex-1 min-w-0 truncate">
+                    <span className="text-white">{t.text}</span>{' '}
+                    <span className="text-set-dim">· {t.pageTitle}</span>
+                  </span>
+                </button>
+              ))}
+              <button
+                className="set-btn-ghost text-xs mt-2 w-full flex items-center justify-center gap-1"
+                onClick={() => navigate(`/app/space/${spaceId}/tasks`)}
+              >
+                My Tasks <ArrowRight size={11} />
+              </button>
+            </div>,
+          ] : []),
+          ...(assignedPaths > 0 ? [
+            <div className="set-card p-4" key="assignments">
+              <div className="flex items-center gap-2 mb-3">
+                <ListTodo size={15} className="text-green-300" />
+                <h3 className="set-mono set-mono-dim">My assignments</h3>
+              </div>
+              {(tasks?.paths ?? []).slice(0, 4).map((p: any) => {
+                const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+                const isOverdue = p.due_date && new Date(p.due_date) < new Date() && pct < 100;
+                return (
+                  <button
+                    key={p.id}
+                    className="w-full text-left py-2 border-t border-set-border/40 first:border-t-0 hover:bg-set-panel2/30 px-1 rounded"
+                    onClick={() => navigate(`/app/space/${spaceId}/paths`)}
+                  >
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-white truncate">{p.title}</span>
+                      {p.due_date && (
+                        <span className={`text-xs ml-2 shrink-0 ${isOverdue ? 'text-red-400' : 'text-set-dim'}`}>
+                          {new Date(p.due_date).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1.5 h-1 bg-set-panel2 rounded-full overflow-hidden">
+                      <div className={`h-full ${isOverdue ? 'bg-red-500/70' : 'bg-green-500/70'}`} style={{ width: `${pct}%` }} />
+                    </div>
+                    <div className="text-[10px] text-set-dim mt-0.5">{p.done}/{p.total} complete</div>
+                  </button>
+                );
+              })}
+            </div>,
+          ] : []),
+        ];
+        return <div className={`grid gap-4 ${cards.length > 1 ? 'lg:grid-cols-2' : ''}`}>{cards}</div>;
+      })()}
     </div>
     </PullToRefresh>
   );

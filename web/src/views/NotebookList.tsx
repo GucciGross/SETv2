@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, FolderPlus } from 'lucide-react';
+import { isRunNotebook } from '../lib/utils';
+import { Plus, FolderPlus, Telescope } from 'lucide-react';
 
 export default function NotebookList() {
   const { spaceId } = useParams();
@@ -20,6 +21,11 @@ export default function NotebookList() {
     load();
   }, [spaceId]);
 
+  // deep-research run notebooks live under Deep Research, not here — mixing
+  // them in is how the same question used to appear as five near-identical cards
+  const runNotebooks = notebooks.filter(isRunNotebook);
+  const mine = notebooks.filter((n) => !isRunNotebook(n));
+
   const newSubject = async () => {
     const t = window.prompt('Subject name (e.g. BIO 201, Thesis, Spanish)');
     if (!t?.trim() || !spaceId) return;
@@ -27,8 +33,8 @@ export default function NotebookList() {
     load();
   };
 
-  const bySubject = (sid: string) => notebooks.filter((n) => n.subject_id === sid);
-  const unfiled = notebooks.filter((n) => !n.subject_id || !subjects.some((s) => s.id === n.subject_id));
+  const bySubject = (sid: string) => mine.filter((n) => n.subject_id === sid);
+  const unfiled = mine.filter((n) => !n.subject_id || !subjects.some((s) => s.id === n.subject_id));
 
   const card = (n: any) => (
     <div
@@ -81,9 +87,9 @@ export default function NotebookList() {
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold text-white mb-1">Subjects & notebooks</h1>
+      <h1 className="text-2xl font-bold text-white mb-1">Notebooks</h1>
       <p className="text-set-dim text-sm mb-5">
-        A subject is a class or topic — its notebooks hold sources, transcripts and study material. Upload PDFs, Markdown, web pages or recordings, then chat with citations, generate flashcards and study.
+        A notebook holds sources — PDFs, Markdown, web pages or recordings — you can chat with using citations, then turn into flashcards and study material. Group them by subject to keep topics apart.
       </p>
       <form
         className="flex flex-wrap gap-2 mb-4"
@@ -117,7 +123,16 @@ export default function NotebookList() {
         </div>
       )}
       {subjects.length === 0 && <div className="grid gap-3">{unfiled.map(card)}</div>}
-      {notebooks.length === 0 && <p className="text-set-dim text-sm">No notebooks yet — create your first one above, or hit Record in the sidebar.</p>}
+      {mine.length === 0 && <p className="text-set-dim text-sm">No notebooks yet — create your first one above, or hit Record in the sidebar.</p>}
+      {runNotebooks.length > 0 && (
+        <p className="text-xs text-set-dim mt-5 flex items-center gap-1.5">
+          <Telescope size={13} className="shrink-0" />
+          <span>
+            {runNotebooks.length} deep-research notebook{runNotebooks.length > 1 ? 's' : ''} live under{' '}
+            <Link to={`/app/space/${spaceId}/research`} className="underline hover:text-set-text">Deep Research</Link>.
+          </span>
+        </p>
+      )}
     </div>
   );
 }

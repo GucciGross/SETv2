@@ -2,6 +2,17 @@ import { clsx, type ClassValue } from 'clsx';
 export function cn(...inputs: ClassValue[]) { return clsx(inputs); }
 
 /**
+ * Notebooks auto-created by a deep-research run ("Research: <question>",
+ * description stamped by the server). They belong to the Deep Research view —
+ * keeping them out of the user's notebook lists is what stops the same
+ * question from piling up as five near-identical cards.
+ */
+export function isRunNotebook(n: { description?: string | null } | null | undefined): boolean {
+  return n?.description === 'Deep research run';
+}
+
+
+/**
  * crypto.randomUUID() is only exposed in secure contexts (HTTPS / localhost).
  * LAN deployments over plain http:// would crash without this fallback.
  */

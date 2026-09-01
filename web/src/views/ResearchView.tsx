@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { isRunNotebook } from '../lib/utils';
 import { DitherAvatar } from '../components/dither-kit';
 import {
   BookOpen, FileText, Loader2, Search, Telescope, XCircle, CheckCircle2, AlertTriangle, Sparkles, Package, Link2,
@@ -39,7 +40,7 @@ export function ResearchList() {
   ];
 
   const load = () => api.get(`/spaces/${spaceId}/research`).then((r) => setRuns(r.runs)).catch(() => {});
-  const loadNotebooks = () => api.get(`/spaces/${spaceId}/notebooks`).then((r) => setNotebooks(r.notebooks)).catch(() => {});
+  const loadNotebooks = () => api.get(`/spaces/${spaceId}/notebooks`).then((r) => setNotebooks(r.notebooks.filter((n: any) => !isRunNotebook(n)))).catch(() => {});
   useEffect(() => {
     load();
     loadNotebooks();

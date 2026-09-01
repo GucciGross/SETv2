@@ -20,7 +20,7 @@ interface LinkSuggestion {
 
 const COLOR_KEY = 'set-graph-color';
 const COLOR_MODES: { id: GraphColorMode; label: string }[] = [
-  { id: 'clique', label: 'Cliques' },
+  { id: 'clique', label: 'Groups' },
   { id: 'recency', label: 'Recent' },
   { id: 'mastery', label: 'Mastery' },
   { id: 'off', label: 'Plain' },
@@ -139,6 +139,12 @@ export default function GraphView() {
   // — loose pages —
   const loose = useMemo(() => data?.nodes.filter((n) => (n.deg ?? 0) === 0) ?? [], [data]);
   const [looseOpen, setLooseOpen] = useState(false);
+
+  // the neighborhoods legend is a desktop luxury: on a phone it starts
+  // collapsed to a count chip so it stops landing on top of the search box
+  const [legendOpen, setLegendOpen] = useState(
+    () => typeof window === 'undefined' || window.matchMedia('(min-width: 768px)').matches
+  );
 
   // — link suggestions: the map can grow itself —
   const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
@@ -302,7 +308,7 @@ export default function GraphView() {
   const focused = filter.trim().length > 0;
 
   return (
-    <PullToRefresh onRefresh={refreshAll}>
+    <PullToRefresh onRefresh={refreshAll} stretch>
     <div className="relative h-full">
       <div className="absolute top-3 left-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2">
         <div ref={searchWrapRef} className="relative">
@@ -396,7 +402,7 @@ export default function GraphView() {
             </button>
           </span>
         ) : (
-          <span className="self-center rounded-lg border border-set-border bg-set-panel px-2 py-1 text-xs text-set-dim">
+          <span className="hidden md:inline-block self-center rounded-lg border border-set-border bg-set-panel px-2 py-1 text-xs text-set-dim">
             {filtered.nodes.length} pages · {filtered.edges.length} links · drag nodes, scroll to zoom, click to
             inspect, double-click to open
           </span>
@@ -404,8 +410,15 @@ export default function GraphView() {
       </div>
       {colorMode === 'clique' && cliques && cliques.cliques.length > 0 && (
         <div className="absolute top-3 right-3 z-10 w-44 rounded-xl border border-set-border bg-set-panel/95 p-2 shadow-pop backdrop-blur">
-          <div className="px-1 pb-1 text-[10px] tracking-[0.15em] text-set-dim uppercase">Neighborhoods</div>
-          {cliques.cliques.map((c) => (
+          <button
+            className="flex w-full items-center gap-1.5 px-1 pb-1 text-[10px] tracking-[0.15em] text-set-dim uppercase"
+            onClick={() => setLegendOpen((o) => !o)}
+            aria-expanded={legendOpen}
+          >
+            Neighborhoods
+            <span className="ml-auto normal-case tracking-normal opacity-70">{legendOpen ? 'hide' : cliques.cliques.length}</span>
+          </button>
+          {legendOpen && cliques.cliques.map((c) => (
             <button
               key={c.id}
               className="flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left text-xs text-set-dim hover:bg-set-panel2 hover:text-set-text"
@@ -424,7 +437,7 @@ export default function GraphView() {
         </div>
       )}
       {colorMode === 'recency' && data && data.nodes.length > 0 && (
-        <div className="absolute top-3 right-3 z-10 flex flex-col gap-1 rounded-xl border border-set-border bg-set-panel/95 p-2 text-[11px] text-set-dim backdrop-blur">
+        <div className="absolute top-3 right-3 z-10 hidden flex-col gap-1 rounded-xl border border-set-border bg-set-panel/95 p-2 text-[11px] text-set-dim backdrop-blur md:flex">
           <span className="px-1 pb-0.5 text-[10px] tracking-[0.15em] uppercase">Edited</span>
           {(
             [

@@ -1109,3 +1109,25 @@ button, [role='button'], .set-btn, .set-btn-ghost, .set-btn-primary {
 @media (max-width: 767px) {
   input, textarea, select { font-size: 16px !important; }
 }
+
+/* Reduced motion: stillness is a first-class mode. The always-on flourish —
+   mascot idle bobbing, login orbit, launcher pulse — stops for users who ask
+   the OS for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .mascot-idle, .mascot-talk, .mascot-think, .mascot-celebrate,
+  .mascot-halo, .mascot-antenna, .mascot-antenna-dot, .mascot-bubbles,
+  .mascot-tail, .mascot-wing,
+  .login-ring, .login-orbit, .login-wordmark,
+  .skeleton::after, .ptr-rot {
+    animation: none !important;
+  }
+}
+
+/* Phone: the copilot launcher must sit ABOVE the bottom tab bar, not on top
+   of its "Ask SET" tab — two identical entry points stacked in one corner.
+   Lives after the base launcher rule: same specificity, later wins. */
+@media (max-width: 767px) {
+  body button[data-slot='chat-toggle-button'] {
+    bottom: calc(4.5rem + env(safe-area-inset-bottom)) !important;
+  }
+}
