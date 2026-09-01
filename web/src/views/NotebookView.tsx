@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { confirmDialog } from '../components/Confirm';
 import { useParams, useNavigate } from 'react-router-dom';
 import { marked } from 'marked';
 import { api, sse } from '../lib/api';
@@ -233,7 +234,7 @@ export default function NotebookView() {
                     }}><RefreshCw size={13} /></button>
                   )}
                   <button className="set-btn-ghost hover:text-red-400" onClick={async () => {
-                    if (!confirm(`Remove source "${s.name}"?`)) return;
+                    if (!(await confirmDialog({ title: `Remove source "${s.name}"?`, body: 'Its indexed chunks are removed too.', danger: true, confirmLabel: 'Remove' }))) return;
                     await api.del(`/sources/${s.id}`);
                     load();
                   }}><Trash2 size={13} /></button>

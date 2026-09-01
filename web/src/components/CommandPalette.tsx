@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import { useApp } from '../stores/app';
 import {
   Search, FileText, BookOpen, Database, CornerDownLeft, FilePlus, CalendarDays, ListTodo,
-  Network, Settings, BookOpen as DocsIcon,
+  Network, Settings, BookOpen as DocsIcon, CloudSun,
 } from 'lucide-react';
 
 /** Ctrl/Cmd+K command palette: jump to anything, run quick actions. */
@@ -55,6 +55,7 @@ export default function CommandPalette() {
     return [
       { icon: <FilePlus size={14} />, label: 'New page', run: async () => { const p = await createPage({ spaceId: spaceId!, title: 'Untitled' }); navigate(`/app/space/${spaceId}/page/${p.id}`); } },
       { icon: <CalendarDays size={14} />, label: "Today's note", run: async () => { const { page } = await api.post(`/spaces/${spaceId}/daily`); navigate(`/app/space/${spaceId}/page/${page.id}`); } },
+      { icon: <CloudSun size={14} />, label: "Write today's brief", run: async () => { const r = await api.post(`/spaces/${spaceId}/brief/to-daily`).catch(() => null); if (r?.pageId) navigate(`/app/space/${spaceId}/page/${r.pageId}`); } },
       { icon: <ListTodo size={14} />, label: 'My Tasks', go: link('/tasks') },
       { icon: <Network size={14} />, label: 'Graph', go: link('/graph') },
       { icon: <BookOpen size={14} />, label: 'Notebooks', go: link('/notebooks') },

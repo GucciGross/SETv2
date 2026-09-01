@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { confirmDialog } from './Confirm';
 import { ClipboardCheck, GraduationCap, Hourglass, ListChecks, Settings2, Timer } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../stores/app';
@@ -251,7 +252,7 @@ export default function QuizPanel({ deckId }: { deckId: string }) {
             ))}
           </div>
           <div className="mt-4 flex justify-end gap-2">
-            <button className="set-btn-primary text-sm" onClick={() => confirm('Submit your answers?') && submit(answers)}>
+            <button className="set-btn-primary text-sm" onClick={async () => { if (await confirmDialog({ title: 'Submit your answers?', confirmLabel: 'Submit' })) submit(answers); }}>
               Submit
             </button>
           </div>

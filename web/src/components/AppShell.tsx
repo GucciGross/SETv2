@@ -11,6 +11,7 @@ import { useApp, type PageMeta } from '../stores/app';
 import { api } from '../lib/api';
 import { startTour } from '../lib/tour';
 import { Toasts } from './Toast';
+import { ConfirmHost, confirmDialog } from './Confirm';
 import { SetCopilotProvider, useSetScreenContext } from '../lib/copilot';
 import { DitherAvatar } from './dither-kit';
 import WelcomeModal from './onboarding/WelcomeModal';
@@ -142,7 +143,7 @@ function PageTree() {
             title="Delete"
             onClick={async (e) => {
               e.stopPropagation();
-              if (confirm(`Move "${p.title}" to trash?`)) {
+              if (await confirmDialog({ title: `Move "${p.title}" to trash?`, body: 'It stays in Trash and can be restored.', confirmLabel: 'Trash', danger: true })) {
                 await deletePage(p.id);
                 if (active) navigate(`/app/space/${spaceId}`);
               }
@@ -366,6 +367,9 @@ function AppShellInner() {
     if (btn && btn.getAttribute('aria-expanded') !== 'true') btn.click();
   };
 
+  /** Edge-swipe: right from the left edge opens the mobile drawer, left inside it closes. */
+  const edgeSwipe = useRef<{ x: number; y: number; active: boolean } | null>(null);
+
   const nbLink = (n: any) => (
     <Link
       key={n.id}
@@ -379,7 +383,36 @@ function AppShellInner() {
   );
 
   return (
-    <div className="app-shell flex overflow-hidden">
+    <div
+      className="app-shell flex overflow-hidden"
+      onTouchStart={(e) => {
+        if (e.touches.length !== 1) return;
+        const t = e.touches[0];
+        const inDrawer = !!(e.target as HTMLElement).closest?.('aside');
+        edgeSwipe.current = { x: t.clientX, y: t.clientY, active: (!mobileNav && t.clientX < 28) || (mobileNav && inDrawer) };
+      }}
+      onTouchMove={(e) => {
+        const sw = edgeSwipe.current;
+        if (!sw?.active) return;
+        const t = e.touches[0];
+        const dx = t.clientX - sw.x;
+        const dy = Math.abs(t.clientY - sw.y);
+        if (dy > 60) {
+          edgeSwipe.current = null; // vertical intent — let it scroll
+          return;
+        }
+        if (!mobileNav && dx > 48) {
+          setMobileNav(true);
+          edgeSwipe.current = null;
+        } else if (mobileNav && dx < -48) {
+          setMobileNav(false);
+          edgeSwipe.current = null;
+        }
+      }}
+      onTouchEnd={() => {
+        edgeSwipe.current = null;
+      }}
+    >
       {/* Sidebar */}
       {mobileNav && (
         <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setMobileNav(false)} />
@@ -676,6 +709,7 @@ function AppShellInner() {
 
       {/* Non-blocking feedback (errors, confirmations) */}
       <Toasts />
+      <ConfirmHost />
 
       {/* The copilot lives in the floating overlay (GuideFab) */}
 
@@ -694,6 +728,8 @@ function AppShellInner() {
               {([
                 ['Ctrl / ⌘ K', 'Command palette — jump to any page, notebook or action'],
                 ['Ctrl / ⌘ ⇧ N', 'Quick capture — save a thought to the Inbox page'],
+                ['Ctrl / ⌘ B', 'Start a WandGx build on the open page'],
+                ['Ctrl / ⌘ J', 'Jump to the page’s checkpoints'],
                 ['?', 'This cheat sheet'],
                 ['Esc', 'Close dialogs and overlays'],
                 ['Ctrl / ⌘ ⏎', 'Submit a comment'],

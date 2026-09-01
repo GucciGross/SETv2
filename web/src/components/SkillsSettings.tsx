@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { confirmDialog } from './Confirm';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Sparkles, Plus, Trash2, Power, FileText } from 'lucide-react';
@@ -80,7 +81,7 @@ export default function SkillsSettings() {
               </button>
               {!s.built_in && (
                 <button className="set-btn-ghost p-1.5 hover:text-red-400" title="Delete" onClick={async () => {
-                  if (!confirm(`Delete skill "${s.name}"?`)) return;
+                  if (!(await confirmDialog({ title: `Delete skill "${s.name}"?`, danger: true, confirmLabel: 'Delete' }))) return;
                   await api.del(`/skills/${s.id}`);
                   load();
                 }}>

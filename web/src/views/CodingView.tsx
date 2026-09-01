@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { confirmDialog } from '../components/Confirm';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import CodeMirror from '@uiw/react-codemirror';
@@ -83,7 +84,7 @@ export default function CodingView() {
             <button
               className="opacity-0 group-hover:opacity-100 text-set-dim hover:text-red-400"
               onClick={async () => {
-                if (!confirm(`Delete ${f.path}?`)) return;
+                if (!(await confirmDialog({ title: `Delete ${f.path}?`, danger: true, confirmLabel: 'Delete' }))) return;
                 await api.del(`/spaces/${spaceId}/code/file?path=${encodeURIComponent(f.path)}`);
                 if (path === f.path) { setPath(null); setContent(''); }
                 loadFiles();

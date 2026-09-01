@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { confirmDialog } from '../components/Confirm';
 import { useParams, Link } from 'react-router-dom';
 import { api, getToken } from '../lib/api';
 import { Camera, MousePointerClick, Trash2, X, MonitorSmartphone } from 'lucide-react';
@@ -44,7 +45,7 @@ export default function CapturesView() {
   }, [sel]);
 
   const del = async (c: any) => {
-    if (!confirm('Delete this capture from the history?')) return;
+    if (!(await confirmDialog({ title: 'Delete this capture from the history?', danger: true, confirmLabel: 'Delete' }))) return;
     try {
       await api.del(`/spaces/${spaceId}/companion/captures/${c.id}`);
       setCaptures((cs) => cs?.filter((x) => x.id !== c.id) ?? null);

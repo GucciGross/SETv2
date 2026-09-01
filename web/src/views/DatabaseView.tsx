@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { confirmDialog } from '../components/Confirm';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAgentContext } from '@copilotkit/react-core/v2';
@@ -71,7 +72,7 @@ export default function DatabaseView() {
   };
 
   const removeRow = async (rowId: string) => {
-    if (!confirm('Delete this row (and its page)?')) return;
+    if (!(await confirmDialog({ title: 'Delete this row?', body: 'Its linked page (if any) is deleted too.', danger: true, confirmLabel: 'Delete' }))) return;
     await api.del(`/rows/${rowId}`);
     load();
   };

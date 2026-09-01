@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { confirmDialog } from './Confirm';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Plug, Activity, ScrollText, KeyRound, Ban, Copy, Check } from 'lucide-react';
@@ -165,7 +166,7 @@ export default function McpSettings() {
               <button
                 className="set-btn text-xs flex items-center gap-1 text-red-300 shrink-0"
                 onClick={async () => {
-                  if (!confirm(`Revoke access for ${t.client_name ?? 'this client'}? Connected agents stop working immediately.`)) return;
+                  if (!(await confirmDialog({ title: `Revoke access for ${t.client_name ?? 'this client'}?`, body: 'Connected agents stop working immediately.', confirmLabel: 'Revoke', danger: true }))) return;
                   await api.post(`/spaces/${spaceId}/mcp/tokens/${t.id}/revoke`);
                   load();
                 }}

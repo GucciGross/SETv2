@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { confirmDialog } from '../components/Confirm';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Link2, ArrowUpRight, Download, MailQuestion, History, RotateCcw, Share2, Copy, Check, ExternalLink, Ban, Rocket, GraduationCap, Flag, Play } from 'lucide-react';
 import Editor from '../components/Editor';
@@ -124,7 +125,7 @@ function VersionHistory({ pageId, currentMarkdown, onRestored }: { pageId: strin
 
   const restore = async () => {
     if (!selected || restoring) return;
-    if (!confirm('Restore this version? The current content is saved to history first, so this is undoable.')) return;
+    if (!(await confirmDialog({ title: 'Restore this version?', body: 'The current content is saved to history first, so this is undoable.', confirmLabel: 'Restore' }))) return;
     setRestoring(true);
     try {
       await api.post(`/pages/${pageId}/versions/${selected.id}/restore`);
@@ -194,6 +195,13 @@ function BuildMenu({ spaceId, pageId, pageTitle, onStarted }: { spaceId: string;
   const [err, setErr] = useState<string | null>(null);
   const [customLang, setCustomLang] = useState('');
   const sheetDrag = useSheetDrag(() => setOpen(false));
+
+  // Cmd/Ctrl+B on the page opens this sheet (PageView dispatches)
+  useEffect(() => {
+    const open = () => setOpen(true);
+    window.addEventListener('set:open-build', open);
+    return () => window.removeEventListener('set:open-build', open);
+  }, []);
 
   const start = async () => {
     if (!prompt.trim() || busy) return;
@@ -415,7 +423,7 @@ function ShareMenu({ pageId }: { pageId: string }) {
   };
 
   const revoke = async (id: string) => {
-    if (!confirm('Revoke this link? Anyone opening it will get a "no longer available" page.')) return;
+    if (!(await confirmDialog({ title: 'Revoke this link?', body: 'Anyone opening it will get a \"no longer available\" page.', confirmLabel: 'Revoke', danger: true }))) return;
     await api.del(`/share-links/${id}`);
     load();
   };
@@ -518,6 +526,30 @@ export default function PageView() {
     api.get(`/pages/${pageId}/checkpoints`).then((r) => setCheckpoints(r.checkpoints ?? [])).catch(() => {});
   }, [pageId, page?.markdown]);
 
+  // page shortcuts: Cmd/Ctrl+B start a build (when the surface is on),
+  // Cmd/Ctrl+J jump to checkpoints — desktop's native-feel equivalent of the
+  // mobile action row
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 'b' && surfaces.wandgx) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('set:open-build'));
+      } else if (key === 'j') {
+        e.preventDefault();
+        setTab('checkpoints');
+        const details = document.getElementById('page-checkpoints');
+        if (details) {
+          (details as HTMLDetailsElement).open = true;
+          details.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [surfaces.wandgx]);
+
   // live collab refresh
   useEffect(() => {
     const handler = (e: Event) => {
@@ -600,7 +632,7 @@ export default function PageView() {
           {/* checkpoints on small screens: the side panel is xl-only, so stack
               the same panel under the editor where phones/tablets can reach it */}
           {checkpoints.length > 0 && (
-            <details className="mt-6 border-t border-set-border pt-3 xl:hidden">
+            <details id="page-checkpoints" className="mt-6 border-t border-set-border pt-3 xl:hidden">
               <summary className="cursor-pointer select-none flex items-center gap-1.5 text-sm text-set-dim hover:text-set-text">
                 <Flag size={13} /> Checkpoints ({checkpoints.filter((c) => c.passed).length}/{checkpoints.length} passed)
               </summary>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { confirmDialog } from '../components/Confirm';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera, Gauge, Cloud, Scissors, Trash2, Bell, Upload, CreditCard, Coins, Download, CloudSun, RefreshCw } from 'lucide-react';
@@ -138,7 +139,7 @@ function ChannelsTab({ spaceId }: { spaceId: string }) {
             <button
               className="set-btn-ghost hover:text-red-400 text-xs flex items-center gap-1"
               onClick={async () => {
-                if (confirm('Unlink this Slack workspace?')) {
+                if (await confirmDialog({ title: 'Unlink this Slack workspace?', confirmLabel: 'Unlink', danger: true })) {
                   await api.del(`/spaces/${spaceId}/channels/${l.id}`);
                   load();
                 }
@@ -594,7 +595,7 @@ function ProvidersTab({ spaceId }: { spaceId: string }) {
               {!p.is_default && (
                 <button className="set-btn text-xs flex items-center gap-1" onClick={async () => { await api.patch(`/providers/${p.id}`, { isDefault: true }); load(); }}><Check size={12} /> Default</button>
               )}
-              <button className="set-btn-ghost hover:text-red-400 text-xs" onClick={async () => { if (confirm('Remove provider?')) { await api.del(`/providers/${p.id}`); load(); } }}></button>
+              <button className="set-btn-ghost hover:text-red-400 text-xs" onClick={async () => { if (await confirmDialog({ title: 'Remove provider?', danger: true, confirmLabel: 'Remove' })) { await api.del(`/providers/${p.id}`); load(); } }}></button>
             </div>
           );
         })}
@@ -1182,7 +1183,7 @@ function ClipperTab() {
   };
 
   const revoke = async (id: string) => {
-    if (!confirm('Revoke this clip token? The bookmarklet stops working immediately.')) return;
+    if (!(await confirmDialog({ title: 'Revoke this clip token?', body: 'The bookmarklet stops working immediately.', confirmLabel: 'Revoke', danger: true }))) return;
     await api.del(`/users/clip-tokens/${id}`);
     load();
   };
