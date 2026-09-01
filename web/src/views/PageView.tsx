@@ -12,6 +12,7 @@ import { collapseContext, diffLines } from '../lib/diff';
 import { toast } from '../components/Toast';
 import { useSheetDrag } from '../lib/sheetDrag';
 import { PageSkeleton } from '../components/Skeleton';
+import { haptic } from '../lib/haptic';
 
 interface PageData {
   id: string;
@@ -345,6 +346,7 @@ function CheckpointsPanel({ pageId, onPassed }: { pageId: string; onPassed: () =
     setRunning(index);
     try {
       const r = await api.post(`/pages/${pageId}/checkpoints/${index}/run`);
+      haptic(r?.run?.passed ? [15, 40, 15] : 30);
       setLastRun((prev) => ({ ...prev, [index]: r }));
       load();
       if (r?.run?.passed && r?.allPassed) onPassed();

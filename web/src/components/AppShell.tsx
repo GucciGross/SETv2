@@ -11,6 +11,7 @@ import { useApp, type PageMeta } from '../stores/app';
 import { api } from '../lib/api';
 import { startTour } from '../lib/tour';
 import { Toasts } from './Toast';
+import { haptic } from '../lib/haptic';
 import { ConfirmHost, confirmDialog } from './Confirm';
 import { SetCopilotProvider, useSetScreenContext } from '../lib/copilot';
 import { DitherAvatar } from './dither-kit';
@@ -709,6 +710,7 @@ function AppShellInner() {
             <Link
               key={t.label}
               to={t.to}
+              onClick={() => haptic(8)}
               className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 text-[10px] active:scale-95 transition-transform ${
                 t.active ? 'text-set-accent' : 'text-set-dim'
               }`}
@@ -719,7 +721,7 @@ function AppShellInner() {
           ))}
           <button
             className="flex-1 flex flex-col items-center gap-0.5 py-1.5 text-[10px] text-set-dim active:scale-95 transition-transform"
-            onClick={openCopilot}
+            onClick={() => { haptic(8); openCopilot(); }}
           >
             <MessageCircle size={19} />
             Ask SET

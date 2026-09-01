@@ -26,6 +26,9 @@ export function PullToRefresh({ onRefresh, children }: { onRefresh: () => void |
       setPull(v);
     };
 
+    // listeners live on window: real touch streams always reach it regardless
+    // of which inner element the gesture starts on, and the tagged scroller's
+    // scrollTop decides whether the pull applies to this view
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length !== 1 || busyRef.current) return;
       start.current = scroller.scrollTop <= 2 ? e.touches[0].clientY : null;
@@ -54,13 +57,13 @@ export function PullToRefresh({ onRefresh, children }: { onRefresh: () => void |
       }
     };
 
-    scroller.addEventListener('touchstart', onTouchStart, { passive: true });
-    scroller.addEventListener('touchmove', onTouchMove, { passive: true });
-    scroller.addEventListener('touchend', onTouchEnd);
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchmove', onTouchMove, { passive: true });
+    window.addEventListener('touchend', onTouchEnd);
     return () => {
-      scroller.removeEventListener('touchstart', onTouchStart);
-      scroller.removeEventListener('touchmove', onTouchMove);
-      scroller.removeEventListener('touchend', onTouchEnd);
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
     };
   }, [onRefresh]);
 

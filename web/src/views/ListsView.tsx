@@ -1,10 +1,97 @@
 import { useEffect, useState } from 'react';
 import { PullToRefresh } from '../components/PullToRefresh';
 import { toast } from '../components/Toast';
+import { confirmDialog } from '../components/Confirm';
+import { useLongPress } from '../lib/useLongPress';
+import { haptic } from '../lib/haptic';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useApp } from '../stores/app';
-import { Database, FileText, Plus, Upload } from 'lucide-react';
+import { Copy, Database, FileText, Plus, Share2, Trash2, Upload } from 'lucide-react';
+
+/** Long-press / right-click actions for a page: duplicate, public link, trash. */
+function PageActionsSheet({ page, spaceId, onDone, reload }: { page: any; spaceId: string; onDone: () => void; reload: () => void }) {
+  const [busy, setBusy] = useState(false);
+
+  const duplicate = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const src = await api.get(`/pages/${page.id}`);
+      await api.post('/pages', { spaceId, title: `${page.title} (copy)`, markdown: src.page?.markdown ?? '' });
+      toast(`Duplicated as “${page.title} (copy)”`, 'ok');
+      await reload();
+      onDone();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const share = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await api.post(`/pages/${page.id}/share`);
+      await navigator.clipboard.writeText(`${window.location.origin}/share/${r.share.token}`);
+      toast('Public link copied to clipboard', 'ok');
+      onDone();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const trash = async () => {
+    if (busy) return;
+    onDone();
+    if (!(await confirmDialog({ title: `Move “${page.title}” to trash?`, body: 'It stays in Trash and can be restored.', confirmLabel: 'Trash', danger: true }))) return;
+    await api.del(`/pages/${page.id}`);
+    haptic(18);
+    toast('Moved to trash', 'ok');
+    reload();
+  };
+
+  const items = [
+    { icon: <Copy size={15} />, label: 'Duplicate page', run: duplicate },
+    { icon: <Share2 size={15} />, label: 'Copy public link', run: share },
+    { icon: <Trash2 size={15} />, label: 'Move to trash', run: trash, danger: true },
+  ];
+
+  const body = (
+    <>
+      <div className="text-sm text-white truncate mb-1 px-0.5">{page.icon ? `${page.icon} ` : ''}{page.title}</div>
+      <div className="space-y-1">
+        {items.map((it) => (
+          <button
+            key={it.label}
+            disabled={busy}
+            onClick={it.run}
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm active:scale-[0.98] transition-transform ${
+              (it as any).danger ? 'text-red-300 hover:bg-red-500/10' : 'text-set-text hover:bg-set-panel2'
+            }`}
+          >
+            {it.icon} {it.label}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[70] bg-black/55" onClick={onDone} />
+      <div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+12px)] z-[71] set-card p-3 rounded-2xl shadow-2xl sheet-in md:hidden">
+        {body}
+      </div>
+      <div className="hidden md:flex fixed inset-0 z-[71] items-center justify-center p-4 pointer-events-none">
+        <div className="set-card bg-set-panel w-full max-w-xs p-4 shadow-2xl sheet-in pointer-events-auto">{body}</div>
+      </div>
+    </>
+  );
+}
 
 /** Flat "all pages" list — the dashboard's Pages card lands here. */
 export function PagesList() {
@@ -12,7 +99,19 @@ export function PagesList() {
   const navigate = useNavigate();
   const { pages, createPage, loadPages } = useApp();
   const [importing, setImporting] = useState(false);
+  const [actionsFor, setActionsFor] = useState<any | null>(null);
   const sorted = [...pages].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
+
+  const openActions = (p: any) => {
+    haptic(14);
+    setActionsFor(p);
+  };
+
+  const newPage = async () => {
+    haptic(10);
+    const page = await createPage({ spaceId: spaceId!, title: 'Untitled' });
+    navigate(`/app/space/${spaceId}/page/${page.id}`);
+  };
 
   const importZip = async (file: File) => {
     if (!spaceId) return;
@@ -36,10 +135,7 @@ export function PagesList() {
         <span className="text-sm text-set-dim">{pages.length}</span>
         <button
           className="set-btn ml-auto text-xs flex items-center gap-1.5"
-          onClick={async () => {
-            const page = await createPage({ spaceId: spaceId!, title: 'Untitled' });
-            navigate(`/app/space/${spaceId}/page/${page.id}`);
-          }}
+          onClick={newPage}
         >
           <Plus size={13} /> New page
         </button>
@@ -54,21 +150,43 @@ export function PagesList() {
       {sorted.length === 0 && <p className="text-sm text-set-dim">No pages yet — create the first one.</p>}
       <div className="set-card divide-y divide-set-border/40">
         {sorted.map((p) => (
-          <button
-            key={p.id}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-set-panel2/40"
-            onClick={() => navigate(`/app/space/${spaceId}/page/${p.id}`)}
-          >
-            <FileText size={14} className="text-set-dim shrink-0" />
-            <span className="text-sm text-white truncate flex-1">{p.icon ? `${p.icon} ` : ''}{p.title}</span>
-            {p.updated_at && (
-              <span className="text-[11px] text-set-dim shrink-0">{new Date(p.updated_at).toLocaleDateString()}</span>
-            )}
-          </button>
+          <PageRow key={p.id} page={p} spaceId={spaceId!} onLongPress={openActions} />
         ))}
       </div>
     </div>
+
+      {/* mobile FAB — new page, one thumb-tap above the tab bar */}
+      <button
+        onClick={newPage}
+        aria-label="New page"
+        className="md:hidden fixed right-4 bottom-[calc(62px+env(safe-area-inset-bottom))] z-30 w-12 h-12 rounded-full bg-set-accent text-white flex items-center justify-center shadow-lg active:scale-90 transition-transform"
+      >
+        <Plus size={20} />
+      </button>
+
+      {actionsFor && (
+        <PageActionsSheet page={actionsFor} spaceId={spaceId!} onDone={() => setActionsFor(null)} reload={() => loadPages(spaceId!)} />
+      )}
     </PullToRefresh>
+  );
+}
+
+/** A page row with native long-press (touch) / right-click (desktop) actions. */
+function PageRow({ page, spaceId, onLongPress }: { page: any; spaceId: string; onLongPress: (p: any) => void }) {
+  const navigate = useNavigate();
+  const press = useLongPress(() => onLongPress(page));
+  return (
+    <button
+      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-set-panel2/40 active:bg-set-panel2/60 transition-colors"
+      onClick={() => navigate(`/app/space/${spaceId}/page/${page.id}`)}
+      {...press}
+    >
+      <FileText size={14} className="text-set-dim shrink-0" />
+      <span className="text-sm text-white truncate flex-1">{page.icon ? `${page.icon} ` : ''}{page.title}</span>
+      {page.updated_at && (
+        <span className="text-[11px] text-set-dim shrink-0">{new Date(page.updated_at).toLocaleDateString()}</span>
+      )}
+    </button>
   );
 }
 
