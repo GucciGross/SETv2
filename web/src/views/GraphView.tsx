@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence } from 'motion/react';
 import { Frame, Link2Off, Network, Pause, Play, RefreshCw, RotateCcw, Sparkles, X } from 'lucide-react';
 import GraphCanvas, { type FlyToRequest, type GraphColorMode, type MasteryState } from '../components/graph/GraphCanvas';
+import { PullToRefresh } from '../components/PullToRefresh';
+import { GraphSkeleton } from '../components/Skeleton';
 import NodeCard from '../components/graph/NodeCard';
 import { filterGraph } from '../lib/graph/filter';
 import { edgeIds } from '../lib/graph/types';
@@ -271,7 +273,11 @@ export default function GraphView() {
   }
 
   if (!filtered) {
-    return <div className="p-8 text-set-dim">Loading graph…</div>;
+    return (
+      <div className="h-full">
+        <GraphSkeleton />
+      </div>
+    );
   }
 
   if (data!.nodes.length === 0) {
@@ -296,6 +302,7 @@ export default function GraphView() {
   const focused = filter.trim().length > 0;
 
   return (
+    <PullToRefresh onRefresh={refreshAll}>
     <div className="relative h-full">
       <div className="absolute top-3 left-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2">
         <div ref={searchWrapRef} className="relative">
@@ -632,5 +639,6 @@ export default function GraphView() {
         )}
       </AnimatePresence>
     </div>
+    </PullToRefresh>
   );
 }

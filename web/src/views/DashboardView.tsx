@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { PullToRefresh } from '../components/PullToRefresh';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useApp } from '../stores/app';
@@ -102,24 +103,26 @@ export default function DashboardView() {
   const mascot: MascotConfig = (user as any)?.mascot ?? DEFAULT_MASCOT;
   const space = spaces.find((s) => s.id === spaceId);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!spaceId) return;
-    (async () => {
-      const [s, t, a, m] = await Promise.all([
-        api.post('/terminal/exec', { spaceId, command: 'stat' }).catch(() => null),
-        api.get(`/spaces/${spaceId}/mytasks`).catch(() => null),
-        api.get(`/spaces/${spaceId}/activity?limit=8`).catch(() => ({ activities: [] })),
-        api.get(`/spaces/${spaceId}/mcp/stats`).catch(() => null),
-      ]);
-      if (s?.output) {
-        const match = s.output.match(/pages: (\d+)\s+notebooks: (\d+)\s+databases: (\d+)/);
-        if (match) setStats({ pages: +match[1], notebooks: +match[2], databases: +match[3] });
-      }
-      setTasks(t);
-      setActivity(a.activities ?? []);
-      setMcpStats(m);
-    })();
+    const [s, t, a, m] = await Promise.all([
+      api.post('/terminal/exec', { spaceId, command: 'stat' }).catch(() => null),
+      api.get(`/spaces/${spaceId}/mytasks`).catch(() => null),
+      api.get(`/spaces/${spaceId}/activity?limit=8`).catch(() => ({ activities: [] })),
+      api.get(`/spaces/${spaceId}/mcp/stats`).catch(() => null),
+    ]);
+    if (s?.output) {
+      const match = s.output.match(/pages: (\d+)\s+notebooks: (\d+)\s+databases: (\d+)/);
+      if (match) setStats({ pages: +match[1], notebooks: +match[2], databases: +match[3] });
+    }
+    setTasks(t);
+    setActivity(a.activities ?? []);
+    setMcpStats(m);
   }, [spaceId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const openTasks = tasks?.tasks?.length ?? 0;
   const assignedPaths = tasks?.paths?.length ?? 0;
@@ -146,6 +149,7 @@ export default function DashboardView() {
   }));
 
   return (
+    <PullToRefresh onRefresh={load}>
     <div className="p-4 sm:p-6 max-w-6xl mx-auto pb-24">
       <details data-tour="checklist" className="mb-4 group">
         <summary className="cursor-pointer list-none flex items-center gap-2 text-xs text-set-dim hover:text-set-text select-none">
@@ -347,6 +351,7 @@ export default function DashboardView() {
         </div>
       </div>
     </div>
+    </PullToRefresh>
   );
 }
 

@@ -1048,3 +1048,24 @@ button, [role='button'], .set-btn, .set-btn-ghost, .set-btn-primary {
   to { transform: translateY(0); opacity: 1; }
 }
 .sheet-in { animation: sheet-in 0.18s ease-out; }
+
+/* Skeleton shimmer */
+.skeleton { position: relative; overflow: hidden; }
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+
+/* Pull-to-refresh spinner rotation */
+.ptr-rot { animation: ptr-rot 0.9s linear infinite; transform-origin: center; }
+@keyframes ptr-rot { 100% { transform: rotate(360deg); } }
+
+/* iOS zooms any focused input under 16px — pin 16 on phone widths */
+@media (max-width: 767px) {
+  input, textarea, select { font-size: 16px !important; }
+}

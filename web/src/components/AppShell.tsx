@@ -232,6 +232,7 @@ function AppShellInner() {
   const [trashOpen, setTrashOpen] = useState(false);
   const [trash, setTrash] = useState<any[]>([]);
   const [mobileNav, setMobileNav] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const [railMode, setRailMode] = useState(false);
   const [pagesOpen, setPagesOpen] = useState(true);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
@@ -366,6 +367,22 @@ function AppShellInner() {
     const btn = document.querySelector<HTMLButtonElement>("[data-slot='chat-toggle-button']");
     if (btn && btn.getAttribute('aria-expanded') !== 'true') btn.click();
   };
+
+  /** Compact header: past ~72px of scroll the mobile top bar shows the
+   *  current page/view title (iOS large-title → small-title behavior). */
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => setScrolled(el.scrollTop > 72);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+  const pageIdInPath = location.pathname.match(/\/page\/([0-9a-f-]{36})/)?.[1];
+  const headerTitle =
+    (pageIdInPath && pages.find((pg) => pg.id === pageIdInPath)?.title) ||
+    ({ '': spaces.find((sp) => sp.id === currentSpaceId)?.name ?? '', pages: 'Pages', graph: 'Graph', databases: 'Databases', notebooks: 'Notebooks', tasks: 'My Tasks', settings: 'Settings', coding: 'Coding', research: 'Research' } as Record<string, string>)[subPath.split('/')[0]] ||
+    '';
 
   /** Edge-swipe: right from the left edge opens the mobile drawer, left inside it closes. */
   const edgeSwipe = useRef<{ x: number; y: number; active: boolean } | null>(null);
@@ -671,9 +688,12 @@ function AppShellInner() {
             <span className="text-set-border">/</span>
             <span>{location.pathname.replace(/^\/app\/space\/[^/]+\/?/, '').replace(/-/g, ' ') || 'dashboard'}</span>
           </div>
+          <span className={`md:hidden flex-1 text-center truncate text-sm text-set-text/90 min-w-0 transition-opacity ${scrolled && headerTitle ? 'opacity-100' : 'opacity-0'}`}>
+            {headerTitle}
+          </span>
           <div className="ml-auto"><Notifications /></div>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div ref={scrollRef} data-scroll-root className="flex-1 overflow-y-auto">
           <Outlet />
         </div>
 

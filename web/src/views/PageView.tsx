@@ -11,6 +11,7 @@ import { useApp } from '../stores/app';
 import { collapseContext, diffLines } from '../lib/diff';
 import { toast } from '../components/Toast';
 import { useSheetDrag } from '../lib/sheetDrag';
+import { PageSkeleton } from '../components/Skeleton';
 
 interface PageData {
   id: string;
@@ -560,7 +561,7 @@ export default function PageView() {
     return () => window.removeEventListener('set:remote-page-update', handler);
   }, [pageId, load]);
 
-  if (!page) return <div className="p-8 text-set-dim">Loading page…</div>;
+  if (!page) return <PageSkeleton />;
 
   const saveTitle = async () => {
     if (!title.trim() || title === page.title) return;

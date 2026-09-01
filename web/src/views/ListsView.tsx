@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { PullToRefresh } from '../components/PullToRefresh';
+import { toast } from '../components/Toast';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useApp } from '../stores/app';
@@ -17,16 +19,17 @@ export function PagesList() {
     setImporting(true);
     try {
       const res = await api.upload(`/spaces/${spaceId}/import-zip`, [file]);
-      alert(`Imported ${res.pages} pages${res.databases ? `, ${res.databases} databases` : ''}${res.images ? `, ${res.images} images` : ''}.`);
+      toast(`Imported ${res.pages} pages${res.databases ? `, ${res.databases} databases` : ''}${res.images ? `, ${res.images} images` : ''}`, 'ok');
       await loadPages(spaceId);
     } catch (e: any) {
-      alert(`Import failed: ${e.message}`);
+      toast(`Import failed: ${e.message}`, 'error');
     } finally {
       setImporting(false);
     }
   };
 
   return (
+    <PullToRefresh onRefresh={() => loadPages(spaceId!)}>
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
       <div className="flex items-center gap-2 mb-4">
         <h1 className="text-xl font-bold text-white">Pages</h1>
@@ -65,6 +68,7 @@ export function PagesList() {
         ))}
       </div>
     </div>
+    </PullToRefresh>
   );
 }
 
@@ -74,12 +78,15 @@ export function DatabasesList() {
   const navigate = useNavigate();
   const [dbs, setDbs] = useState<any[]>([]);
 
+  const load = () => api.get(`/spaces/${spaceId}/databases`).then((r) => setDbs(r.dbs)).catch(() => {});
+
   useEffect(() => {
     if (!spaceId) return;
-    api.get(`/spaces/${spaceId}/databases`).then((r) => setDbs(r.databases)).catch(() => {});
+    load();
   }, [spaceId]);
 
   return (
+    <PullToRefresh onRefresh={load}>
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
       <div className="flex items-center gap-2 mb-4">
         <h1 className="text-xl font-bold text-white">Databases</h1>
@@ -100,5 +107,6 @@ export function DatabasesList() {
         ))}
       </div>
     </div>
+    </PullToRefresh>
   );
 }
