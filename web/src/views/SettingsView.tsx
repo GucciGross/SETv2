@@ -2,17 +2,18 @@ import { useEffect, useState } from 'react';
 import { confirmDialog } from '../components/Confirm';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera, Gauge, Cloud, Scissors, Trash2, Bell, Upload, CreditCard, Coins, Download, CloudSun, RefreshCw } from 'lucide-react';
+import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera, Gauge, Cloud, Scissors, Trash2, Bell, Upload, CreditCard, Coins, Download, CloudSun, RefreshCw, Sun } from 'lucide-react';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 import { toast } from '../components/Toast';
+import { applyTheme, saveThemePreference, currentTheme, type Theme } from '../lib/theme';
 import McpSettings from '../components/McpSettings';
 import SkillsSettings from '../components/SkillsSettings';
 import { DitherButton } from '../components/dither-kit';
 
 export default function SettingsView() {
   const { spaceId } = useParams();
-  const [tab, setTab] = useState<'surfaces' | 'skills' | 'mcp' | 'channels' | 'mascot' | 'providers' | 'members' | 'workspace' | 'research' | 'companion' | 'clipper' | 'notifications' | 'billing'>('surfaces');
+  const [tab, setTab] = useState<'surfaces' | 'appearance' | 'skills' | 'mcp' | 'channels' | 'mascot' | 'providers' | 'members' | 'workspace' | 'research' | 'companion' | 'clipper' | 'notifications' | 'billing'>('surfaces');
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
@@ -20,6 +21,7 @@ export default function SettingsView() {
       <div className="flex flex-wrap gap-1 mb-4">
         {([
           ['surfaces', 'Work surfaces', <LayoutGrid key="z" size={14} />],
+          ['appearance', 'Appearance', <Sun key="ap" size={14} />],
           ['skills', 'Skills', <Sparkles key="y" size={14} />],
           ['mcp', 'MCP', <Plug key="z" size={14} />],
           ['channels', 'Channels', <Radio key="ch" size={14} />],
@@ -39,6 +41,7 @@ export default function SettingsView() {
         ))}
       </div>
       {tab === 'surfaces' && <SurfacesTab spaceId={spaceId!} />}
+      {tab === 'appearance' && <AppearanceTab />}
       {tab === 'skills' && <SkillsSettings />}
       {tab === 'mcp' && <McpSettings />}
       {tab === 'channels' && <ChannelsTab spaceId={spaceId!} />}
@@ -292,6 +295,42 @@ function MascotTab() {
             <button className="set-btn text-xs flex items-center gap-1" onClick={randomize}><Dices size={13} /> Randomize</button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Light/dark toggle — device-instant, persisted to the account. */
+function AppearanceTab() {
+  const [theme, setTheme] = useState<Theme>(currentTheme());
+
+  const pick = (t: Theme) => {
+    setTheme(t);
+    applyTheme(t);
+    saveThemePreference(t);
+    toast(`${t === 'light' ? 'Light' : 'Dark'} theme on`, 'ok');
+  };
+
+  return (
+    <div>
+      <p className="text-sm text-set-dim mb-4">The choice follows your account across devices.</p>
+      <div className="grid grid-cols-2 gap-3 max-w-md">
+        {([
+          { id: 'dark', label: 'Dark', swatch: 'linear-gradient(135deg, #0f1219 0%, #242c3e 100%)' },
+          { id: 'light', label: 'Light', swatch: 'linear-gradient(135deg, #ffffff 0%, #dde2ec 100%)' },
+        ] as const).map((opt) => (
+          <button
+            key={opt.id}
+            onClick={() => pick(opt.id)}
+            className={`set-card p-4 text-left transition-all ${theme === opt.id ? 'ring-2 ring-set-accent' : 'hover:border-set-accent/40'}`}
+          >
+            <div className="h-16 rounded-lg border border-set-border mb-2.5" style={{ background: opt.swatch }} />
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-white">{opt.label}</span>
+              {theme === opt.id && <Check size={15} className="text-set-accent" />}
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import React from 'react';
+import './lib/theme';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider, Navigate, useRouteError } from 'react-router-dom';
 import './index.css';

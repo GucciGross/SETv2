@@ -12,6 +12,7 @@ import { api } from '../lib/api';
 import { startTour } from '../lib/tour';
 import { Toasts } from './Toast';
 import { haptic } from '../lib/haptic';
+import { syncThemeFromAccount } from '../lib/theme';
 import { ConfirmHost, confirmDialog } from './Confirm';
 import { SetCopilotProvider, useSetScreenContext } from '../lib/copilot';
 import { DitherAvatar } from './dither-kit';
@@ -232,6 +233,9 @@ function AppShellInner() {
   const [recordOpen, setRecordOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [trash, setTrash] = useState<any[]>([]);
+  useEffect(() => {
+    void syncThemeFromAccount(); // the account's theme wins over this device's
+  }, []);
   const [mobileNav, setMobileNav] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [railMode, setRailMode] = useState(false);

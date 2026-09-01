@@ -4,7 +4,45 @@
 
 :root {
   color-scheme: dark;
+  /* dark palette (default) — RGB triplets for Tailwind alpha support */
+  --set-bg: 10 12 17;
+  --set-panel: 15 18 25;
+  --set-panel2: 21 26 38;
+  --set-border: 36 44 62;
+  --set-text: 222 228 240;
+  --set-dim: 139 147 166;
+  --set-accent: 108 140 255;
+  --set-accent2: 139 92 246;
+  --set-ok: 52 211 153;
+  --set-warn: 251 191 36;
+  --set-err: 248 113 113;
+  --set-live: 34 211 238;
 }
+
+/* Light mode: applied by toggling the class on <html> (Settings → Appearance,
+   persisted per account). Same hue families, paper surfaces, deeper accents
+   for contrast. */
+html.light {
+  color-scheme: light;
+  --set-bg: 244 245 248;
+  --set-panel: 255 255 255;
+  --set-panel2: 233 236 242;
+  --set-border: 215 220 230;
+  --set-text: 26 31 42;
+  --set-dim: 90 100 116;
+  --set-accent: 79 107 245;
+  --set-accent2: 124 58 237;
+  --set-ok: 5 150 105;
+  --set-warn: 217 119 6;
+  --set-err: 220 38 38;
+  --set-live: 8 145 178;
+}
+/* headings/emphasis written as text-white follow the theme */
+html.light .text-white { color: #14171e; }
+html.light .hover\:text-white:hover { color: #14171e; }
+/* soften the machined dark shadows */
+html.light .shadow-card { box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.6), 0 10px 28px -14px rgb(20 26 40 / 0.18); }
+html.light .shadow-pop { box-shadow: 0 18px 50px -16px rgb(20 26 40 / 0.28); }
 
 html,
 body,
@@ -25,10 +63,12 @@ body,
   overflow-x: hidden;
   overflow-x: clip;
 }
-/* iOS dynamic viewport: avoids 100vh notch/home-indicator overflow */
+/* iOS: pinned to the layout viewport — 100dvh under-fills on some iOS
+   configurations (status-bar + PWA combos), leaving dead space below the
+   tab bar; inset:0 always spans the real screen */
 .app-shell {
-  height: 100vh;
-  height: 100dvh;
+  position: fixed;
+  inset: 0;
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);

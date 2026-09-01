@@ -5,23 +5,20 @@ export default {
     extend: {
       colors: {
         set: {
-          // Surfaces — cool graphite, steps tuned so panels separate from the
-          // canvas without halos. Borders read as hairlines, not cages.
-          bg: '#0a0c11',
-          panel: '#0f1219',
-          panel2: '#151a26',
-          border: '#242c3e',
-          text: '#dee4f0',
-          dim: '#8b93a6',
-          // Brand pair — blue is the voice, violet the AI/agent register.
-          accent: '#6c8cff',
-          accent2: '#8b5cf6',
-          // Status register used by shells/indicators (matches the dither-kit
-          // seed hues so charts and chips stay in one family).
-          ok: '#34d399',
-          warn: '#fbbf24',
-          err: '#f87171',
-          live: '#22d3ee',
+          // Palette lives in CSS variables (src/index.css) so light mode is a
+          // variable swap; triplets keep Tailwind's /opacity modifiers working.
+          bg: 'rgb(var(--set-bg) / <alpha-value>)',
+          panel: 'rgb(var(--set-panel) / <alpha-value>)',
+          panel2: 'rgb(var(--set-panel2) / <alpha-value>)',
+          border: 'rgb(var(--set-border) / <alpha-value>)',
+          text: 'rgb(var(--set-text) / <alpha-value>)',
+          dim: 'rgb(var(--set-dim) / <alpha-value>)',
+          accent: 'rgb(var(--set-accent) / <alpha-value>)',
+          accent2: 'rgb(var(--set-accent2) / <alpha-value>)',
+          ok: 'rgb(var(--set-ok) / <alpha-value>)',
+          warn: 'rgb(var(--set-warn) / <alpha-value>)',
+          err: 'rgb(var(--set-err) / <alpha-value>)',
+          live: 'rgb(var(--set-live) / <alpha-value>)',
         },
       },
       boxShadow: {

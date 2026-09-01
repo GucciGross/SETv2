@@ -193,6 +193,7 @@ export async function authRoutes(app: FastifyInstance) {
         briefEnabled: z.boolean().optional(),
         briefHour: z.number().int().min(0).max(23).nullable().optional(),
         briefTz: z.string().max(64).optional(),
+        theme: z.enum(['dark', 'light']).optional(),
       })
       .parse(req.body);
     const { setPreferences } = await import('../study/briefScheduler.js');
