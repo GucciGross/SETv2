@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { Plus, Zap, ShieldCheck, Users, Cpu, Check, LayoutGrid, Cat, Dices, PackagePlus, PackageMinus, Plug, Sparkles, Radio, Unlink, Telescope, LayoutTemplate, MonitorSmartphone, Copy, Terminal, HeartPulse, Camera, Gauge, Cloud, Scissors, Trash2, Bell, Upload, CreditCard, Coins, Download, CloudSun, RefreshCw } from 'lucide-react';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
+import { toast } from '../components/Toast';
 import McpSettings from '../components/McpSettings';
 import SkillsSettings from '../components/SkillsSettings';
 import { DitherButton } from '../components/dither-kit';
@@ -307,7 +308,7 @@ function SurfacesTab({ spaceId }: { spaceId: string }) {
       await api.patch(`/spaces/${spaceId}/settings`, { settings: { surfaces: next } });
       await loadSurfaces(spaceId);
     } catch (e: any) {
-      alert(e.message);
+      toast(e.message, 'error');
     } finally {
       setBusy(null);
     }
@@ -364,9 +365,10 @@ function WandgxCard({ spaceId }: { spaceId: string }) {
     try {
       await api.post(`/spaces/${spaceId}/wandgx/variants`, { buildId, language: language.trim() });
       setVariantFor(null);
+      toast(`${language.trim()} variant started`, 'ok');
       load();
     } catch (e: any) {
-      alert(e.message);
+      toast(e.message, 'error');
     } finally {
       setBusy(false);
     }
@@ -719,7 +721,7 @@ function WorkspaceTab({ spaceId }: { spaceId: string }) {
 
   const exportZip = async () => {
     const res = await api.raw(`/spaces/${spaceId}/export.zip`);
-    if (!res.ok) return alert('Export failed');
+    if (!res.ok) return toast('Export failed', 'error');
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -823,10 +825,10 @@ function WorkspaceTab({ spaceId }: { spaceId: string }) {
                   try {
                     const kit = JSON.parse(await f.text());
                     const r = await api.post(`/spaces/${spaceId}/templates/import`, kit);
-                    alert(`Imported ${r.created} template(s)`);
+                    toast(`Imported ${r.created} template(s)`, 'ok');
                     load();
                   } catch (err) {
-                    alert('Invalid kit file: ' + (err as any).message);
+                    toast('Invalid kit file: ' + (err as any).message, 'error');
                   }
                 }}
               />
@@ -1368,8 +1370,10 @@ function BriefSchedule() {
       const r = await api.put('/users/preferences', { briefEnabled: enabled, briefHour: Number(hour), briefTz: tz });
       setPrefs(r.preferences);
       setMsg(enabled ? `On — the brief lands at ${hour.padStart(2, '0')}:00 (${tz}) in every space you can edit.` : 'Brief scheduling off.');
+      toast(enabled ? 'Brief scheduled' : 'Brief scheduling off', 'ok');
     } catch (e: any) {
       setMsg(e.message);
+      toast(e.message, 'error');
     } finally {
       setBusy(false);
     }
@@ -1385,8 +1389,10 @@ function BriefSchedule() {
         if (pageId) return navigate(`/app/space/${spaceId}/page/${pageId}`);
       }
       setMsg(r?.delivered ? 'Delivered.' : 'Nothing to deliver today — no reviews due, nothing decaying, no builds.');
+      toast(r?.delivered ? 'Brief delivered' : 'Nothing to deliver today', r?.delivered ? 'ok' : 'info');
     } catch (e: any) {
       setMsg(e.message);
+      toast(e.message, 'error');
     } finally {
       setBusy(false);
     }

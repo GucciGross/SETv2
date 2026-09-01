@@ -10,6 +10,7 @@ import {
 import { useApp, type PageMeta } from '../stores/app';
 import { api } from '../lib/api';
 import { startTour } from '../lib/tour';
+import { Toasts } from './Toast';
 import { SetCopilotProvider, useSetScreenContext } from '../lib/copilot';
 import { DitherAvatar } from './dither-kit';
 import WelcomeModal from './onboarding/WelcomeModal';
@@ -358,6 +359,7 @@ function AppShellInner() {
   };
 
   const link = (sub: string) => `/app/space/${currentSpaceId}${sub}`;
+  const subPath = location.pathname.replace(/^\/app\/space\/[^/]+\/?/, '');
 
   const openCopilot = () => {
     const btn = document.querySelector<HTMLButtonElement>("[data-slot='chat-toggle-button']");
@@ -641,7 +643,39 @@ function AppShellInner() {
         <div className="flex-1 overflow-y-auto">
           <Outlet />
         </div>
+
+        {/* Mobile bottom tab bar — takes layout space (content scrolls above
+            it), matching a native app's primary navigation. The drawer keeps
+            everything else; Ask SET opens the copilot. */}
+        <nav className="md:hidden border-t border-set-border bg-set-panel/95 backdrop-blur flex pb-[env(safe-area-inset-bottom)]">
+          {([
+            { icon: <LayoutDashboard size={19} />, label: 'Home', to: link(''), active: subPath === '' },
+            { icon: <FileText size={19} />, label: 'Pages', to: link('/pages'), active: subPath.startsWith('/pages') || subPath.startsWith('/page/') },
+            { icon: <Network size={19} />, label: 'Graph', to: link('/graph'), active: subPath.startsWith('/graph') },
+          ] as const).map((t) => (
+            <Link
+              key={t.label}
+              to={t.to}
+              className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 text-[10px] active:scale-95 transition-transform ${
+                t.active ? 'text-set-accent' : 'text-set-dim'
+              }`}
+            >
+              {t.icon}
+              {t.label}
+            </Link>
+          ))}
+          <button
+            className="flex-1 flex flex-col items-center gap-0.5 py-1.5 text-[10px] text-set-dim active:scale-95 transition-transform"
+            onClick={openCopilot}
+          >
+            <MessageCircle size={19} />
+            Ask SET
+          </button>
+        </nav>
       </main>
+
+      {/* Non-blocking feedback (errors, confirmations) */}
+      <Toasts />
 
       {/* The copilot lives in the floating overlay (GuideFab) */}
 

@@ -8,6 +8,8 @@ import { MessageSquare, Send } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../stores/app';
 import { collapseContext, diffLines } from '../lib/diff';
+import { toast } from '../components/Toast';
+import { useSheetDrag } from '../lib/sheetDrag';
 
 interface PageData {
   id: string;
@@ -191,6 +193,7 @@ function BuildMenu({ spaceId, pageId, pageTitle, onStarted }: { spaceId: string;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [customLang, setCustomLang] = useState('');
+  const sheetDrag = useSheetDrag(() => setOpen(false));
 
   const start = async () => {
     if (!prompt.trim() || busy) return;
@@ -200,9 +203,11 @@ function BuildMenu({ spaceId, pageId, pageTitle, onStarted }: { spaceId: string;
       await api.post(`/spaces/${spaceId}/wandgx/builds`, { prompt: prompt.trim(), title: `${pageTitle} — build`, pageId });
       setPrompt('');
       setOpen(false);
+      toast('Build started — results will land in the Build log', 'ok');
       onStarted();
     } catch (e: any) {
       setErr(e.message);
+      toast(e.message, 'error');
     } finally {
       setBusy(false);
     }
@@ -217,9 +222,11 @@ function BuildMenu({ spaceId, pageId, pageTitle, onStarted }: { spaceId: string;
       await api.post(`/spaces/${spaceId}/wandgx/variants`, { pageRef: pageId, language: lang });
       setCustomLang('');
       setOpen(false);
+      toast(`${lang} variant started`, 'ok');
       onStarted();
     } catch (e: any) {
       setErr(e.message);
+      toast(e.message, 'error');
     } finally {
       setBusy(false);
     }
@@ -278,7 +285,7 @@ function BuildMenu({ spaceId, pageId, pageTitle, onStarted }: { spaceId: string;
         <>
           {/* mobile: bottom sheet — never wider than the screen, dismiss on backdrop */}
           <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setOpen(false)} />
-          <div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+12px)] z-40 set-card p-3.5 pb-[calc(env(safe-area-inset-bottom)+14px)] rounded-2xl shadow-2xl sheet-in md:hidden max-h-[calc(100dvh-24px)] overflow-y-auto">
+          <div {...sheetDrag} className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+12px)] z-40 set-card p-3.5 pb-[calc(env(safe-area-inset-bottom)+14px)] rounded-2xl shadow-2xl sheet-in md:hidden max-h-[calc(100dvh-24px)] overflow-y-auto">
             {body}
           </div>
           {/* desktop: anchored popover */}
@@ -300,7 +307,7 @@ function QuizButton({ pageId, onDeck }: { pageId: string; onDeck: (deckId: strin
       const r = await api.post(`/pages/${pageId}/generate`, { kind: 'quiz' });
       if (r?.deck?.id) onDeck(r.deck.id);
     } catch (e: any) {
-      alert(e.message);
+      toast(e.message, 'error');
     } finally {
       setBusy(false);
     }
@@ -393,6 +400,7 @@ function CheckpointsPanel({ pageId, onPassed }: { pageId: string; onPassed: () =
 
 function ShareMenu({ pageId }: { pageId: string }) {
   const [open, setOpen] = useState(false);
+  const sheetDrag = useSheetDrag(() => setOpen(false));
   const [shares, setShares] = useState<any[]>([]);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -460,7 +468,7 @@ function ShareMenu({ pageId }: { pageId: string }) {
         <>
           {/* mobile: bottom sheet */}
           <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setOpen(false)} />
-          <div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+12px)] z-40 set-card p-3.5 pb-[calc(env(safe-area-inset-bottom)+14px)] rounded-2xl shadow-2xl sheet-in md:hidden max-h-[calc(100dvh-24px)] overflow-y-auto">
+          <div {...sheetDrag} className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+12px)] z-40 set-card p-3.5 pb-[calc(env(safe-area-inset-bottom)+14px)] rounded-2xl shadow-2xl sheet-in md:hidden max-h-[calc(100dvh-24px)] overflow-y-auto">
             {body}
           </div>
           {/* desktop: anchored popover */}
