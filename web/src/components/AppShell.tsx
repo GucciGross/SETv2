@@ -406,8 +406,73 @@ function AppShellInner() {
     ({ '': spaces.find((sp) => sp.id === currentSpaceId)?.name ?? '', pages: 'Pages', graph: 'Graph', databases: 'Databases', notebooks: 'Notebooks', tasks: 'My Tasks', settings: 'Settings', coding: 'Coding', research: 'Research' } as Record<string, string>)[subPath.split('/')[0]] ||
     '';
 
-  /** Edge-swipe: right from the left edge opens the mobile drawer, left inside it closes. */
-  const edgeSwipe = useRef<{ x: number; y: number; active: boolean } | null>(null);
+  /**
+   * Edge-swipe drawer, native-style: the drawer follows the finger, and
+   * release commits by distance or flick velocity. Vertical scrolls always
+   * win — direction is judged by dominance, so a diagonal fling from the
+   * left thumb zone scrolls instead of popping the drawer open.
+   */
+  const DRAWER_W = 256;
+  const drag = useRef<{
+    startX: number; startY: number; lastX: number; startT: number;
+    candidate: 'opening' | 'closing';
+    mode: 'undecided' | 'horizontal' | 'vertical';
+  } | null>(null);
+  const [dragOffset, setDragOffset] = useState<number | null>(null); // live drawer translateX while dragging
+
+  const isPhone = () => window.matchMedia('(max-width: 767px)').matches;
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1 || !isPhone()) return;
+    const t = e.touches[0];
+    // drawer open: any touch (drawer body or scrim) can swipe it away;
+    // drawer closed: only the left edge zone starts an open drag
+    const candidate = mobileNav ? 'closing' : t.clientX < 32 ? 'opening' : null;
+    if (!candidate) return;
+    drag.current = { startX: t.clientX, startY: t.clientY, lastX: t.clientX, startT: performance.now(), candidate, mode: 'undecided' };
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    const d = drag.current;
+    if (!d || d.mode === 'vertical') return;
+    const t = e.touches[0];
+    const dx = t.clientX - d.startX;
+    const dy = t.clientY - d.startY;
+    if (d.mode === 'undecided') {
+      // settle the direction once, with dominance: vertical intent scrolls,
+      // horizontal intent drags the drawer — no more mid-scroll hijacks
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      if (Math.abs(dy) > Math.abs(dx) * 1.2) { drag.current = null; return; }
+      d.mode = 'horizontal';
+    }
+    if (d.candidate === 'opening') {
+      setDragOffset(Math.min(0, Math.max(-DRAWER_W, -DRAWER_W + dx)));
+    } else {
+      setDragOffset(Math.min(0, Math.max(-DRAWER_W, dx)));
+    }
+  };
+
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d || d.mode !== 'horizontal') { setDragOffset(null); return; }
+    const t = e.changedTouches[0];
+    const dx = t.clientX - d.startX;
+    const dt = performance.now() - d.startT;
+    const flick = dt < 240 && Math.abs(dx) > 40; // fast, deliberate flick
+    if (d.candidate === 'opening') {
+      const commit = dragOffset != null && dragOffset > -DRAWER_W * 0.55;
+      if (commit || (flick && dx > 0)) { haptic(8); setMobileNav(true); }
+      else setMobileNav(false);
+    } else {
+      const commit = dragOffset != null && dragOffset < -DRAWER_W * 0.45;
+      if (commit || (flick && dx < 0)) { haptic(8); setMobileNav(false); }
+      else setMobileNav(true);
+    }
+    setDragOffset(null); // class transition animates the rest of the way
+  };
+
+  const drawerOpenPx = dragOffset ?? (mobileNav ? 0 : -DRAWER_W);
 
   const nbLink = (n: any) => (
     <Link
@@ -424,41 +489,23 @@ function AppShellInner() {
   return (
     <div
       className="app-shell flex overflow-hidden"
-      onTouchStart={(e) => {
-        if (e.touches.length !== 1) return;
-        const t = e.touches[0];
-        const inDrawer = !!(e.target as HTMLElement).closest?.('aside');
-        edgeSwipe.current = { x: t.clientX, y: t.clientY, active: (!mobileNav && t.clientX < 28) || (mobileNav && inDrawer) };
-      }}
-      onTouchMove={(e) => {
-        const sw = edgeSwipe.current;
-        if (!sw?.active) return;
-        const t = e.touches[0];
-        const dx = t.clientX - sw.x;
-        const dy = Math.abs(t.clientY - sw.y);
-        if (dy > 60) {
-          edgeSwipe.current = null; // vertical intent — let it scroll
-          return;
-        }
-        if (!mobileNav && dx > 48) {
-          setMobileNav(true);
-          edgeSwipe.current = null;
-        } else if (mobileNav && dx < -48) {
-          setMobileNav(false);
-          edgeSwipe.current = null;
-        }
-      }}
-      onTouchEnd={() => {
-        edgeSwipe.current = null;
-      }}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={() => { drag.current = null; setDragOffset(null); }}
     >
-      {/* Sidebar */}
-      {mobileNav && (
-        <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setMobileNav(false)} />
+      {/* Sidebar scrim — follows the drag while the drawer tracks the finger */}
+      {(mobileNav || dragOffset != null) && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 md:hidden"
+          style={dragOffset != null ? { opacity: Math.max(0, (drawerOpenPx + DRAWER_W) / DRAWER_W), transition: 'none' } : undefined}
+          onClick={() => setMobileNav(false)}
+        />
       )}
       <aside
         data-tour-sidebar
         className={`${railMode ? 'w-14' : 'w-64'} shrink-0 bg-set-panel border-r border-set-border flex flex-col transition-all max-md:w-64 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:transition-transform max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] ${mobileNav ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'}`}
+        style={dragOffset != null ? { transform: `translateX(${drawerOpenPx}px)`, transition: 'none' } : undefined}
       >
         <div className="p-3 border-b border-set-border tex-dither" data-tour="space-switcher">
           <div className="flex items-center gap-2 mb-2.5">
