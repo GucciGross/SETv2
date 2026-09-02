@@ -131,7 +131,12 @@ export async function importZipRoutes(app: FastifyInstance) {
          ON CONFLICT DO NOTHING RETURNING id, title`,
         [spaceId, title, text, JSON.stringify(mdToDoc(text)), req.user!.id]
       );
-      if (page) created.push(page);
+      // links must exist before the first edit, or a freshly imported vault
+      // has no edges: backlinks and the graph view stay empty until touched
+      if (page) {
+        await syncLinks(page.id, spaceId, text);
+        created.push(page);
+      }
     }
 
     // 3. CSVs -> databases with inferred column types
