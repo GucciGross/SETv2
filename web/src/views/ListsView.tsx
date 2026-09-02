@@ -7,7 +7,7 @@ import { haptic } from '../lib/haptic';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useApp } from '../stores/app';
-import { Copy, Database, FileText, Plus, Share2, Trash2, Upload } from 'lucide-react';
+import { Copy, Database, FileText, GitBranch, Plus, Share2, Trash2, Upload } from 'lucide-react';
 
 /** Long-press / right-click actions for a page: duplicate, public link, trash. */
 function PageActionsSheet({ page, spaceId, onDone, reload }: { page: any; spaceId: string; onDone: () => void; reload: () => void }) {
@@ -93,12 +93,86 @@ function PageActionsSheet({ page, spaceId, onDone, reload }: { page: any; spaceI
   );
 }
 
+/** Import a graphify codebase-graph vault as a page tree that mirrors the repo. */
+function CodeGraphModal({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate();
+  const loadSpaces = useApp((s) => s.loadSpaces);
+  const [name, setName] = useState('');
+  const [newSpace, setNewSpace] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+
+  const pick = (f: File | null) => {
+    setFile(f);
+    if (f && !name.trim()) setName(f.name.replace(/\.zip$/i, '').replace(/[-_]+/g, ' ').trim());
+  };
+
+  const run = async () => {
+    if (!file || busy) return;
+    setBusy(true);
+    try {
+      const current = useApp.getState().currentSpaceId;
+      const res = await api.upload(`/spaces/${current}/import-codegraph`, [file], {
+        name: name.trim() || 'Codebase graph',
+        newSpace: newSpace ? '1' : '0',
+      });
+      toast(`Imported ${res.pages} notes across ${res.directories} directories`, 'ok');
+      if (newSpace) await loadSpaces();
+      onClose();
+      navigate(`/app/space/${res.spaceId}`);
+    } catch (e: any) {
+      toast(`Import failed: ${e.message}`, 'error');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="set-card bg-set-panel w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-white mb-1">Import codebase graph</h3>
+        <p className="text-sm text-set-dim mb-4">
+          Turn a repo into a living wiki: build the graph with graphify, export its Obsidian vault, upload it here.
+          Pages mirror the repo tree; backlinks and the Graph work immediately.
+        </p>
+        <pre className="set-mono text-[11px] text-set-dim bg-set-panel2/60 border border-set-border rounded-lg p-2.5 mb-4 overflow-x-auto">{`uv tool install graphifyy
+graphify extract <repo> --code-only
+graphify export obsidian --dir vault
+zip -r vault.zip vault`}</pre>
+        <input
+          className="set-input mb-2"
+          placeholder="Graph name (e.g. SETv2 codebase)"
+          value={name}
+          maxLength={120}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <label className="flex items-center gap-2 text-sm text-set-dim mb-4 cursor-pointer select-none">
+          <input type="checkbox" checked={newSpace} onChange={(e) => setNewSpace(e.target.checked)} />
+          Create a new workspace for it
+        </label>
+        <label
+          className={`set-btn w-full flex items-center justify-center gap-1.5 mb-4 cursor-pointer ${file ? 'text-set-accent' : ''}`}
+        >
+          <Upload size={13} /> {file ? file.name : 'Choose vault zip…'}
+          <input type="file" hidden accept=".zip" onChange={(e) => pick(e.target.files?.[0] ?? null)} />
+        </label>
+        <div className="flex gap-2">
+          <button className="set-btn-primary text-sm flex-1" disabled={!file || busy} onClick={run}>
+            {busy ? 'Importing…' : 'Import'}
+          </button>
+          <button className="set-btn-ghost text-sm" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Flat "all pages" list — the dashboard's Pages card lands here. */
 export function PagesList() {
   const { spaceId } = useParams();
   const navigate = useNavigate();
   const { pages, createPage, loadPages } = useApp();
   const [importing, setImporting] = useState(false);
+  const [codegraphOpen, setCodegraphOpen] = useState(false);
   const [actionsFor, setActionsFor] = useState<any | null>(null);
   const sorted = [...pages].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
 
@@ -146,6 +220,13 @@ export function PagesList() {
           <Upload size={13} /> {importing ? 'Importing…' : 'Import ZIP'}
           <input type="file" hidden accept=".zip" disabled={importing} onChange={(e) => e.target.files?.[0] && importZip(e.target.files[0])} />
         </label>
+        <button
+          className="set-btn text-xs flex items-center gap-1.5"
+          title="Import a graphify codebase graph — the repo as a linked page tree"
+          onClick={() => setCodegraphOpen(true)}
+        >
+          <GitBranch size={13} /> Code graph
+        </button>
       </div>
       {sorted.length === 0 && <p className="text-sm text-set-dim">No pages yet — create the first one.</p>}
       <div className="set-card divide-y divide-set-border/40">
@@ -167,6 +248,8 @@ export function PagesList() {
       {actionsFor && (
         <PageActionsSheet page={actionsFor} spaceId={spaceId!} onDone={() => setActionsFor(null)} reload={() => loadPages(spaceId!)} />
       )}
+
+      {codegraphOpen && <CodeGraphModal onClose={() => setCodegraphOpen(false)} />}
     </PullToRefresh>
   );
 }

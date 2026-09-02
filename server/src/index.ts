@@ -31,6 +31,7 @@ import { myTasksRoutes, kitRoutes } from './team/mytasks.js';
 import { waitlistRoutes } from './waitlist.js';
 import { activityRoutes } from './team/activity.js';
 import { importZipRoutes } from './team/importZip.js';
+import { codegraphRoutes } from './team/codegraph.js';
 import { mcpRoutes } from './mcp/routes.js';
 import { skillsRoutes, seedSkills, getActiveSkillPrompt } from './skills/routes.js';
 import { onboardingRoutes } from './onboarding/routes.js';
@@ -135,6 +136,7 @@ async function main() {
     await waitlistRoutes(api);
     await activityRoutes(api);
     await importZipRoutes(api);
+    await codegraphRoutes(api);
     await mcpRoutes(api);
     await billingRoutes(api);
     await skillsRoutes(api);

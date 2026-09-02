@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Codebase graphs (graphify)
+- Import a [graphify](https://github.com/Graphify-Labs/graphify) codebase graph: Pages → Code graph takes a vault zip and lands the repo as a living wiki — a root page, one 📁 page per directory (mirroring the repo tree from each note's `source_file`), and symbol notes under their directory with `[[Connections]]` intact. Backlinks and the Graph view work immediately; imports can create their own workspace. 1,900-note reference import: ~7s, 10.3k link edges
+- Vault zip imports in general (`import-zip`) now sync links in one pass after all pages exist — `syncLinks` only resolves targets that already exist, so per-page syncing silently dropped every forward reference (a fresh vault's backlinks/graph stayed half-empty until pages were edited)
+
 ### Data trust & account
 - One-click workspace export: Settings → Workspace downloads a zip with every page as Markdown (wiki links intact — re-importable via Import ZIP), every database as CSV, and every notebook's source texts plus a `.bib`. The "export anytime" guarantee, made literal
 - Account deletion (GDPR): self-serve in Settings → Workspace with type-to-confirm. Solely-owned workspaces are deleted with all content; shared workspaces keep everything (authorship references nulled); memberships, notifications, reviews and push subscriptions go with the account

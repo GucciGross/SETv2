@@ -7,7 +7,7 @@ import { one, q } from '../db.js';
 import { requireSpace } from '../lib/http.js';
 import { config } from '../config.js';
 import { mdToDoc } from '../lib/markdown.js';
-import { syncLinks } from '../pages/routes.js';
+import { relinkSpace } from '../pages/routes.js';
 import { recordActivity } from './activity.js';
 
 const IMAGE_EXT = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp'];
@@ -131,13 +131,11 @@ export async function importZipRoutes(app: FastifyInstance) {
          ON CONFLICT DO NOTHING RETURNING id, title`,
         [spaceId, title, text, JSON.stringify(mdToDoc(text)), req.user!.id]
       );
-      // links must exist before the first edit, or a freshly imported vault
-      // has no edges: backlinks and the graph view stay empty until touched
-      if (page) {
-        await syncLinks(page.id, spaceId, text);
-        created.push(page);
-      }
+      if (page) created.push(page);
     }
+    // one link pass after every page exists: syncLinks only resolves targets
+    // that already exist, so per-page syncing would drop forward references
+    await relinkSpace(spaceId);
 
     // 3. CSVs -> databases with inferred column types
     const databases: any[] = [];
