@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Writing & review delight
+- Streak heatmap: Settings-free motivation on the dashboard — a 6-month contribution calendar painted in the dither engine's ordered texture (four lit density tiers over a quiet floor, Bayer-ordered materialize entrance, hover tooltips) with current + longest streak counted server-side from the activity trail (`GET /spaces/:id/activity/heatmap`, one GROUP BY over 372 days; UTC day buckets so the grid matches the server everywhere)
+- Focus mode in the editor: Ctrl/⌘+Shift+F (or the toolbar target button) dims every block but the one holding the cursor — a single ProseMirror node decoration drives the CSS, so it's cheap on huge pages. Esc steps back out; the choice is remembered per browser
+- Typewriter scrolling: toggle keeps the writing line pinned a bit above center on every cursor move and keystroke, scrolling the page view — never the editor chrome
+- Word count + reading time on every page's meta row (`1,234 words · ~6 min read`), computed from the markdown with code blocks collapsed
+- Local graph: a new Waypoints tab in the page side panel renders the note's neighborhood as a mini force-directed map (d3, fit-to-panel) with a 1–3 link-depth slider, hover highlighting of incident edges, and click-to-open — Obsidian's local graph, at home next to backlinks
+- "Surprise me — open a random page" in the Ctrl+K palette (dice icon), drawing from the loaded page list
+
 ### Codebase graphs (graphify)
 - Import a [graphify](https://github.com/Graphify-Labs/graphify) codebase graph: Pages → Code graph takes a vault zip and lands the repo as a living wiki — a root page, one 📁 page per directory (mirroring the repo tree from each note's `source_file`), and symbol notes under their directory with `[[Connections]]` intact. Backlinks and the Graph view work immediately; imports can create their own workspace. 1,900-note reference import: ~7s, 10.3k link edges
 - Vault zip imports in general (`import-zip`) now sync links in one pass after all pages exist — `syncLinks` only resolves targets that already exist, so per-page syncing silently dropped every forward reference (a fresh vault's backlinks/graph stayed half-empty until pages were edited)

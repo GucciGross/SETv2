@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { confirmDialog } from '../components/Confirm';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Link2, ArrowUpRight, Download, MailQuestion, History, RotateCcw, Share2, Copy, Check, ExternalLink, Ban, Rocket, GraduationCap, Flag, Play } from 'lucide-react';
+import { Link2, ArrowUpRight, Download, MailQuestion, History, RotateCcw, Share2, Copy, Check, ExternalLink, Ban, Rocket, GraduationCap, Flag, Play, Waypoints } from 'lucide-react';
 import Editor from '../components/Editor';
+import LocalGraph from '../components/LocalGraph';
 import { useAgentContext } from '@copilotkit/react-core/v2';
 import { registerEditor } from '../lib/editorBridge';
 import { MessageSquare, Send } from 'lucide-react';
@@ -496,7 +497,7 @@ export default function PageView() {
   const { pages, createPage, loadPages, surfaces } = useApp();
   const [page, setPage] = useState<PageData | null>(null);
   const [title, setTitle] = useState('');
-  const [tab, setTab] = useState<'backlinks' | 'mentions' | 'history' | 'checkpoints'>('backlinks');
+  const [tab, setTab] = useState<'backlinks' | 'mentions' | 'history' | 'checkpoints' | 'map'>('backlinks');
   const [backlinks, setBacklinks] = useState<any[]>([]);
   const [outgoing, setOutgoing] = useState<any[]>([]);
   const [mentions, setMentions] = useState<any[]>([]);
@@ -565,6 +566,11 @@ export default function PageView() {
 
   if (!page) return <PageSkeleton />;
 
+  // word count + reading time — prose words (code blocks collapse to one word each)
+  const prose = page.markdown.replace(/```[\s\S]*?```/g, ' code ').replace(/[#>*_\-\[\]()`|]/g, ' ');
+  const wordCount = prose.trim().split(/\s+/).filter(Boolean).length;
+  const readMinutes = Math.max(1, Math.round(wordCount / 220));
+
   const saveTitle = async () => {
     if (!title.trim() || title === page.title) return;
     await api.patch(`/pages/${page.id}`, { title: title.trim() });
@@ -605,6 +611,11 @@ export default function PageView() {
                 {page.is_daily && <span className="text-amber-300">daily note</span>}
                 <span className="hidden sm:inline">updated {new Date(page.updated_at).toLocaleString()}</span>
                 <span className="sm:hidden">updated {new Date(page.updated_at).toLocaleDateString()}</span>
+                {wordCount > 0 && (
+                  <span title="prose words · at a 220 wpm reading pace" className="whitespace-nowrap">
+                    {wordCount.toLocaleString()} words · ~{readMinutes} min read
+                  </span>
+                )}
                 <button
                   className="set-btn-ghost inline-flex items-center gap-1"
                   onClick={async () => {
@@ -651,13 +662,14 @@ export default function PageView() {
       {/* Linked mentions side panel */}
       <div className="w-64 shrink-0 border-l border-set-border bg-set-panel/60 overflow-y-auto hidden xl:block">
         <div className="flex border-b border-set-border text-sm">
-          {(['backlinks', 'mentions', 'history', 'checkpoints'] as const).map((t) => (
+          {(['backlinks', 'mentions', 'map', 'history', 'checkpoints'] as const).map((t) => (
             <button
               key={t}
-              className={`flex-1 py-2.5 px-2 capitalize ${tab === t ? 'text-white border-b-2 border-set-accent' : 'text-set-dim hover:text-set-text'}`}
+              className={`flex-1 py-2.5 px-1 capitalize ${tab === t ? 'text-white border-b-2 border-set-accent' : 'text-set-dim hover:text-set-text'}`}
               onClick={() => setTab(t)}
+              title={t === 'map' ? 'Local graph — this page’s neighborhood' : t}
             >
-              {t === 'backlinks' ? <span className="flex items-center justify-center gap-1"><Link2 size={12} /> {backlinks.length}</span> : t === 'mentions' ? <span className="flex items-center justify-center gap-1"><MailQuestion size={12} /> {mentions.length}</span> : t === 'history' ? <span className="flex items-center justify-center gap-1"><History size={12} /></span> : <span className="flex items-center justify-center gap-1"><Flag size={12} /> {checkpoints.length}</span>}
+              {t === 'backlinks' ? <span className="flex items-center justify-center gap-1"><Link2 size={12} /> {backlinks.length}</span> : t === 'mentions' ? <span className="flex items-center justify-center gap-1"><MailQuestion size={12} /> {mentions.length}</span> : t === 'map' ? <span className="flex items-center justify-center"><Waypoints size={12} /></span> : t === 'history' ? <span className="flex items-center justify-center gap-1"><History size={12} /></span> : <span className="flex items-center justify-center gap-1"><Flag size={12} /> {checkpoints.length}</span>}
             </button>
           ))}
         </div>
@@ -699,6 +711,7 @@ export default function PageView() {
           )}
           {tab === 'history' && <VersionHistory pageId={page.id} currentMarkdown={page.markdown} onRestored={load} />}
           {tab === 'checkpoints' && <CheckpointsPanel pageId={page.id} onPassed={load} />}
+          {tab === 'map' && spaceId && <LocalGraph spaceId={spaceId} pageId={page.id} onOpen={(id) => navigate(`/app/space/${spaceId}/page/${id}`)} />}
         </div>
       </div>
     </div>

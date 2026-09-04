@@ -1131,3 +1131,11 @@ button, [role='button'], .set-btn, .set-btn-ghost, .set-btn-primary {
     bottom: calc(4.5rem + env(safe-area-inset-bottom)) !important;
   }
 }
+
+/* Focus mode (editor toolbar, Ctrl/⌘+Shift+F): the block holding the cursor
+   stays full-strength; every other top-level block fades back. The
+   .active-block class is painted by the editor's ActiveBlock decoration.
+   .editor-focus and .prose-set share the wrapper div — target the ProseMirror
+   children directly, not `.prose-set > *` (that's the ProseMirror root). */
+.editor-focus .ProseMirror > * { transition: opacity 0.3s ease; }
+.editor-focus .ProseMirror > *:not(.active-block) { opacity: 0.24; }

@@ -5,11 +5,11 @@ import { api } from '../lib/api';
 import { useApp } from '../stores/app';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from '../components/Mascot';
 // @ts-nocheck
-import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, DitherGradient, DitherAvatar } from '../components/DitherChart';
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, DitherGradient, DitherAvatar, DitherHeatmap } from '../components/DitherChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import Checklist from '../components/onboarding/Checklist';
 import {
-  FileText, BookOpen, Database, ListTodo, ArrowRight, Sparkles, TrendingUp, ChevronDown, CloudSun, Zap, NotebookPen, History, Square,
+  FileText, BookOpen, Database, ListTodo, ArrowRight, Sparkles, TrendingUp, ChevronDown, CloudSun, Zap, NotebookPen, History, Square, Flame,
 } from 'lucide-react';
 
 /** Today's brief strip: reviews due, amber pages, ranked next steps, recent builds. */
@@ -102,16 +102,18 @@ export default function DashboardView() {
   const [tasks, setTasks] = useState<any>(null);
   const [activity, setActivity] = useState<any[]>([]);
   const [mcpStats, setMcpStats] = useState<any>(null);
+  const [heatmap, setHeatmap] = useState<any>(null);
   const mascot: MascotConfig = (user as any)?.mascot ?? DEFAULT_MASCOT;
   const space = spaces.find((s) => s.id === spaceId);
 
   const load = useCallback(async () => {
     if (!spaceId) return;
-    const [s, t, a, m] = await Promise.all([
+    const [s, t, a, m, hm] = await Promise.all([
       api.post('/terminal/exec', { spaceId, command: 'stat' }).catch(() => null),
       api.get(`/spaces/${spaceId}/mytasks`).catch(() => null),
       api.get(`/spaces/${spaceId}/activity?limit=8`).catch(() => ({ activities: [] })),
       api.get(`/spaces/${spaceId}/mcp/stats`).catch(() => null),
+      api.get(`/spaces/${spaceId}/activity/heatmap`).catch(() => null),
     ]);
     if (s?.output) {
       const match = s.output.match(/pages: (\d+)\s+notebooks: (\d+)\s+databases: (\d+)/);
@@ -120,6 +122,7 @@ export default function DashboardView() {
     setTasks(t);
     setActivity(a.activities ?? []);
     setMcpStats(m);
+    setHeatmap(hm);
   }, [spaceId]);
 
   useEffect(() => {
@@ -257,6 +260,34 @@ export default function DashboardView() {
                 <Tooltip />
                 <Bar dataKey="events" variant="gradient" />
               </BarChart>
+            </div>
+          </ErrorBoundary>
+        </div>
+      )}
+
+      {/* Streak heatmap — the year of work, in dither */}
+      {heatmap?.days?.some((d: any) => d.events > 0) && (
+        <div className="set-card p-4 mb-6">
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <Flame size={15} className="text-orange-300" />
+            <h3 className="set-mono set-mono-dim">Streak — last 6 months</h3>
+            <span className="ml-auto flex items-center gap-3 text-xs">
+              <span className="text-white font-semibold inline-flex items-center gap-1">
+                {heatmap.currentStreak > 0 ? (
+                  <><Flame size={13} className="text-orange-300" /> {heatmap.currentStreak}-day streak</>
+                ) : 'no active streak'}
+              </span>
+              <span className="text-set-dim">best {heatmap.longestStreak}</span>
+            </span>
+          </div>
+          <ErrorBoundary>
+            <DitherHeatmap days={heatmap.days} weeks={26} color="green" bloom="low" />
+            <div className="flex items-center justify-end gap-1.5 mt-2 text-[10px] text-set-dim">
+              <span>quiet</span>
+              {[0.15, 0.4, 0.62, 0.82, 1].map((a) => (
+                <span key={a} className="w-2.5 h-2.5 rounded-[2px] bg-green-400" style={{ opacity: a }} />
+              ))}
+              <span>on fire</span>
             </div>
           </ErrorBoundary>
         </div>

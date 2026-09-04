@@ -4,14 +4,14 @@ import { api } from '../lib/api';
 import { useApp } from '../stores/app';
 import {
   Search, FileText, BookOpen, Database, CornerDownLeft, FilePlus, CalendarDays, ListTodo,
-  Network, Settings, BookOpen as DocsIcon, CloudSun,
+  Network, Settings, BookOpen as DocsIcon, CloudSun, Dices,
 } from 'lucide-react';
 
 /** Ctrl/Cmd+K command palette: jump to anything, run quick actions. */
 export default function CommandPalette() {
   const { spaceId } = useParams();
   const navigate = useNavigate();
-  const { createPage } = useApp();
+  const { createPage, pages } = useApp();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [results, setResults] = useState<any>(null);
@@ -56,13 +56,19 @@ export default function CommandPalette() {
       { icon: <FilePlus size={14} />, label: 'New page', run: async () => { const p = await createPage({ spaceId: spaceId!, title: 'Untitled' }); navigate(`/app/space/${spaceId}/page/${p.id}`); } },
       { icon: <CalendarDays size={14} />, label: "Today's note", run: async () => { const { page } = await api.post(`/spaces/${spaceId}/daily`); navigate(`/app/space/${spaceId}/page/${page.id}`); } },
       { icon: <CloudSun size={14} />, label: "Write today's brief", run: async () => { const r = await api.post(`/spaces/${spaceId}/brief/to-daily`).catch(() => null); if (r?.pageId) navigate(`/app/space/${spaceId}/page/${r.pageId}`); } },
+      { icon: <Dices size={14} />, label: 'Surprise me — open a random page', run: () => {
+        const pool = pages.filter((p) => p.title);
+        if (pool.length === 0) return;
+        const pick = pool[Math.floor(Math.random() * pool.length)];
+        navigate(`/app/space/${spaceId}/page/${pick.id}`);
+      } },
       { icon: <ListTodo size={14} />, label: 'My Tasks', go: link('/tasks') },
       { icon: <Network size={14} />, label: 'Graph', go: link('/graph') },
       { icon: <BookOpen size={14} />, label: 'Notebooks', go: link('/notebooks') },
       { icon: <DocsIcon size={14} />, label: 'Docs', go: link('/docs') },
       { icon: <Settings size={14} />, label: 'Settings', go: link('/settings') },
     ].filter((a) => a.label.toLowerCase().includes(q.toLowerCase()));
-  }, [q, spaceId, navigate, createPage]);
+  }, [q, spaceId, navigate, createPage, pages]);
 
   const items = useMemo(() => {
     const out: any[] = [];

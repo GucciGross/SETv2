@@ -35,6 +35,7 @@ export {
   type GradientDirection,
 } from "./gradient"
 export { Grid } from "./grid"
+export { DitherHeatmap, type DitherHeatmapProps, type HeatmapDay } from "./heatmap"
 export { Legend } from "./legend"
 export type { DitherColor } from "./palette"
 export type { PixelBloom, PixelColor } from "./pixel"

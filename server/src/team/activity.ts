@@ -35,6 +35,42 @@ export async function activityRoutes(app: FastifyInstance) {
     return { activities: rows };
   });
 
+  /** Daily counts for the streak heatmap — one activity on a day lights that day. */
+  app.get('/spaces/:spaceId/activity/heatmap', async (req, reply) => {
+    const spaceId = (req.params as any).spaceId;
+    if (!(await requireSpace(req, reply, spaceId))) return;
+    const rows = await q<{ date: string; events: number }>(
+      `SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS date, count(*)::int AS events
+       FROM activities
+       WHERE space_id = $1 AND created_at > now() - interval '372 days'
+       GROUP BY 1 ORDER BY 1`,
+      [spaceId]
+    );
+    const active = new Set((rows as any[]).filter((r) => r.events > 0).map((r) => r.date));
+    // Streaks walk the calendar: current counts back from today (or yesterday,
+    // so a morning visit doesn't zero yesterday's run), longest scans forward.
+    const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+    let currentStreak = 0;
+    const cursor = new Date();
+    if (!active.has(dayKey(cursor))) cursor.setDate(cursor.getDate() - 1);
+    while (active.has(dayKey(cursor))) {
+      currentStreak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    let longestStreak = 0;
+    let run = 0;
+    for (let i = 0; i <= 372; i++) {
+      const d = new Date(Date.now() - i * 86400000);
+      if (active.has(dayKey(d))) {
+        run++;
+        longestStreak = Math.max(longestStreak, run);
+      } else {
+        run = 0;
+      }
+    }
+    return { days: rows, currentStreak, longestStreak };
+  });
+
   app.get('/spaces/:spaceId/activity.csv', async (req, reply) => {
     const spaceId = (req.params as any).spaceId;
     if (!(await requireSpace(req, reply, spaceId))) return;

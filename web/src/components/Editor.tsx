@@ -3,6 +3,8 @@ import {
   useEditor, EditorContent, Mark, markInputRule, mergeAttributes, Node, NodeViewWrapper,
   ReactNodeViewRenderer, Extension, type Extension as Ext,
 } from '@tiptap/react';
+import { Plugin } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import TaskList from '@tiptap/extension-task-list';
@@ -23,7 +25,7 @@ import { api, getToken } from '../lib/api';
 import {
   Bold, Italic, Code, Heading1, Heading2, Heading3, List, ListOrdered, ListTodo,
   Quote, Minus, Undo2, Redo2, Table as TableIcon, ImagePlus, Highlighter,
-  Strikethrough, Underline as UnderlineIcon, Link2, Copy, Braces,
+  Strikethrough, Underline as UnderlineIcon, Link2, Copy, Braces, Focus, TextCursorInput,
 } from 'lucide-react';
 
 /* ------------------------- custom extensions ------------------------- */
@@ -59,9 +61,29 @@ export const WikiLink = Mark.create({
   },
 });
 
+/** Tags the top-level block holding the cursor with `active-block` — the hook
+ * focus mode's CSS dims everything else against. Cheap: one node decoration. */
+const ActiveBlock = Extension.create({
+  name: 'activeBlock',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          decorations(state) {
+            const { $from, $to } = state.selection;
+            if ($from.depth < 1 || $from.depth !== $to.depth) return DecorationSet.empty;
+            return DecorationSet.create(state.doc, [
+              Decoration.node($from.before(1), $from.after(1), { class: 'active-block' }),
+            ]);
+          },
+        },
+      }),
+    ];
+  },
+});
+
 /** Persistent block IDs on paragraphs/headings (block-level references). */
-const BlockIdAttr = Extension.create({
-  name: 'blockIdAttr',
+const BlockIdAttr = Extension.create({  name: 'blockIdAttr',
   addGlobalAttributes() {
     return [
       {
@@ -171,6 +193,17 @@ export default function Editor({ markdown, onSave, onWikiClick, onReady, debounc
 
   const [slash, setSlash] = useState<{ open: boolean; query: string; x: number; y: number }>({ open: false, query: '', x: 0, y: 0 });
   const [wiki, setWiki] = useState<{ open: boolean; query: string; x: number; y: number }>({ open: false, query: '', x: 0, y: 0 });
+
+  // focus mode + typewriter scrolling — writer comforts, remembered per browser
+  const [focusMode, setFocusMode] = useState(() => localStorage.getItem('set_editor_focus') === '1');
+  const [typewriter, setTypewriter] = useState(() => localStorage.getItem('set_editor_typewriter') === '1');
+  useEffect(() => {
+    localStorage.setItem('set_editor_focus', focusMode ? '1' : '0');
+  }, [focusMode]);
+  useEffect(() => {
+    localStorage.setItem('set_editor_typewriter', typewriter ? '1' : '0');
+  }, [typewriter]);
+
   const slashRef = useRef(slash);
   slashRef.current = slash;
   const wikiRef = useRef(wiki);
@@ -244,6 +277,7 @@ export default function Editor({ markdown, onSave, onWikiClick, onReady, debounc
       TaskItem.configure({ nested: true }),
       Placeholder.configure({ placeholder: 'Start writing… type / for blocks, [[ to link pages' }),
       WikiLink,
+      ActiveBlock,
       BlockIdAttr,
       BlockRef,
       Table.configure({ resizable: false }),
@@ -377,6 +411,54 @@ export default function Editor({ markdown, onSave, onWikiClick, onReady, debounc
       if (readyRef.current) readyRef.current(null);
     };
   }, [editor]);
+
+  // typewriter scrolling — every cursor move or keystroke re-pins the writing
+  // line a bit above the vertical middle of the scroll view
+  const typewriterRef = useRef(typewriter);
+  typewriterRef.current = typewriter;
+  useEffect(() => {
+    if (!editor) return;
+    let queued = false;
+    const follow = () => {
+      queued = false;
+      if (!typewriterRef.current) return;
+      try {
+        const scroller = editor.view.dom.closest('.overflow-y-auto') as HTMLElement | null;
+        if (!scroller) return;
+        const cursor = editor.view.coordsAtPos(editor.state.selection.head);
+        const rect = scroller.getBoundingClientRect();
+        const delta = cursor.top - (rect.top + rect.height * 0.42);
+        if (Math.abs(delta) > 8) scroller.scrollBy({ top: delta, behavior: 'auto' });
+      } catch { /* coords can throw across a fresh setContent */ }
+    };
+    const queue = () => {
+      if (!queued) {
+        queued = true;
+        requestAnimationFrame(follow);
+      }
+    };
+    editor.on('transaction', queue);
+    return () => {
+      editor.off('transaction', queue);
+    };
+  }, [editor]);
+
+  // focus mode: Esc steps back out (menus get first claim), Ctrl/Cmd+Shift+F toggles
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setFocusMode((v) => !v);
+        return;
+      }
+      if (e.key === 'Escape' && focusMode && !slashRef.current.open && !wikiRef.current.open) {
+        setFocusMode(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [focusMode]);
+
 
   if (!editor) return null;
   editorSelf.current = editor;
@@ -535,12 +617,15 @@ export default function Editor({ markdown, onSave, onWikiClick, onReady, debounc
         <Btn icon={Braces} title="Code block" active={editor.isActive('codeBlock')} action={() => editor.chain().focus().toggleCodeBlock().run()} />
         <Btn icon={Minus} title="Divider" action={() => editor.chain().focus().setHorizontalRule().run()} />
         <Btn icon={Copy} title="Copy block id (for block references)" action={copyBlockId} />
+        <span className="w-px h-4 bg-set-border mx-1" />
+        <Btn icon={Focus} title="Focus mode (Ctrl/⌘+Shift+F, Esc exits) — dim everything but the current block" active={focusMode} action={() => setFocusMode((v) => !v)} />
+        <Btn icon={TextCursorInput} title="Typewriter scrolling — keep the writing line in view" active={typewriter} action={() => setTypewriter((v) => !v)} />
         <span className="ml-auto flex gap-0.5">
           <Btn icon={Undo2} title="Undo" action={() => editor.chain().focus().undo().run()} />
           <Btn icon={Redo2} title="Redo" action={() => editor.chain().focus().redo().run()} />
         </span>
       </div>
-      <EditorContent editor={editor} className="prose-set max-w-none pt-2" />
+      <EditorContent editor={editor} className={`prose-set max-w-none pt-2 ${focusMode ? 'editor-focus' : ''}`} />
 
       {/* table context controls */}
       {editor.isActive('table') && (

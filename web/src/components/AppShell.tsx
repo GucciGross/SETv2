@@ -836,6 +836,7 @@ function AppShellInner() {
               {([
                 ['Ctrl / ⌘ K', 'Command palette — jump to any page, notebook or action'],
                 ['Ctrl / ⌘ ⇧ N', 'Quick capture — save a thought to the Inbox page'],
+                ['Ctrl / ⌘ ⇧ F', 'Focus mode in the editor — dim everything but the current block'],
                 ['Ctrl / ⌘ B', 'Start a WandGx build on the open page'],
                 ['Ctrl / ⌘ J', 'Jump to the page’s checkpoints'],
                 ['?', 'This cheat sheet'],
