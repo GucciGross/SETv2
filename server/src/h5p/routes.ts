@@ -178,7 +178,11 @@ export async function h5pRoutes(app: FastifyInstance) {
     });
     native.get('/:grant/ajax', async (req) => {
       const ctx = await context(req, true);
-      const query = z.object({ action: z.enum(['content-type-cache', 'libraries']), machineName: libraryName.optional(), majorVersion: z.coerce.number().int().min(0).max(999).optional(), minorVersion: z.coerce.number().int().min(0).max(999).optional(), language: z.string().max(24).optional() }).parse(req.query);
+      const query = z.object({ action: z.enum(['content-type-cache', 'libraries', 'content-hub-metadata-cache']), machineName: libraryName.optional(), majorVersion: z.coerce.number().int().min(0).max(999).optional(), minorVersion: z.coerce.number().int().min(0).max(999).optional(), language: z.string().max(24).optional() }).parse(req.query);
+      // The pinned hub client requests hub metadata even when the Hub is disabled and rejects every
+      // metadata promise (page errors) unless success+data arrive. SET is self-hosted and never calls
+      // h5p.org, so the taxonomies are answered locally and empty.
+      if (query.action === 'content-hub-metadata-cache') return { success: true, data: { levels: [], languages: [], licenses: [], disciplines: [] } };
       const rt = await runtime(ctx.scope, ctx.base);
       return rt.ajax.getAjax(query.action, query.machineName, query.majorVersion, query.minorVersion, query.language ?? 'en', rt.user);
     });
