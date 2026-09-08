@@ -8,25 +8,19 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Resolve pinned H5P dependency
-        working-directory: server
-        run: npm install --save-exact --ignore-scripts @lumieducation/h5p-server@10.0.4
-      - name: Install frontend build dependencies
-        working-directory: web
-        run: npm ci --ignore-scripts
-      - name: Package verification dependencies
+      - name: Download pinned official browser assets
         run: |
-          mkdir -p /tmp/h5p-review
-          tar -czf /tmp/h5p-review/server-dependencies.tar.gz -C server node_modules
-          tar -czf /tmp/h5p-review/web-dependencies.tar.gz -C web node_modules
+          mkdir -p /tmp/h5p-assets
+          curl --fail --location --retry 2 https://codeload.github.com/h5p/h5p-php-library/zip/829524eaf81fe3f3a295d0e843812be4735f51fc -o /tmp/core.zip
+          curl --fail --location --retry 2 https://codeload.github.com/h5p/h5p-editor-php-library/zip/80b3b281ee9d064b563f242e8ee7a0026b5bf205 -o /tmp/editor.zip
+          unzip -q /tmp/core.zip -d /tmp/h5p-assets
+          unzip -q /tmp/editor.zip -d /tmp/h5p-assets
+          mv /tmp/h5p-assets/h5p-php-library-* /tmp/h5p-assets/core
+          mv /tmp/h5p-assets/h5p-editor-php-library-* /tmp/h5p-assets/editor
       - uses: actions/upload-artifact@v4
         with:
-          name: h5p-build-dependencies
-          path: /tmp/h5p-review
+          name: h5p-browser-assets
+          path: /tmp/h5p-assets
           retention-days: 1
