@@ -1,3 +1,4 @@
+import H5PCollection from '../components/h5p/H5PCollection';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { confirmDialog } from '../components/Confirm';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -27,7 +28,7 @@ export default function NotebookView() {
   const navigate = useNavigate();
   const [notebook, setNotebook] = useState<any>(null);
   const [sources, setSources] = useState<any[]>([]);
-  const [tab, setTab] = useState<'sources' | 'chunks' | 'chat' | 'views' | 'study'>('sources');
+  const [tab, setTab] = useState<'sources' | 'chunks' | 'chat' | 'views' | 'study' | 'h5p'>('sources');
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState('');
   const [textInput, setTextInput] = useState('');
@@ -112,6 +113,7 @@ export default function NotebookView() {
     { id: 'chat', label: 'Chat', icon: <MessageSquare size={14} /> },
     { id: 'views', label: 'Knowledge views', icon: <Network size={14} /> },
     { id: 'study', label: 'Study', icon: <GraduationCap size={14} /> },
+    { id: 'h5p', label: 'Interactive', icon: <Layers size={14} /> },
   ] as const;
 
   return (
@@ -248,6 +250,7 @@ export default function NotebookView() {
         {tab === 'chunks' && <ChunkInspector notebookId={nbId!} sources={sources} selectedSource={selectedSource} setSelectedSource={setSelectedSource} />}
         {tab === 'chat' && <NotebookChat notebookId={nbId!} spaceId={spaceId!} />}
         {tab === 'views' && <KnowledgeViews notebookId={nbId!} spaceId={spaceId!} />}
+        {tab === 'h5p' && <H5PCollection spaceId={spaceId!} placement={{ kind: 'notebook', id: nbId! }} />}
         {tab === 'study' && <StudyGenerator notebookId={nbId!} spaceId={spaceId!} />}
       </div>
 

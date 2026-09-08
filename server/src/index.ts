@@ -19,6 +19,7 @@ import { researchRoutes } from './research/routes.js';
 import { companionRoutes } from './companion/routes.js';
 import { llmRoutes } from './llm/routes.js';
 import { agentRoutes } from './agents/routes.js';
+import { h5pRoutes } from './h5p/routes.js';
 import { studyRoutes } from './study/routes.js';
 import { modelsRoutes } from './models3d/routes.js';
 import { collabRoutes } from './collab/routes.js';
@@ -43,7 +44,7 @@ import { billingRoutes } from './billing/routes.js';
 import { seed } from './seed.js';
 
 async function main() {
-  const app = Fastify({ logger: true, bodyLimit: 64 * 1024 * 1024 });
+  const app = Fastify({ logger: true, bodyLimit: 64 * 1024 * 1024, maxParamLength: 2048 });
 
   // /api/clip is posted by the clipper bookmarklet from arbitrary origins.
   // The cors plugin's origin callback can't see the URL, so open CORS for the
@@ -121,6 +122,7 @@ async function main() {
     await llmRoutes(api);
     await agentRoutes(api);
     await studyRoutes(api);
+    await h5pRoutes(api);
     await modelsRoutes(api);
     await collabRoutes(api);
     await fileRoutes(api);

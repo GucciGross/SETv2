@@ -1,3 +1,4 @@
+import { Layers } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import {
@@ -615,11 +616,13 @@ function AppShellInner() {
               { label: null, items: simple ? [
                 { icon: <LayoutDashboard size={15} />, label: 'Home', to: link(''), surface: null, exact: true },
                 { icon: <BookOpen size={15} />, label: 'Notebooks', to: link('/notebooks'), surface: null },
+                { icon: <Layers size={15} />, label: 'H5P Studio', to: link('/h5p'), surface: null },
                 { icon: <ListTodo size={15} />, label: 'My Tasks', to: link('/tasks'), surface: null },
               ] : [
                 { icon: <LayoutDashboard size={15} />, label: 'Home', to: link(''), surface: null, exact: true },
                 { icon: <FileText size={15} />, label: 'Pages', to: link('/pages'), surface: null },
                 { icon: <BookOpen size={15} />, label: 'Notebooks', to: link('/notebooks'), surface: null },
+                { icon: <Layers size={15} />, label: 'H5P Studio', to: link('/h5p'), surface: null },
                 { icon: <Telescope size={15} />, label: 'Deep Research', to: link('/research'), surface: null },
               ]},
               ...(!simple ? [
