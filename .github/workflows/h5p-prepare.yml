@@ -1,0 +1,29 @@
+name: H5P dependency preparation
+on:
+  push:
+    branches: [feat/h5p-studio-20260908]
+    paths: [.github/workflows/h5p-prepare.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Resolve pinned H5P dependency
+        working-directory: server
+        run: npm install --save-exact --ignore-scripts @lumieducation/h5p-server@10.0.4
+      - name: Package review sources and library interfaces
+        run: |
+          mkdir -p /tmp/h5p-review
+          cp -R server/node_modules/@lumieducation/h5p-server /tmp/h5p-review/upstream
+          tar --exclude=.git --exclude=node_modules -czf /tmp/h5p-review/repository.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: h5p-review-sources
+          path: /tmp/h5p-review
+          retention-days: 1
