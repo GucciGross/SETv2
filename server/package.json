@@ -17,7 +17,8 @@
     "import:pbl": "tsx src/importers/pbl.ts",
     "wandgx:stub": "node scripts/wandgx-stub.mjs",
     "smoke:wandgx": "node smoke-wandgx.mjs",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "h5p:setup": "node scripts/install-h5p-core.mjs"
   },
   "dependencies": {
     "@ag-ui/client": "^0.0.57",
@@ -27,6 +28,7 @@
     "@fastify/multipart": "^8.3.0",
     "@fastify/static": "^7.0.4",
     "@fastify/websocket": "^10.0.1",
+    "@lumieducation/h5p-server": "10.0.4",
     "@types/adm-zip": "^0.5.8",
     "@types/nodemailer": "^8.0.1",
     "adm-zip": "^0.6.0",

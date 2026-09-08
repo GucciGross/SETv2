@@ -38,6 +38,7 @@ import ModelView from './views/ModelView';
 import PathsView from './views/PathsView';
 import SettingsView from './views/SettingsView';
 import StudyView from './views/StudyView';
+import H5PStudioView from './views/H5PStudioView';
 import CanvasView from './views/CanvasView';
 import LibraryView from './views/LibraryView';
 import CodingView from './views/CodingView';
@@ -91,6 +92,8 @@ const router = createBrowserRouter([
           { path: 'space/:spaceId/notebook/:nbId/deck/:deckId', element: <StudyView /> },
           { path: 'space/:spaceId/models', element: <ModelsView /> },
           { path: 'space/:spaceId/model/:modelId', element: <ModelView /> },
+          { path: 'space/:spaceId/h5p', element: <H5PStudioView /> },
+          { path: 'space/:spaceId/h5p/:activityId', element: <H5PStudioView /> },
           { path: 'space/:spaceId/paths', element: <PathsView /> },
           { path: 'space/:spaceId/library', element: <LibraryView /> },
           { path: 'space/:spaceId/coding', element: <CodingView /> },

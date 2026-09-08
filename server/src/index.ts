@@ -19,6 +19,7 @@ import { researchRoutes } from './research/routes.js';
 import { companionRoutes } from './companion/routes.js';
 import { llmRoutes } from './llm/routes.js';
 import { agentRoutes } from './agents/routes.js';
+import { h5pRoutes } from './h5p/routes.js';
 import { studyRoutes } from './study/routes.js';
 import { modelsRoutes } from './models3d/routes.js';
 import { collabRoutes } from './collab/routes.js';
@@ -121,6 +122,7 @@ async function main() {
     await llmRoutes(api);
     await agentRoutes(api);
     await studyRoutes(api);
+    await h5pRoutes(api);
     await modelsRoutes(api);
     await collabRoutes(api);
     await fileRoutes(api);

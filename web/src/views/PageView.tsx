@@ -1,3 +1,4 @@
+import H5PCollection from '../components/h5p/H5PCollection';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { confirmDialog } from '../components/Confirm';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -655,6 +656,7 @@ export default function PageView() {
               </div>
             </details>
           )}
+          {spaceId && <H5PCollection spaceId={spaceId} placement={{ kind: 'page', id: page.id }} />}
           <Comments pageId={page.id} />
         </div>
       </div>

@@ -1,3 +1,4 @@
+import H5PCollection from '../components/h5p/H5PCollection';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -284,6 +285,7 @@ function PathCard({ path, onChanged }: { path: any; onChanged: () => void }) {
           </div>
         ))}
         {items.length === 0 && <div className="text-xs text-set-dim">Empty path</div>}
+        {spaceId && <H5PCollection spaceId={spaceId} placement={{ kind: 'path', id: path.id }} />}
       </div>
     </div>
   );

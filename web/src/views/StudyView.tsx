@@ -1,5 +1,7 @@
+import { useApp } from '../stores/app';
+import { studioPath } from '../components/h5p/api';
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { marked } from 'marked';
 import { api } from '../lib/api';
 import { InlineFlashcards } from '../components/A2UI';
@@ -9,7 +11,12 @@ import { Package } from 'lucide-react';
 const md = (s: string) => ({ __html: marked.parse(s ?? '', { async: false }) as string });
 
 export default function StudyView() {
-  const { deckId } = useParams();
+  const { deckId, spaceId } = useParams();
+  const navigate = useNavigate();
+  const role = useApp((state) => state.spaces.find((space) => space.id === spaceId)?.role);
+  const canEdit = role === 'owner' || role === 'editor';
+  const [h5pError, setH5pError] = useState('');
+  const [converting, setConverting] = useState(false);
   const [deck, setDeck] = useState<any>(null);
 
   useEffect(() => {
@@ -23,7 +30,7 @@ export default function StudyView() {
   const exportH5P = async () => {
     const res = await fetch(`/api/decks/${deckId}/h5p`, { headers: { authorization: `Bearer ${localStorage.getItem('set_token')}` } });
     if (!res.ok) {
-      alert('H5P export failed');
+      setH5pError((await res.json()).error ?? 'H5P export failed.');
       return;
     }
     const blob = await res.blob();
@@ -36,12 +43,18 @@ export default function StudyView() {
 
   return (
     <div className="p-6 max-w-2xl mx-auto">
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
         <h1 className="text-lg font-bold text-white flex-1 truncate">{deck.title}</h1>
-        <button className="set-btn text-xs flex items-center gap-1.5" onClick={exportH5P}>
+        {canEdit && <><button className="set-btn-primary text-xs" disabled={converting} onClick={async () => {
+          setConverting(true); setH5pError('');
+          try { const result = await api.post(`/decks/${deckId}/h5p/activity`); navigate(studioPath(spaceId!, result.activity.id)); }
+          catch (error: any) { setH5pError(error.message); } finally { setConverting(false); }
+        }}>{converting ? 'Creating practice copy…' : 'Open copy in H5P Studio'}</button>
+        <button className="set-btn text-xs flex items-center gap-1.5" onClick={() => void exportH5P().catch((error) => setH5pError(error.message))}>
           <Package size={12} /> Export H5P
-        </button>
+        </button></>}
       </div>
+      {h5pError && <p role="alert" className="text-sm text-red-400 mb-3">{h5pError}</p>}
       {deck.kind === 'flashcards' && <InlineFlashcards props={{ deckId: deck.id, title: deck.title, cards: items.cards }} />}
       {deck.kind === 'quiz' && <QuizPanel deckId={deck.id} />}
       {deck.kind === 'studyguide' && (

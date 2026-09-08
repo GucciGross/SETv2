@@ -13,3 +13,6 @@ __pycache__/
 
 # local agent session data
 .zcode/
+
+# Downloaded from pinned official H5P commits during setup/image build
+server/h5p-assets/

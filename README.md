@@ -302,3 +302,7 @@ project fully open. Dual/commercial licensing available for hosted/enterprise us
 Computer-use concepts adapted from [hermes-agent](https://github.com/NousResearch/hermes-agent)
 (MIT © Nous Research). Desktop automation by [cua-driver](https://github.com/trycua/cua-driver-rs).
 Mascot concept inspired by the Apache-2.0 OpenMausBot project.
+
+## Interactive learning: H5P Studio
+
+Native H5P authoring, reusable workspace activities, draft/publication revisions and private practice state are integrated into SET. See [H5P Studio setup, author workflow and trust boundaries](docs/H5P_STUDIO.md).

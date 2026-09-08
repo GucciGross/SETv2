@@ -1,3 +1,4 @@
+import { H5P_TOOLS } from '../h5p/tools.js';
 import { one, q } from '../db.js';
 import { mdToDoc } from '../lib/markdown.js';
 import { bus } from '../lib/events.js';
@@ -152,6 +153,10 @@ const CUA_TARGET_PROPS = {
 };
 
 export const TOOLS: ToolDef2[] = [
+  ...H5P_TOOLS.map((tool): ToolDef2 => ({ ...tool, async run(args, ctx) {
+    try { return { ok: true, result: await tool.run(args, ctx) }; }
+    catch (error: any) { return { ok: false, result: { error: error.message } }; }
+  } })),
   {
     name: 'map_overview',
     description:

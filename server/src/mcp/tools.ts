@@ -1,3 +1,4 @@
+import { H5P_TOOLS } from '../h5p/tools.js';
 import { q, one } from '../db.js';
 import crypto from 'node:crypto';
 import { mdToDoc } from '../lib/markdown.js';
@@ -53,6 +54,11 @@ const deckByRef = async (ctx: ToolCtx, ref: string) =>
   (await one<any>(`SELECT * FROM decks WHERE space_id = $1 AND lower(title) = lower($2) LIMIT 1`, [ctx.spaceId, ref]));
 
 export const TOOLS: ToolDef[] = [
+  ...H5P_TOOLS.map((tool): ToolDef => ({
+    name: tool.name, title: tool.name.replaceAll('_', ' '), description: tool.description,
+    inputSchema: tool.parameters, annotations: { readOnlyHint: !tool.write, destructiveHint: false, openWorldHint: false },
+    scope: tool.write ? 'mcp:write' : 'mcp:read', run: (args, ctx) => tool.run(args, ctx),
+  })),
   {
     name: 'search_workspace',
     title: 'Search workspace',

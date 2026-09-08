@@ -90,12 +90,12 @@ export async function studyRoutes(app: FastifyInstance) {
     const deck = await one<any>(`SELECT * FROM decks WHERE id = $1`, [id]);
     if (!deck) return reply.code(404).send({ error: 'Deck not found' });
     try {
-      const buf = await deckToH5P(deck);
+      const buf = await deckToH5P(deck, req.user!, ctx.role);
       reply.header('content-type', 'application/zip');
       reply.header('content-disposition', `attachment; filename="${deck.title.replace(/[^\w.-]+/g, '_').slice(0, 60) || 'deck'}.h5p"`);
       return reply.send(buf);
     } catch (e: any) {
-      return reply.code(500).send({ error: `H5P export failed: ${e?.message ?? e}` });
+      return reply.code(e.statusCode ?? 500).send({ error: `H5P export failed: ${e?.message ?? e}` });
     }
   });
 

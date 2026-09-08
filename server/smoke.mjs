@@ -429,4 +429,10 @@ await call('DELETE', `/skills/${newSkill.json.skill.id}`);
 const afterDel = (await call('GET', `/spaces/${team.id}/skills`)).json.skills;
 check('custom skill deleted', !afterDel.some((s) => s.name === 'test-skill'));
 
+// Native H5P management participates in the normal API smoke suite.
+const h5pStatus = await call('GET', `/spaces/${team.id}/h5p/status`);
+check('H5P status is available without changing existing study content', h5pStatus.status === 200 && Array.isArray(h5pStatus.json.installed));
+const h5pList = await call('GET', `/spaces/${team.id}/h5p/activities`);
+check('H5P workspace library is permission-scoped', h5pList.status === 200 && Array.isArray(h5pList.json.activities));
+
 console.log(process.exitCode ? 'SMOKE TEST FAILED' : 'ALL SMOKE TESTS PASSED');
