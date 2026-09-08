@@ -978,7 +978,7 @@ export function toolList() {
     title: t.title,
     description: t.description,
     inputSchema: t.inputSchema,
-    annotations: { title: t.title, ...(t.annotations ?? {}) },
+    annotations: { title: t.title, readOnlyHint: t.scope === 'mcp:read', ...(t.annotations ?? {}) },
   }));
 }
 

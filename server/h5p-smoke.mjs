@@ -1,5 +1,6 @@
 /** Integration contract: run against the seeded disposable CI database, never production. */
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -100,6 +101,7 @@ try {
   check('archive succeeds', (await call('PATCH', `/h5p/activities/${activity.id}`, { archived: true })).json.activity?.archived === true);
   check('archived content is not launchable', (await call('POST', `/h5p/activities/${activity.id}/launch`, { mode: 'edit' })).status === 409);
   check('archive can be restored', (await call('PATCH', `/h5p/activities/${activity.id}`, { archived: false })).json.activity?.archived === false);
+  if (process.env.H5P_BROWSER_TEST === '1') execFileSync('python3', ['h5p-browser-smoke.py'], { stdio: 'inherit', env: { ...process.env, H5P_TEST_TOKEN: token, H5P_TEST_SPACE: testSpace } });
   console.log(`H5P integration: ${checks} checks passed`);
 } finally {
   // Dedicated test spaces own all artifacts; don't mutate normal demo content.

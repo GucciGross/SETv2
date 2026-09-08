@@ -3,6 +3,9 @@
  * tools/list metadata (store requirements), tool calls incl. permissions,
  * management endpoints. Run once per fresh database alongside smoke.mjs.
  */
+import { TOOLS } from './dist/mcp/tools.js';
+const expectedToolNames = TOOLS.map((tool) => tool.name).sort();
+const matchesCatalog = (tools) => JSON.stringify((tools ?? []).map((tool) => tool.name).sort()) === JSON.stringify(expectedToolNames);
 const BASE = 'http://localhost:4000/api';
 let token = '';
 const h = () => ({ 'content-type': 'application/json', authorization: `Bearer ${token}` });
@@ -122,7 +125,7 @@ const challenge = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEnco
 {
   const list = await mcp(rpc(4, 'tools/list'));
   const tools = list.json?.result?.tools ?? [];
-  check('26 tools exposed', tools.length === 26, String(tools.length));
+  check('all registered tools exposed exactly once', matchesCatalog(tools), String(tools.length));
   check('all names snake_case <= 64 chars', tools.every((t) => /^[a-z0-9_]{1,64}$/.test(t.name)));
   check('all have titles + descriptions', tools.every((t) => t.title && t.description && t.description.length > 20));
   check('all have annotations', tools.every((t) => t.annotations && typeof t.annotations.readOnlyHint === 'boolean'));
@@ -214,7 +217,7 @@ const challenge = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEnco
 // ---------- 11. manifest ----------
 {
   const doc = await fetch(BASE + '/mcp/docs.json').then((r) => r.json());
-  check('docs.json manifest', doc.tools?.length === 26 && doc.auth?.flow?.includes('PKCE'));
+  check('docs.json manifest', matchesCatalog(doc.tools) && doc.auth?.flow?.includes('PKCE'));
 }
 
 console.log(failCount === 0 ? `ALL ${checkCount} MCP CHECKS PASSED` : `${failCount}/${checkCount} MCP CHECKS FAILED`);
