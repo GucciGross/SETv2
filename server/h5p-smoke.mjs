@@ -50,10 +50,19 @@ try {
   check('viewer cannot read draft', (await call('GET', `/h5p/activities/${activity.id}`, undefined, viewer)).status === 404);
   const launch = (await call('POST', `/h5p/activities/${activity.id}/launch`, { mode: 'edit' })).json;
   const runtime = launch.url.replace(/\/editor$/, '');
-  const html = await call('GET', launch.url);
-  check('native editor HTML renders', html.status === 200 && html.json.includes('H5PEditor.Editor'), html);
+  // Native iframes and their subresources cannot attach SET's application bearer header.
+  const htmlResponse = await fetch(origin + launch.url);
+  const htmlText = await htmlResponse.text();
+  check('grant-only native editor HTML renders', htmlResponse.status === 200 && htmlText.includes('H5PEditor.Editor'), {
+    status: htmlResponse.status,
+    error: htmlResponse.status === 200 ? undefined : htmlText.slice(0, 400),
+  });
   const core = await fetch(origin + runtime + '/core/js/h5p.js');
-  check('authenticated core asset delivery', core.status === 200 && core.headers.get('content-type')?.includes('javascript'));
+  const coreText = await core.text();
+  check('grant-only core asset delivery', core.status === 200 && core.headers.get('content-type')?.includes('javascript'), {
+    status: core.status,
+    error: core.status === 200 ? undefined : coreText.slice(0, 400),
+  });
   const body = { library: 'H5P.StudioSmoke 1.0', params: { metadata: { title: 'Published version', license: 'U' }, params: { text: 'Version one' } } };
   result = await call('POST', runtime + '/save', body);
   check('first native save allocates immutable revision', result.status === 200 && result.json.activity?.draftRevision === 1, result);
