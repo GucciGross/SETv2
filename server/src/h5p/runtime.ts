@@ -77,7 +77,8 @@ export async function runtime(scope: RuntimeScope, baseUrl = '/api/h5p/internal'
   settings.contentHubEnabled = false;
   settings.maxFileSize = 64 * 1024 * 1024;
   settings.maxTotalSize = 256 * 1024 * 1024;
-  settings.contentUserStateSaveInterval = scope.mode === 'play' ? 10_000 : 0;
+  // Native H5P treats zero as a one-second interval; false disables preview autosave.
+  settings.contentUserStateSaveInterval = scope.mode === 'play' ? 10_000 : false;
   settings.setFinishedEnabled = scope.mode === 'play';
   // Keep uploaded active documents out of the content origin. Trusted library SVGs are separate.
   settings.contentWhitelist = 'json png jpg jpeg gif bmp tif tiff eot ttf woff woff2 otf webm mp4 ogg mp3 m4a wav txt pdf rtf doc docx xls xlsx ppt pptx odt ods odp xml csv md vtt webvtt gltf glb';

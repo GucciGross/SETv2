@@ -44,7 +44,7 @@ import { billingRoutes } from './billing/routes.js';
 import { seed } from './seed.js';
 
 async function main() {
-  const app = Fastify({ logger: true, bodyLimit: 64 * 1024 * 1024 });
+  const app = Fastify({ logger: true, bodyLimit: 64 * 1024 * 1024, maxParamLength: 2048 });
 
   // /api/clip is posted by the clipper bookmarklet from arbitrary origins.
   // The cors plugin's origin callback can't see the URL, so open CORS for the

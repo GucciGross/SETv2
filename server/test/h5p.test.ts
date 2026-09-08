@@ -101,6 +101,8 @@ test('native engine round-trip saves, previews and exports with genuine library 
     assert.equal(saved.params.params.text, '<p>Hello Studio</p>');
     const preview = await runtime({ ...scope, mode: 'preview' });
     assert.match(String(await preview.player.render(content, preview.user, 'en')), /Hello Studio/);
+    preview.player.setRenderer((model) => model);
+    assert.equal((await preview.player.render(content, preview.user, 'en') as any).integration.saveFreq, false);
     const exported = new AdmZip(await exportContent(scope, content));
     assert.ok(exported.getEntry('H5P.StudioTest-1.0/library.json'));
     assert.equal(JSON.parse(exported.readAsText('H5P.StudioTest-1.0/library.json')).minorVersion, 0);
