@@ -4,23 +4,38 @@ on:
     branches: [feat/h5p-studio-20260908]
     paths: [.github/workflows/h5p-prepare.yml]
 permissions:
-  contents: read
+  contents: write
 jobs:
   prepare:
+    if: github.ref == 'refs/heads/feat/h5p-studio-20260908'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Download pinned official browser assets
-        run: |
-          mkdir -p /tmp/h5p-assets
-          curl --fail --location --retry 2 https://codeload.github.com/h5p/h5p-php-library/zip/829524eaf81fe3f3a295d0e843812be4735f51fc -o /tmp/core.zip
-          curl --fail --location --retry 2 https://codeload.github.com/h5p/h5p-editor-php-library/zip/80b3b281ee9d064b563f242e8ee7a0026b5bf205 -o /tmp/editor.zip
-          unzip -q /tmp/core.zip -d /tmp/h5p-assets
-          unzip -q /tmp/editor.zip -d /tmp/h5p-assets
-          mv /tmp/h5p-assets/h5p-php-library-* /tmp/h5p-assets/core
-          mv /tmp/h5p-assets/h5p-editor-php-library-* /tmp/h5p-assets/editor
-      - uses: actions/upload-artifact@v4
+      - uses: actions/checkout@v4
         with:
-          name: h5p-browser-assets
-          path: /tmp/h5p-assets
-          retention-days: 1
+          ref: feat/h5p-studio-20260908
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Apply checksummed, locally verified source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .h5p-transfer.1 .h5p-transfer.2 .h5p-transfer.3 .h5p-transfer.4 | base64 --decode | xz --decompress > /tmp/h5p-implementation.patch
+          echo '79990b6b4da6cd8602a9fa1b088442a3079e548553e6eb6ac25549a556209577  /tmp/h5p-implementation.patch' | sha256sum --check
+          git apply --check /tmp/h5p-implementation.patch
+          git apply /tmp/h5p-implementation.patch
+      - name: Resolve pinned manifest and lockfile
+        working-directory: server
+        run: npm install --package-lock-only --save-exact --ignore-scripts @lumieducation/h5p-server@10.0.4
+      - name: Commit implementation to the feature branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -- .h5p-transfer.1 .h5p-transfer.2 .h5p-transfer.3 .h5p-transfer.4
+          git add .gitignore README.md docs/H5P_STUDIO.md server web
+          git diff --cached --check
+          git commit -m 'feat(h5p): add native workspace studio, immutable publishing and reusable learning activities'
+          git push origin HEAD:refs/heads/feat/h5p-studio-20260908
