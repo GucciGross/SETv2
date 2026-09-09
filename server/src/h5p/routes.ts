@@ -11,6 +11,11 @@ import { byteRange, finishedSchema, libraryName, placementSchema, prepareImport,
 import { coreRoot, exportContent, requireRuntimeAssets, runtime, runtimeReady } from './runtime.js';
 import { editorDocument, playerDocument } from './render.js';
 import { createFromDeck } from './from-deck.js';
+import { h5pNativeAssetRoutes } from './native-assets.js';
+import { libraryInventory, requireUsableLibrary } from './libraries.js';
+import { provisionBundledLibraries, readBundleLock } from './bundle.js';
+import { h5pRoot } from './runtime.js';
+import { join } from 'node:path';
 
 const id = (req: FastifyRequest) => z.string().uuid().parse((req.params as any).id);
 const space = (req: FastifyRequest) => z.string().uuid().parse((req.params as any).spaceId);
@@ -38,6 +43,7 @@ async function upload(req: FastifyRequest) {
   return { fields, file };
 }
 export async function h5pRoutes(app: FastifyInstance) {
+  await h5pNativeAssetRoutes(app);
   // Management uses the existing SET bearer session and normal workspace roles.
   await app.register(async (studio) => {
     errors(studio);
@@ -45,12 +51,11 @@ export async function h5pRoutes(app: FastifyInstance) {
     studio.get('/spaces/:spaceId/h5p/status', async (req) => {
       const spaceId = space(req), role = await spaceRole(spaceId, req.user!.id);
       const rt = await runtime({ spaceId, user: req.user!, role, mode: 'preview', readable: [] });
-      const names = await rt.libraryStorage.getInstalledLibraryNames();
-      const installed = await Promise.all(names.map(async (name) => {
-        const library = await rt.libraryStorage.getLibrary(name);
-        return { ...name, title: library.title, runnable: library.runnable };
-      }));
-      return { ready: await runtimeReady(), canEdit: role !== 'viewer', canInstall: role === 'owner', installed: installed.filter((l) => l.runnable), maxPackageMB: 100, maxMediaMB: 64 };
+      const inventory = await libraryInventory(rt.libraryStorage), lock = await readBundleLock();
+      const installed = inventory.filter(l => l.runnable);
+      const missing = lock.catalog.filter(l => !installed.some(i => i.machineName === l.machineName && i.majorVersion === l.majorVersion && i.minorVersion === l.minorVersion && i.usable)).map(l => l.machineName);
+      return { ready: await runtimeReady(), canEdit: role !== 'viewer', canInstall: role === 'owner', installed,
+        bundle: { contentTypes: lock.catalog.length, libraries: lock.libraries.length, sha256: lock.bundle.sha256, missing, ready: missing.length === 0 }, maxPackageMB: 100, maxMediaMB: 64 };
     });
     studio.get('/spaces/:spaceId/h5p/catalog', async (req) => {
       const spaceId = space(req), role = await spaceRole(spaceId, req.user!.id);
@@ -61,7 +66,11 @@ export async function h5pRoutes(app: FastifyInstance) {
       const spaceId = space(req), role = await spaceRole(spaceId, req.user!.id, 'owner');
       const body = z.object({ machineName: libraryName }).parse(req.body);
       const rt = await runtime({ spaceId, user: req.user!, role, mode: 'edit', readable: [], installFromHub: true });
-      return { installed: await rt.editor.installLibraryFromHub(body.machineName, rt.user) };
+      const lock = await readBundleLock(), type = lock.catalog.find(l => l.machineName === body.machineName);
+      if (!type) throw new StudioError(404, 'This type is not in the reviewed SET bundle. Update the bundle through a code review first.');
+      const receipt = await provisionBundledLibraries(join(h5pRoot(), 'libraries'));
+      const verified = await requireUsableLibrary(rt.libraryStorage, type);
+      return { installed: [verified], verified: true, source: 'repository-bundle', changed: receipt.changed, sha256: receipt.sha256 };
     });
     studio.get('/spaces/:spaceId/h5p/activities', async (req) => {
       const options = z.object({ search: z.string().max(100).optional(), offset: z.coerce.number().int().min(0).max(100000).optional(), archived: z.enum(['true', 'false']).optional(), status: z.enum(['all', 'draft', 'published']).optional(), kind: placementSchema.shape.kind.optional(), parentId: z.string().uuid().optional() }).parse(req.query);
@@ -82,6 +91,10 @@ export async function h5pRoutes(app: FastifyInstance) {
     });
     studio.post('/decks/:id/h5p/activity', async (req) => ({ activity: await createFromDeck(id(req), req.user!) }));
     studio.get('/h5p/activities/:id', async (req) => ({ activity: summary(await activityFor(id(req), req.user!.id)) }));
+    studio.post('/h5p/activities/:id/draft', { bodyLimit: 8 * 1024 * 1024 }, async (req) => {
+      const body = saveSchema.extend({ expectedRevision: z.number().int().min(0) }).parse(req.body);
+      return { activity: await saveActivity(id(req), req.user!, body.expectedRevision, body) };
+    });
     studio.get('/h5p/activities/:id/export', async (req, reply) => {
       const result = await exportActivity(id(req), req.user!);
       return reply.type('application/zip').header('Content-Disposition', `attachment; filename="${filename(result.title)}"`).header('Cache-Control', 'no-store').send(result.data);
@@ -146,12 +159,22 @@ export async function h5pRoutes(app: FastifyInstance) {
       const ctx = await authorizeGrant(grant);
       if (edit && grant.mode !== 'edit') throw new StudioError(403, 'This launch is read-only.');
       const base = `/api/h5p/runtime/${token}`;
-      return { ...ctx, grant, base };
+      return { ...ctx, scope: { ...ctx.scope, nativeEditor: (req.query as any).native === '1' }, grant, base };
     }
     function matching(actual: unknown, expected: string | null) {
       if (typeof actual !== 'string' || actual !== expected) throw new StudioError(403, 'This launch cannot access another activity.');
       return actual;
     }
+    native.get('/:grant/editor-model', async (req) => {
+      const ctx = await context(req, true);
+      await requireRuntimeAssets();
+      const rt = await runtime({ ...ctx.scope, nativeEditor: true }, ctx.base);
+      rt.editor.setRenderer(model => model);
+      const model = await rt.editor.render(ctx.grant.content ?? '', 'en', rt.user);
+      const parameters = ctx.grant.content ? await rt.ajax.getContentParameters(ctx.grant.content, rt.user) : undefined;
+      return { integration: model.integration, scripts: model.scripts, styles: model.styles,
+        parameters, libraries: (await libraryInventory(rt.libraryStorage)).filter(l => l.runnable && l.usable).map(l => ({ name: l.machineName, title: l.title, majorVersion: l.majorVersion, minorVersion: l.minorVersion })), base: ctx.base };
+    });
     native.get('/:grant/editor', async (req, reply) => {
       const ctx = await context(req, true);
       await requireRuntimeAssets();
@@ -198,6 +221,13 @@ export async function h5pRoutes(app: FastifyInstance) {
         const missing = await rt.editor.libraryManager.getNotInstalledLibraries(clean.dependencies);
         if (missing.length) throw new StudioError(422, 'This package needs libraries that are not installed. Ask an owner to install matching versions from the content catalog.');
         input.file = { ...input.file, data: clean.data, size: clean.data.length };
+      }
+      if (query.action === 'library-install') {
+        const lock = await readBundleLock(), type = lock.catalog.find(l => l.machineName === query.id);
+        if (!type) throw new StudioError(404, 'Content type is not in the reviewed SET bundle.');
+        await provisionBundledLibraries(join(h5pRoot(), 'libraries'));
+        await requireUsableLibrary(rt.libraryStorage, type);
+        return { success: true, data: await rt.editor.getContentTypeCache(rt.user) };
       }
       return rt.ajax.postAjax(query.action, input.fields, 'en', rt.user, query.action === 'files' ? input.file : undefined, query.id, undefined, query.action === 'library-upload' ? input.file : undefined);
     });

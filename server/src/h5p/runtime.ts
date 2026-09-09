@@ -10,6 +10,7 @@ import { contentId, StudioError } from './domain.js';
 import { PostgresUserData } from './user-data.js';
 import { fileURLToPath } from 'node:url';
 import { studioSettings } from './settings.js';
+import { readBundleLock } from './bundle.js';
 
 export const h5pRoot = () => resolve(config.dataDir, 'h5p');
 export const coreRoot = () => process.env.H5P_ASSETS_DIR
@@ -18,6 +19,13 @@ export const coreRoot = () => process.env.H5P_ASSETS_DIR
 export const contentRoot = (spaceId: string) => join(h5pRoot(), 'spaces', spaceId, 'content');
 const cache = new H5P.fsImplementations.InMemoryStorage();
 const lockProvider = new H5P.SimpleLockProvider();
+let catalogSeed: Promise<void> | undefined;
+function seedCatalog() {
+  return catalogSeed ??= readBundleLock().then(async (lock) => {
+    await cache.save('contentTypeCache', lock.catalog);
+    await cache.save('contentTypeCacheUpdate', Date.now());
+  }).catch(error => { catalogSeed = undefined; throw error; });
+}
 
 export interface RuntimeScope {
   spaceId: string;
@@ -28,6 +36,7 @@ export interface RuntimeScope {
   writable?: string[];
   installFromHub?: boolean;
   allocate?: string;
+  nativeEditor?: boolean;
 }
 export function permissions(scope: RuntimeScope): H5P.IPermissionSystem {
   const author = scope.role !== 'viewer' && scope.mode === 'edit';
@@ -72,6 +81,7 @@ export async function runtime(scope: RuntimeScope, baseUrl = '/api/h5p/internal'
     mkdir(contentRoot(scope.spaceId), { recursive: true }),
     mkdir(join(h5pRoot(), 'spaces', scope.spaceId, 'temporary'), { recursive: true }),
   ]);
+  await seedCatalog();
   const settings = await new H5P.H5PConfig(await studioSettings(join(h5pRoot(), 'settings.json'))).load();
   settings.baseUrl = baseUrl;
   settings.platformName = 'SET';
@@ -92,6 +102,16 @@ export async function runtime(scope: RuntimeScope, baseUrl = '/api/h5p/internal'
   const userData = scope.mode === 'play' ? new PostgresUserData(scope.spaceId) : undefined;
   const user: H5P.IUser = { ...scope.user, email: '', type: 'local' };
   const urls = new H5P.UrlGenerator(settings);
+  if (scope.nativeEditor) {
+    // Public, reviewed CODE assets only; parameters/media/writes still use scoped grants.
+    const publicRoot = '/api/h5p/assets/native';
+    urls.coreFiles = () => `${publicRoot}/core/js`;
+    urls.coreFile = file => `${publicRoot}/core/${file}?version=${settings.h5pVersion}`;
+    urls.editorLibraryFiles = () => `${publicRoot}/editor`;
+    urls.editorLibraryFile = file => `${publicRoot}/editor/${file}?version=${settings.h5pVersion}`;
+    urls.libraryFile = (lib, file) => `${publicRoot}/libraries/${lib.machineName}-${lib.majorVersion}.${lib.minorVersion}/${file}?version=${lib.majorVersion}.${lib.minorVersion}.${lib.patchVersion}`;
+    urls.ajaxEndpoint = () => `${baseUrl}/ajax?native=1&action=`;
+  }
   const editor = new H5P.H5PEditor(cache, settings, libraryStorage, contentStorage, temporaryStorage, undefined, urls, { permissionSystem, lockProvider }, userData);
   const player = new H5P.H5PPlayer(libraryStorage, contentStorage, settings, undefined, urls, undefined, { permissionSystem }, userData);
   const ajax = new H5P.H5PAjaxEndpoint(editor);
