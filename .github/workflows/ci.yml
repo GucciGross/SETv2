@@ -80,7 +80,11 @@ jobs:
           set -euo pipefail
           compose=(docker compose -p set-h5p-regression -f server/test/h5p-compose.yml)
           trap '"${compose[@]}" down -v' EXIT
-          "${compose[@]}" up -d --wait --wait-timeout 120
+          if ! "${compose[@]}" up -d --wait --wait-timeout 120; then
+            # Startup only: no browser launch capabilities have been issued.
+            "${compose[@]}" logs --no-color
+            exit 1
+          fi
           H5P_TEST_DATABASE=1 H5P_BROWSER_ARTIFACTS=/tmp/h5p-deployment/http python3 server/h5p-deployment-smoke.py
           H5P_TEST_DATABASE=1 SET_DEPLOYMENT_BASE=https://localhost:8448 H5P_TEST_SELF_SIGNED=1 H5P_BROWSER_ARTIFACTS=/tmp/h5p-deployment/https python3 server/h5p-deployment-smoke.py
       - uses: actions/upload-artifact@v4
