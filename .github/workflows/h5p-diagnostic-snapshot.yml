@@ -1,0 +1,22 @@
+name: H5P diagnostic source snapshot
+on:
+  push:
+    branches: [fix/h5p-production-20260908]
+    paths: [.github/workflows/h5p-diagnostic-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Archive tracked sources only
+        run: git archive --format=tar.gz HEAD > /tmp/setv2-h5p-main.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setv2-h5p-main
+          path: /tmp/setv2-h5p-main.tar.gz
+          retention-days: 1
