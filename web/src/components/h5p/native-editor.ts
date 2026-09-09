@@ -104,7 +104,10 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     configure(model); // h5peditor.js initializes its globals once while bootstrapping.
     const w = globals(), H = w.H5P, E = w.H5PEditor, $ = H.jQuery;
     H.$body = $(document.body); E.$ = $;
-    E.libraryCache = {}; E.renderableCommonFields = {};
+    // Reset both halves of the library-load state: a remount (Reload editor)
+    // re-requests libraries; leaving libraryLoaded populated against an empty
+    // libraryCache makes H5PEditor skip re-running its form builders.
+    E.libraryCache = {}; E.renderableCommonFields = {}; E.libraryLoaded = {};
     const originalLayout = [document.documentElement.style.height, document.body.style.height, document.documentElement.style.maxWidth, document.body.style.maxWidth];
     const portals = new Set<HTMLElement>(), requests = new Set<any>();
     const tagPortals = () => {
