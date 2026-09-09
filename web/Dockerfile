@@ -7,6 +7,8 @@ COPY . .
 RUN npm run build:docker
 
 FROM nginx:1.27-alpine
+# SET_TLS generates certificates at startup; nginx ships libssl, not its CLI.
+RUN apk add --no-cache openssl
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY nginx-tls.conf /etc/nginx/nginx-tls.conf
