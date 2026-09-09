@@ -124,7 +124,8 @@ with sync_playwright() as playwright:
         player = page.frame_locator('iframe[title^="Play "]')
         expect(player.locator(".h5p-content")).to_contain_text("SET uses")
         player.get_by_role("textbox").fill("H5P")
-        player.get_by_role("button", name="Check", exact=True).click()
+        # Hub Blanks 1.14 sets aria-label "Check the answers…" which overrides the visible label.
+        player.get_by_role("button", name=re.compile(r"^Check\b")).click()
         expect(player.locator(".h5p-content")).to_contain_text("1")
         page.screenshot(path=str(artifacts / "published-lesson.png"), full_page=True)
         print("PASS empty activity → native authoring → two saves → parent publish → actual question playback")

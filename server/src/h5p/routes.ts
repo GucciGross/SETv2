@@ -244,12 +244,19 @@ export async function h5pRoutes(app: FastifyInstance) {
       native.route({ method, url: '/:grant/contentUserData/:contentId/:dataType/:subContentId', bodyLimit: 1100 * 1024,
         handler: async (req) => {
           const ctx = await context(req), p = req.params as any;
-          if (ctx.grant.mode !== 'play' || (req.query as any).asUserId) throw new StudioError(403, 'Learner state is private to published playback.');
           const target = matching(p.contentId, ctx.grant.content);
           const dataType = z.string().regex(/^[A-Za-z0-9_.-]{1,128}$/).parse(p.dataType), sub = z.string().regex(/^[A-Za-z0-9_.-]{1,128}$/).parse(p.subContentId);
-          const rt = await runtime(ctx.scope, ctx.base), manager = rt.editor.contentUserDataManager!;
-          if (method === 'GET') { const state = await manager.getContentUserData(target, dataType, sub, rt.user); return { success: true, data: state?.userState ?? false }; }
+          if ((req.query as any).asUserId) throw new StudioError(403, 'Learner state is private to its owner.');
+          // The native core requests state on every player init; drafts and previews carry none.
+          if (method === 'GET') {
+            if (ctx.grant.mode !== 'play') return { success: true, data: false };
+            const rt = await runtime(ctx.scope, ctx.base), manager = rt.editor.contentUserDataManager!;
+            const state = await manager.getContentUserData(target, dataType, sub, rt.user);
+            return { success: true, data: state?.userState ?? false };
+          }
+          if (ctx.grant.mode !== 'play') throw new StudioError(403, 'Learner state is private to published playback.');
           const body = z.object({ data: z.union([z.string().max(1048576), z.literal(0)]), invalidate: z.coerce.number().int().min(0).max(1), preload: z.coerce.number().int().min(0).max(1) }).parse(req.body);
+          const rt = await runtime(ctx.scope, ctx.base), manager = rt.editor.contentUserDataManager!;
           await manager.createOrUpdateContentUserData(target, dataType, sub, String(body.data), !!body.invalidate, !!body.preload, rt.user);
           return { success: true };
         } });
