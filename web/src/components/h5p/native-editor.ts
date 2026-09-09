@@ -1,4 +1,5 @@
 import { installNativeStyleScope } from './native-styles';
+import { installAuthorPreferences } from './native-preferences';
 /** The only adapter to the pinned H5P browser globals. Real H5P widgets and semantics,
  * mounted in SET's document (not H5PEditor.Editor's iframe constructor).
  */
@@ -118,6 +119,7 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     // Track constructor-owned global listeners without removing anyone else's subscriptions.
     const subscriptions: [string, any][] = [], originalOn = H.externalDispatcher.on;
     H.externalDispatcher.on = function (type: string, handler: any) { subscriptions.push([type, handler]); return originalOn.call(this, type, handler); };
+    const restorePreferences = installAuthorPreferences(H, model.integration.user.id, () => localStorage);
     let selector: any;
     destroy = () => {
       if (active !== identity) return;
@@ -126,7 +128,7 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
       $(document).off('.setNativeH5p');
       for (const name of ['input', 'change', 'pointerup']) root.removeEventListener(name, changed, true);
       for (const [type, handler] of subscriptions) H.externalDispatcher.off(type, handler);
-      selector?.form?.remove?.(); observer.disconnect(); tagPortals();
+      selector?.form?.remove?.(); restorePreferences(); observer.disconnect(); tagPortals();
       [document.documentElement.style.height, document.body.style.height, document.documentElement.style.maxWidth, document.body.style.maxWidth] = originalLayout;
       portals.forEach(portal => portal.remove()); root.replaceChildren(); active = undefined;
     };

@@ -221,6 +221,12 @@ with sync_playwright() as playwright:
             assert page.locator('iframe[title^="Edit "], iframe.h5p-editor-iframe').count() == 0
             after = page.evaluate("""() => { const css = getComputedStyle(document.querySelector('#set-style-scope-probe')); return [css.position, css.display, css.backgroundColor, css.padding, css.margin]; }""")
             assert before == after, label + " leaked editor styles into SET"
+            if library.startswith("H5P.BranchingScenario"):
+                # The optional editor tour is a device preference, not learner state.
+                tour = native.get_by_role("button", name="I got it", exact=True)
+                expect(tour).to_be_visible()
+                tour.click()
+                expect(tour).not_to_be_visible()
             page.set_viewport_size({"width": 390, "height": 844})
             expect(native.locator(selector).first).to_be_visible()
             page.screenshot(path=str(artifacts / (library.split()[0] + "-phone.png")), full_page=True)
