@@ -1,0 +1,20 @@
+name: Copilot review snapshot
+on:
+  push:
+    branches: [fix/copilot-inline-approvals]
+    paths: [.github/workflows/approval-review-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive tracked sources only
+        run: git archive --format=tar.gz HEAD > /tmp/set-approval-review.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: set-approval-review
+          path: /tmp/set-approval-review.tar.gz
+          retention-days: 1
