@@ -19,6 +19,8 @@ jobs:
         with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
       - run: npm ci
         working-directory: server
+      - run: npm run h5p:verify
+        working-directory: server
       - run: npm run h5p:setup
         working-directory: server
       - run: npm run typecheck
@@ -113,6 +115,12 @@ jobs:
             exit 1
           fi
           H5P_TEST_DATABASE=1 H5P_BROWSER_ARTIFACTS=/tmp/h5p-deployment/http python3 server/h5p-deployment-smoke.py
+          # Recreate the server, keeping its real persistent volume. Provisioning must be
+          # offline, idempotent and preserve existing content/library bytes.
+          "${compose[@]}" exec -T server sh -c 'find /app/data/h5p/spaces /app/data/h5p/libraries -type f -exec sha256sum {} + | sort' > /tmp/h5p-before.txt
+          "${compose[@]}" up -d --force-recreate --no-deps --wait --wait-timeout 120 server
+          "${compose[@]}" exec -T server sh -c 'find /app/data/h5p/spaces /app/data/h5p/libraries -type f -exec sha256sum {} + | sort' > /tmp/h5p-after.txt
+          diff -u /tmp/h5p-before.txt /tmp/h5p-after.txt
           H5P_TEST_DATABASE=1 SET_DEPLOYMENT_BASE=https://localhost:8448 H5P_TEST_SELF_SIGNED=1 H5P_BROWSER_ARTIFACTS=/tmp/h5p-deployment/https python3 server/h5p-deployment-smoke.py
       - uses: actions/upload-artifact@v4
         if: always()
