@@ -10,7 +10,7 @@ import {
 import { useApp } from '../stores/app';
 import { GuideTools } from './copilot/GuideTools';
 import { SetToolRenderers } from './copilot/ToolRenderers';
-import { ApprovalWatcher } from './copilot/ApprovalWatcher';
+import { ApprovalProvider, SetToolCallsView } from './copilot/ApprovalWatcher';
 import { askAgent, GUIDE_AGENT } from '../lib/copilot';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from './Mascot';
 
@@ -451,7 +451,7 @@ function SetAssistantMessage({ children, message, messages, isRunning, ...props 
   const isLatest = messages?.[messages.length - 1]?.id === message?.id;
   const streaming = !!isRunning && isLatest;
   return (
-    <CopilotChatAssistantMessage {...props} message={message} messages={messages} isRunning={isRunning}>
+    <CopilotChatAssistantMessage {...props} message={message} messages={messages} isRunning={isRunning} toolCallsView={SetToolCallsView}>
       {(slots: any) => (
         <div className="set-chat-assistant flex gap-2.5 fadein">
           <div className="shrink-0 flex flex-col items-center gap-1 pt-0.5">
@@ -574,10 +574,9 @@ export default function GuideFab() {
   if (!mascotEnabled) return null;
 
   return (
-    <>
+    <ApprovalProvider>
       <GuideTools />
       <SetToolRenderers />
-      <ApprovalWatcher />
       <SheetModeWatcher />
       <CopilotPopup
         agentId={GUIDE_AGENT}
@@ -598,6 +597,6 @@ export default function GuideFab() {
         messageView={{ assistantMessage: SetAssistantMessage as any }}
         toggleButton={{ openIcon: CopilotOpenIcon, closeIcon: CopilotCloseIcon }}
       />
-    </>
+    </ApprovalProvider>
   );
 }
