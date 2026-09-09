@@ -283,7 +283,12 @@ with sync_playwright() as playwright:
             recovered_title = native.locator(".field-name-extraTitle input, .field-name-title input").first
             expect(recovered_title).to_be_visible(timeout=5000)
         recovered_title.fill("Recovered native authoring")
-        native.locator('[contenteditable="true"]').first.fill("SET supports *recovery*.")
+        # The Blanks text block is a contenteditable inside the "Fill in the
+        # missing words" field; the first contenteditable on the page is the
+        # Task description paragraph, which does not satisfy validation.
+        blanks_text = native.locator(".field-name-text .h5p-editor-paragraph-content[contenteditable=\"true\"], .field-name-text [contenteditable=\"true\"]").first
+        expect(blanks_text).to_be_visible(timeout=5000)
+        blanks_text.fill("SET supports *recovery*.")
         with page.expect_response(lambda response: response.request.method == "POST" and response.url.endswith("/draft")) as recovered:
             native.get_by_role("button", name="Save draft", exact=True).first.click()
         assert recovered.value.status == 200 and recovered.value.json()["activity"]["draftRevision"] == 1
