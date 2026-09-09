@@ -280,7 +280,7 @@ with sync_playwright() as playwright:
             # input with a stale label/for pairing (counter advanced) — the field
             # is present and functional but loses its accessible name. Fall back
             # to the field the form actually owns.
-            recovered_title = native.locator(".field-name-title input, .field-name-extraTitle input").first
+            recovered_title = native.locator(".field-name-extraTitle input, .field-name-title input").first
             expect(recovered_title).to_be_visible(timeout=5000)
         recovered_title.fill("Recovered native authoring")
         native.locator('[contenteditable="true"]').first.fill("SET supports *recovery*.")
