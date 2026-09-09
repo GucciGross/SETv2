@@ -46,7 +46,7 @@ export default function H5PNativeEditor({ activity, onDirty, onSaved }: {
   return <section aria-label="Native H5P editor" className="min-w-0">
     <div className="flex flex-wrap gap-3 items-center mb-3">
       <button type="button" className="set-btn-primary min-h-11" disabled={!ready || saving} onClick={() => void save()}>{saving ? 'Saving draft…' : 'Save draft'}</button>
-      <span role="status" className="text-sm text-set-dim">{ready ? 'All authoring fields are on this page. Drafts stay private until you publish.' : 'Loading authoring tools…'}</span>
+      <span role="status" className="text-sm text-set-dim">{error ? 'Authoring needs attention. Review the message below.' : ready ? 'All authoring fields are on this page. Drafts stay private until you publish.' : 'Loading authoring tools…'}</span>
     </div>
     {error && <div className="set-card p-3 mb-3 border-red-500/40 text-sm" role="alert"><p>{error}</p><button className="set-btn mt-2 min-h-11" onClick={() => { if (!dirty.current || confirm('Reload the editor and discard unsaved changes?')) { callbacks.current.onDirty?.(false); setAttempt(n => n + 1); } }}>Reload editor</button></div>}
     <div className="set-h5p-native"><div ref={container} /></div>

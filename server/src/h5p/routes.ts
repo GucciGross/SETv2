@@ -173,7 +173,7 @@ export async function h5pRoutes(app: FastifyInstance) {
       const model = await rt.editor.render(ctx.grant.content ?? '', 'en', rt.user);
       const parameters = ctx.grant.content ? await rt.ajax.getContentParameters(ctx.grant.content, rt.user) : undefined;
       return { integration: model.integration, scripts: model.scripts, styles: model.styles,
-        parameters, libraries: (await libraryInventory(rt.libraryStorage)).filter(l => l.runnable && l.usable).map(l => ({ name: l.machineName, title: l.title, majorVersion: l.majorVersion, minorVersion: l.minorVersion })), base: ctx.base };
+        parameters, libraries: (await libraryInventory(rt.libraryStorage)).filter(l => l.runnable && l.usable).map(l => ({ name: l.machineName, title: l.title, majorVersion: l.majorVersion, minorVersion: l.minorVersion, restricted: l.restricted, isOld: false })), base: ctx.base };
     });
     native.get('/:grant/editor', async (req, reply) => {
       const ctx = await context(req, true);

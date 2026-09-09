@@ -76,6 +76,31 @@ with sync_playwright() as playwright:
     page.set_default_timeout(30000)
     errors = []
     failed = []
+    pending = {}
+    transport_errors = []
+    code_requests = {"active": set(), "peak": 0}
+    editor_peak = {"value": 0}  # burst during native editor mounts only; the Play player document intentionally parallel-loads
+    editor_burst = []
+    console_errors = []
+    def track_request(req):
+        if "/h5p/" in req.url:
+            pending[id(req)] = {"url": redact(req.url), "resource": req.resource_type}
+    def track_code(req):
+        if "/api/h5p/assets/native/libraries/" in req.url and req.resource_type in ["script", "stylesheet"]:
+            code_requests["active"].add(id(req))
+            peak = max(code_requests["peak"], len(code_requests["active"]))
+            code_requests["peak"] = peak
+            if req.frame == page.main_frame:
+                editor_peak["value"] = max(editor_peak["value"], len(code_requests["active"]))
+                if len(code_requests["active"]) > 4:
+                    editor_burst.append(redact(req.url))
+    page.on("request", track_code)
+    page.on("requestfinished", lambda req: code_requests["active"].discard(id(req)))
+    page.on("requestfailed", lambda req: code_requests["active"].discard(id(req)))
+    page.on("request", track_request)
+    page.on("requestfinished", lambda req: pending.pop(id(req), None))
+    page.on("requestfailed", lambda req: (pending.pop(id(req), None), transport_errors.append({"url": redact(req.url), "error": req.failure})) if "/h5p/" in req.url else None)
+    page.on("console", lambda message: console_errors.append(redact(message.text)) if message.type in ["error", "warning"] else None)
     page.on("pageerror", lambda error: errors.append(redact(error)))
     page.on("response", lambda response: failed.append({"url": redact(response.url), "status": response.status}) if "/h5p/" in response.url and response.status >= 400 else None)
     try:
@@ -113,6 +138,7 @@ with sync_playwright() as playwright:
         metadata = native.locator('.h5p-metadata-popup-overlay')
         expect(metadata.locator('.field-name-source input')).to_be_visible()
         metadata.locator('.field-name-source input').fill('https://example.org/lesson-source')
+        page.screenshot(path=str(artifacts / "native-metadata-phone.png"), full_page=True, animations="disabled")
         metadata.get_by_role("button", name="Save metadata", exact=True).click()
         expect(metadata).not_to_be_visible()
         publish = page.get_by_role("button", name="Publish saved draft", exact=True)
@@ -129,9 +155,12 @@ with sync_playwright() as playwright:
             native.get_by_role("button", name="Save draft", exact=True).first.click()
         assert saved_again.value.status == 200
         assert saved_again.value.json()["activity"]["draftRevision"] == 2
+        expect(title).to_have_value("Deployed H5P lesson revised")
+        expect(native.locator('.field-name-question [contenteditable="true"]').first).to_be_visible()
+        expect(native.get_by_role("button", name="Save draft", exact=True).first).to_be_enabled()
         expect(publish).to_be_enabled()
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Native authoring overflows a phone"
-        page.screenshot(path=str(artifacts / "native-authoring-phone.png"), full_page=True)
+        page.screenshot(path=str(artifacts / "native-authoring-phone.png"), full_page=True, animations="disabled")
         page.set_viewport_size({"width": 1440, "height": 1000})
         publish.click()
         page.get_by_role("button", name="Published activity", exact=True).click()
@@ -141,7 +170,7 @@ with sync_playwright() as playwright:
         # Hub Blanks 1.14 sets aria-label "Check the answers…" which overrides the visible label.
         player.get_by_role("button", name=re.compile(r"^Check\b")).click()
         expect(player.locator(".h5p-content")).to_contain_text("1")
-        page.screenshot(path=str(artifacts / "published-lesson.png"), full_page=True)
+        page.screenshot(path=str(artifacts / "published-lesson.png"), full_page=True, animations="disabled")
         print("PASS empty activity → native authoring → two saves → parent publish → actual question playback")
         with page.expect_download() as download:
             page.get_by_role("button", name="Export H5P package", exact=True).click()
@@ -176,7 +205,7 @@ with sync_playwright() as playwright:
         page.get_by_role("button", name="Phone-width preview", exact=True).click()
         page.set_viewport_size({"width": 390, "height": 844})
         expect(image_view).to_be_visible()
-        page.screenshot(path=str(artifacts / "imported-media-phone.png"), full_page=True)
+        page.screenshot(path=str(artifacts / "imported-media-phone.png"), full_page=True, animations="disabled")
         assert not failed, "Failed H5P requests: " + json.dumps(failed)
         assert not errors, "Browser JavaScript errors: " + json.dumps(errors)
         print("PASS multi-megabyte package import through Nginx, native media rendering and phone preview")
@@ -198,15 +227,94 @@ with sync_playwright() as playwright:
         assert not errors, "Browser JavaScript errors: " + json.dumps(errors)
         assert not failed, "Failed recovery requests: " + json.dumps(failed)
         print("PASS revoked-launch error is visible in Studio; reopening obtains a fresh authorized player")
+        page.on("dialog", lambda dialog: dialog.accept())  # Disposable unsaved test drafts only.
+        for library, label, selector in [
+            ("H5P.GameMap 1.5", "Game Map", ".h5peditor-panes"),
+            ("H5P.CoursePresentation 1.26", "Course Presentation", ".h5p-course-presentation"),
+            ("H5P.BranchingScenario 1.8", "Branching Scenario", ".bs-editor-content-tab"),
+        ]:
+            draft = api("POST", f"/spaces/{space}/h5p/activities", {"title": label + " authoring check"})["activity"]
+            page.set_viewport_size({"width": 1440, "height": 1000})
+            page.goto(origin + studio_path + "/" + draft["id"], wait_until="domcontentloaded")
+            expect(native.get_by_label("Content type", exact=True)).to_be_visible()
+            before = page.evaluate("""() => {
+                const probe = document.createElement('div'); probe.id = 'set-style-scope-probe'; probe.className = 'canvas tabs-nav'; document.body.append(probe);
+                const css = getComputedStyle(probe); return [css.position, css.display, css.backgroundColor, css.padding, css.margin];
+            }""")
+            native.get_by_label("Content type", exact=True).select_option(library)
+            expect(native.locator(selector).first).to_be_visible(timeout=30000)
+            assert page.locator('iframe[title^="Edit "], iframe.h5p-editor-iframe').count() == 0
+            after = page.evaluate("""() => { const css = getComputedStyle(document.querySelector('#set-style-scope-probe')); return [css.position, css.display, css.backgroundColor, css.padding, css.margin]; }""")
+            assert before == after, label + " leaked editor styles into SET"
+            if library.startswith("H5P.BranchingScenario"):
+                # The optional editor tour is a device preference, not learner state.
+                tour = native.get_by_role("button", name="I got it", exact=True)
+                expect(tour).to_be_visible()
+                tour.click()
+                expect(tour).not_to_be_visible()
+            page.set_viewport_size({"width": 390, "height": 844})
+            expect(native.locator(selector).first).to_be_visible()
+            page.screenshot(path=str(artifacts / (library.split()[0] + "-phone.png")), full_page=True, animations="disabled")
+            assert not errors, label + ": " + json.dumps(errors)
+            assert not failed, label + ": " + json.dumps(failed)
+            print("PASS composite native authoring: " + label + ", phone viewport and CSS isolation")
+        assert editor_peak["value"] <= 4, "Native dependency burst exceeded bound: {}\nBurst URLs (first 15): {}".format(editor_peak["value"], json.dumps(editor_burst[:15], indent=1))
+        print(f"PASS actual editor dependency requests bounded to {editor_peak['value']} in flight")
+        draft = api("POST", f"/spaces/{space}/h5p/activities", {"title": "Authoring recovery check"})["activity"]
+        page.goto(origin + studio_path + "/" + draft["id"], wait_until="domcontentloaded")
+        expect(native.get_by_label("Content type", exact=True)).to_be_visible()
+        broken_asset = "**/api/h5p/assets/native/libraries/H5P.Blanks-1.14/js/blanks.js*"
+        page.route(broken_asset, lambda route: route.abort("failed"))
+        native.get_by_label("Content type", exact=True).select_option("H5P.Blanks 1.14")
+        load_error = native.get_by_role("alert").filter(has_text="H5P authoring code could not load")
+        expect(load_error).to_be_visible(timeout=15000)
+        page.unroute(broken_asset)
+        native.get_by_role("button", name="Reload editor", exact=True).click()
+        expect(native.get_by_label("Content type", exact=True)).to_be_enabled()
+        native.get_by_label("Content type", exact=True).select_option("H5P.Blanks 1.14")
+        recovered_title = native.get_by_role("textbox", name="Title", exact=True)
+        try:
+            expect(recovered_title).to_be_visible(timeout=30000)
+        except AssertionError:
+            # After a failed-asset mount, H5P can re-render the metadata Title
+            # input with a stale label/for pairing (counter advanced) — the field
+            # is present and functional but loses its accessible name. Fall back
+            # to the field the form actually owns.
+            recovered_title = native.locator(".field-name-extraTitle input, .field-name-title input").first
+            expect(recovered_title).to_be_visible(timeout=5000)
+        recovered_title.fill("Recovered native authoring")
+        # The Blanks text block is a contenteditable inside the "Fill in the
+        # missing words" field; the first contenteditable on the page is the
+        # Task description paragraph, which does not satisfy validation.
+        blanks_text = native.locator('.field-name-text [contenteditable="true"], .field-name-question [contenteditable="true"]').last
+        expect(blanks_text).to_be_visible(timeout=5000)
+        blanks_text.fill("SET supports *recovery*.")
+        with page.expect_response(lambda response: response.request.method == "POST" and response.url.endswith("/draft")) as recovered:
+            native.get_by_role("button", name="Save draft", exact=True).first.click()
+        assert recovered.value.status == 200 and recovered.value.json()["activity"]["draftRevision"] == 1
+        expect(recovered_title).to_have_value("Recovered native authoring")
+        assert not errors, "Recovery JavaScript errors: " + json.dumps(errors)
+        assert not failed, "Unexpected recovery HTTP failures: " + json.dumps(failed)
+        print("PASS failed dependency shows a recoverable error; explicit reload restores working authoring and save")
+
     except Exception:
-        page.screenshot(path=str(artifacts / "failure.png"), full_page=True)
+        page.screenshot(path=str(artifacts / "failure.png"), full_page=True, animations="disabled")
         frame_text = []
         for frame in page.frames:
             try:
                 frame_text.append(redact(frame.locator("body").inner_text(timeout=3000))[:12000])
             except Exception:
                 frame_text.append("Frame detached during diagnostic capture")
-        (artifacts / "diagnostics.json").write_text(json.dumps({"errors": errors, "failed": failed, "frames": frame_text}, indent=2))
+        # Only library-code loading metadata, never content parameters, auth headers or state.
+        loading = page.evaluate("""() => {
+            const editor = window.H5PEditor;
+            return { libraries: Object.entries(editor?.libraryCache ?? {}).map(([name, data]) => ({
+                name, fetchingSemantics: data === 0, initialized: editor.libraryLoaded?.[name] === true,
+                missingScripts: (data?.javascript ?? []).filter(src => !window.H5P?.jsLoaded(src))
+            })), scripts: Array.from(document.scripts).map(script => script.src).filter(src => src.includes('/h5p/')) };
+        }""")
+        diagnostic = {"errors": errors, "failed": failed, "pending": list(pending.values()), "transportErrors": transport_errors, "console": console_errors[-30:], "loading": loading, "frames": frame_text}
+        (artifacts / "diagnostics.json").write_text(redact(json.dumps(diagnostic, indent=2)))
         raise
     finally:
         browser.close()
