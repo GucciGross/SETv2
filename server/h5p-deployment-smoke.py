@@ -78,10 +78,18 @@ with sync_playwright() as playwright:
     failed = []
     pending = {}
     transport_errors = []
+    code_requests = {"active": set(), "peak": 0}
     console_errors = []
     def track_request(req):
         if "/h5p/" in req.url:
             pending[id(req)] = {"url": redact(req.url), "resource": req.resource_type}
+    def track_code(req):
+        if "/api/h5p/assets/native/libraries/" in req.url and req.resource_type in ["script", "stylesheet"]:
+            code_requests["active"].add(id(req))
+            code_requests["peak"] = max(code_requests["peak"], len(code_requests["active"]))
+    page.on("request", track_code)
+    page.on("requestfinished", lambda req: code_requests["active"].discard(id(req)))
+    page.on("requestfailed", lambda req: code_requests["active"].discard(id(req)))
     page.on("request", track_request)
     page.on("requestfinished", lambda req: pending.pop(id(req), None))
     page.on("requestfailed", lambda req: (pending.pop(id(req), None), transport_errors.append({"url": redact(req.url), "error": req.failure})) if "/h5p/" in req.url else None)
@@ -243,6 +251,31 @@ with sync_playwright() as playwright:
             assert not errors, label + ": " + json.dumps(errors)
             assert not failed, label + ": " + json.dumps(failed)
             print("PASS composite native authoring: " + label + ", phone viewport and CSS isolation")
+        assert code_requests["peak"] <= 4, f"Native dependency burst exceeded bound: {code_requests['peak']}"
+        print(f"PASS actual dependency requests bounded to {code_requests['peak']} in flight")
+        draft = api("POST", f"/spaces/{space}/h5p/activities", {"title": "Authoring recovery check"})["activity"]
+        page.goto(origin + studio_path + "/" + draft["id"], wait_until="domcontentloaded")
+        expect(native.get_by_label("Content type", exact=True)).to_be_visible()
+        broken_asset = "**/api/h5p/assets/native/libraries/H5P.Blanks-1.14/js/blanks.js*"
+        page.route(broken_asset, lambda route: route.abort("failed"))
+        native.get_by_label("Content type", exact=True).select_option("H5P.Blanks 1.14")
+        load_error = native.get_by_role("alert").filter(has_text="H5P authoring code could not load")
+        expect(load_error).to_be_visible(timeout=15000)
+        page.unroute(broken_asset)
+        native.get_by_role("button", name="Reload editor", exact=True).click()
+        expect(native.get_by_label("Content type", exact=True)).to_be_enabled()
+        native.get_by_label("Content type", exact=True).select_option("H5P.Blanks 1.14")
+        recovered_title = native.get_by_role("textbox", name="Title", exact=True)
+        expect(recovered_title).to_be_visible(timeout=30000)
+        recovered_title.fill("Recovered native authoring")
+        native.locator('[contenteditable="true"]').first.fill("SET supports *recovery*.")
+        with page.expect_response(lambda response: response.request.method == "POST" and response.url.endswith("/draft")) as recovered:
+            native.get_by_role("button", name="Save draft", exact=True).first.click()
+        assert recovered.value.status == 200 and recovered.value.json()["activity"]["draftRevision"] == 1
+        expect(recovered_title).to_have_value("Recovered native authoring")
+        assert not errors, "Recovery JavaScript errors: " + json.dumps(errors)
+        assert not failed, "Unexpected recovery HTTP failures: " + json.dumps(failed)
+        print("PASS failed dependency shows a recoverable error; explicit reload restores working authoring and save")
 
     except Exception:
         page.screenshot(path=str(artifacts / "failure.png"), full_page=True, animations="disabled")

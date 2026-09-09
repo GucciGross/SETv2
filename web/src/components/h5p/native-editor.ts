@@ -1,5 +1,6 @@
 import { installNativeStyleScope } from './native-styles';
 import { installAuthorPreferences } from './native-preferences';
+import { createScriptQueue } from './native-script-queue';
 /** The only adapter to the pinned H5P browser globals. Real H5P widgets and semantics,
  * mounted in SET's document (not H5PEditor.Editor's iframe constructor).
  */
@@ -116,6 +117,57 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     $(document).on('ajaxError.setNativeH5p', (_e: any, xhr: any, options: any) => {
       if (!signal.aborted && String(options.url).startsWith(model.base) && xhr.statusText !== 'abort') onError(xhr.status === 413 ? 'This media exceeds the upload limit.' : 'H5P could not load a field or media. Your changes are still here. Retry the operation; reloading will discard unsaved changes.');
     });
+    // The upstream loader bursts over 100 requests for complex types and only
+    // logs failed dependencies. Bound both CSS and JS; classic scripts retain
+    // insertion order, and the form cannot render before its styles are ready.
+    const codeAbort = new AbortController();
+    const ownedCode = new Set<HTMLElement>();
+    const queue = createScriptQueue(key => new Promise<void>((resolve, reject) => {
+      const css = key.startsWith('css:'), src = codeUrl(key.slice(key.indexOf(':') + 1));
+      const node = css ? document.createElement('link') : document.createElement('script');
+      let timer: ReturnType<typeof setTimeout>;
+      const finish = (error?: Error) => {
+        clearTimeout(timer); node.onload = node.onerror = null;
+        codeAbort.signal.removeEventListener('abort', cancel);
+        if (error) { node.remove(); ownedCode.delete(node); reject(error); } else resolve();
+      };
+      const cancel = () => finish(new DOMException('Editor closed', 'AbortError'));
+      node.className = css ? 'h5peditor-library-style' : 'h5peditor-library-script';
+      if (node instanceof HTMLLinkElement) { node.rel = 'stylesheet'; node.href = src; }
+      else { node.src = src; node.async = false; }
+      node.onload = () => finish();
+      node.onerror = () => finish(new Error('H5P authoring code could not load. Check the connection and reload the authoring tools.'));
+      timer = setTimeout(() => finish(new Error('H5P authoring code timed out. Check the connection and reload the authoring tools.')), 15_000);
+      codeAbort.signal.addEventListener('abort', cancel, { once: true });
+      if (codeAbort.signal.aborted) cancel(); else { ownedCode.add(node); document.head.appendChild(node); }
+    }));
+    const originalLoadJs = E.loadJs, originalLoadCss = E.loadCss;
+    const styleWork: Promise<void>[] = [];
+    let reportedCodeFailure = false;
+    const failedCode = (error: unknown) => {
+      if (signal.aborted || codeAbort.signal.aborted || reportedCodeFailure) return;
+      reportedCodeFailure = true; queue.dispose(); codeAbort.abort();
+      onError(error instanceof Error ? error.message : 'H5P authoring code could not load.');
+    };
+    const loadCss = (src: string) => {
+      if (signal.aborted || codeAbort.signal.aborted || H.cssLoaded(src)) return;
+      const work = queue.load('css:' + src).then(() => {
+        if (signal.aborted || codeAbort.signal.aborted) return;
+        w.H5PIntegration.loadedCss ??= [];
+        if (!H.cssLoaded(src)) w.H5PIntegration.loadedCss.push(src);
+      });
+      styleWork.push(work); void work.catch(failedCode);
+    };
+    const loadJs = (src: string, callback?: () => void) => {
+      if (signal.aborted || codeAbort.signal.aborted) return;
+      void Promise.all(styleWork).then(() => H.jsLoaded(src) ? undefined : queue.load('js:' + src)).then(() => {
+        if (signal.aborted || codeAbort.signal.aborted) return;
+        w.H5PIntegration.loadedJs ??= [];
+        if (!H.jsLoaded(src)) w.H5PIntegration.loadedJs.push(src);
+        callback?.();
+      }).catch(failedCode);
+    };
+    E.loadJs = loadJs; E.loadCss = loadCss;
     // Track constructor-owned global listeners without removing anyone else's subscriptions.
     const subscriptions: [string, any][] = [], originalOn = H.externalDispatcher.on;
     H.externalDispatcher.on = function (type: string, handler: any) { subscriptions.push([type, handler]); return originalOn.call(this, type, handler); };
@@ -123,7 +175,10 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     let selector: any;
     destroy = () => {
       if (active !== identity) return;
-      exitFullscreen?.();
+      exitFullscreen?.(); queue.dispose(); codeAbort.abort();
+      if (E.loadJs === loadJs) E.loadJs = originalLoadJs;
+      if (E.loadCss === loadCss) E.loadCss = originalLoadCss;
+      ownedCode.forEach(node => node.remove()); ownedCode.clear();
       for (const xhr of requests) xhr.abort(); requests.clear();
       $(document).off('.setNativeH5p');
       for (const name of ['input', 'change', 'pointerup']) root.removeEventListener(name, changed, true);
