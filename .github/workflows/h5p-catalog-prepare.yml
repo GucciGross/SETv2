@@ -1,0 +1,62 @@
+name: H5P catalog verification inputs
+on:
+  push:
+    branches: [feat/h5p-native-studio-bundled-catalog]
+    paths: [.github/workflows/h5p-catalog-prepare.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Archive current tracked sources
+        run: |
+          mkdir -p /tmp/h5p-review/packages
+          git archive --format=tar.gz HEAD > /tmp/h5p-review/source.tar.gz
+      - name: Fetch official Hub catalog and complete content-type packages
+        run: |
+          python3 - <<'PY'
+          import json, time, hashlib
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          from urllib.parse import urlencode
+          from urllib.error import HTTPError
+          root=Path('/tmp/h5p-review')
+          endpoint='https://api.h5p.org/v1/content-types/'
+          data=urlencode({'core_api_version':'1.27','platform_name':'SET','platform_version':'2.1','h5p_version':'1.27','disabled':0}).encode()
+          with urlopen(Request(endpoint,data=data),timeout=60) as r: catalog=json.load(r)
+          (root/'hub.json').write_text(json.dumps(catalog,indent=2))
+          report=[]
+          for item in catalog['contentTypes']:
+              name=item['id']
+              try:
+                  try: response=urlopen(Request(endpoint+name,data=data),timeout=90)
+                  except HTTPError as e:
+                      if e.code != 405: raise
+                      response=urlopen(endpoint+name,timeout=90)
+                  with response: package=response.read(96*1024*1024+1)
+                  assert len(package)<=96*1024*1024 and package[:2]==b'PK','Not a bounded ZIP package'
+                  (root/'packages'/f'{name}.h5p').write_bytes(package)
+                  report.append({'machineName':name,'bytes':len(package),'sha256':hashlib.sha256(package).hexdigest()})
+                  print(name,len(package))
+              except Exception as e:
+                  report.append({'machineName':name,'error':str(e)})
+                  print(name,'FAILED',str(e))
+              time.sleep(.2)
+          (root/'report.json').write_text(json.dumps(report,indent=2))
+          print('Hub snapshot:',len(report),'content types;',sum('error' in r for r in report),'errors')
+          PY
+      - name: Package pinned frontend integration for inspection
+        run: |
+          cd /tmp/h5p-review
+          npm pack @lumieducation/h5p-webcomponents@10.0.4 --ignore-scripts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: h5p-catalog-inputs
+          path: /tmp/h5p-review
+          retention-days: 2
