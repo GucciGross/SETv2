@@ -1,0 +1,34 @@
+name: Apply H5P author preference correction
+on:
+  push:
+    branches: [fix/h5p-native-composite-regressions]
+    paths: [.github/workflows/h5p-tour-correction.yml]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/fix/h5p-native-composite-regressions'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/h5p-native-composite-regressions
+      - name: Apply checksummed source patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/GucciGross/SETv2/git/blobs/21be5e40800d53a5bfeb657b18b0e376c525f2c8 --jq .content | base64 --decode | xz --decompress > /tmp/h5p-author-prefs.patch
+          echo '945360f23cea67aa04b4645421c927ec1168446c3f7b05064bf72f1ee253fcda  /tmp/h5p-author-prefs.patch' | sha256sum --check
+          git apply --check /tmp/h5p-author-prefs.patch
+          git apply /tmp/h5p-author-prefs.patch
+      - name: Commit only to feature branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web/src/components/h5p server/h5p-deployment-smoke.py
+          git diff --cached --check
+          git commit -m 'fix(h5p): keep author tour preferences separate from protected learner state'
+          git push origin HEAD:refs/heads/fix/h5p-native-composite-regressions
