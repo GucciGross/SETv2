@@ -1,4 +1,4 @@
-name: H5P native review snapshot
+name: Prepare official H5P bundle
 on:
   push:
     branches: [fix/h5p-native-studio-provisioning]
@@ -6,14 +6,21 @@ on:
 permissions:
   contents: read
 jobs:
-  snapshot:
+  bundle:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - run: git archive --format=tar.gz HEAD > /tmp/set-h5p-native.tar.gz
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+        working-directory: server
+      - name: Resolve official Hub packages and verify dependency closure
+        run: node scripts/update-h5p-bundle.mjs
+        working-directory: server
       - uses: actions/upload-artifact@v4
         with:
-          name: set-h5p-native-sources
-          path: /tmp/set-h5p-native.tar.gz
-          retention-days: 1
+          name: set-official-h5p-bundle
+          path: server/h5p
+          retention-days: 3
