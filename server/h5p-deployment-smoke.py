@@ -286,7 +286,7 @@ with sync_playwright() as playwright:
         # The Blanks text block is a contenteditable inside the "Fill in the
         # missing words" field; the first contenteditable on the page is the
         # Task description paragraph, which does not satisfy validation.
-        blanks_text = native.locator(".field-name-text .h5p-editor-paragraph-content[contenteditable=\"true\"], .field-name-text [contenteditable=\"true\"]").first
+        blanks_text = native.locator('.field-name-text [contenteditable="true"], .field-name-question [contenteditable="true"]').last
         expect(blanks_text).to_be_visible(timeout=5000)
         blanks_text.fill("SET supports *recovery*.")
         with page.expect_response(lambda response: response.request.method == "POST" and response.url.endswith("/draft")) as recovered:
