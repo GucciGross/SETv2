@@ -39,15 +39,25 @@ export async function copilotKitRoutes(app: FastifyInstance) {
         body = Readable.toWeb(req.raw) as ReadableStream;
       }
 
+      const abort = new AbortController();
+      let output: Readable | undefined;
+      const onClose = () => {
+        if (!reply.raw.writableEnded) { abort.abort(); output?.destroy(); }
+      };
+      reply.raw.once('close', onClose);
       try {
-        const res = await handler(new Request(url, { method: req.method, headers, body: body as any, duplex: body ? 'half' : undefined } as RequestInit));
+        const res = await handler(new Request(url, { method: req.method, headers, signal: abort.signal, body: body as any, duplex: body ? 'half' : undefined } as RequestInit));
+        if (abort.signal.aborted) { await res.body?.cancel(); return; }
         reply.raw.writeHead(res.status, Object.fromEntries(res.headers.entries()));
         if (res.body) {
-          Readable.fromWeb(res.body as any).pipe(reply.raw);
+          output = Readable.fromWeb(res.body as any);
+          output.on('error', () => { abort.abort(); reply.raw.destroy(); });
+          output.pipe(reply.raw);
         } else {
           reply.raw.end();
         }
       } catch (e: any) {
+        if (abort.signal.aborted) return;
         req.log.error(e, '[copilotkit] bridge failure');
         if (!reply.raw.headersSent) reply.raw.writeHead(502, { 'content-type': 'application/json' });
         reply.raw.end(JSON.stringify({ error: 'CopilotKit bridge failure', message: e?.message }));

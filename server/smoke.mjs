@@ -22,6 +22,12 @@ check('spaces list', spaces.length >= 1, spaces.map(s => s.name).join(', '));
 const team = spaces.find(s => s.name === 'Robotics Lab');
 check('demo team space exists', !!team);
 
+// Approval endpoints fail closed for stale clients and unknown calls.
+const unknownRun = '00000000-0000-4000-8000-000000000999';
+check('approval requires an exact tool call', (await call('POST', `/agent/runs/${unknownRun}/approve`, { decision: 'approve' })).status === 400);
+check('unknown approval cannot execute', (await call('POST', `/agent/runs/${unknownRun}/approve`, { callId: 'missing', decision: 'approve' })).status === 404);
+check('unknown approval receipt is private', (await call('GET', `/agent/runs/${unknownRun}/approvals/missing`)).status === 404);
+
 // 2. pages + tree
 const pages = (await call('GET', `/spaces/${team.id}/pages`)).json.pages;
 check('demo pages seeded', pages.length >= 7, `${pages.length} pages`);

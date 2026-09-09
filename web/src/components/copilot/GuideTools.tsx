@@ -5,34 +5,7 @@ import { useFrontendTool } from '@copilotkit/react-core/v2';
 import { startTour } from '../../lib/tour';
 import { editorAvailable, getSelectionText, insertMarkdown } from '../../lib/editorBridge';
 import { useApp } from '../../stores/app';
-
-/** Route shapes the app actually serves — anything else 40s as a full-page
- * error, so the guide's navigate tool must only ever land on these. */
-const KNOWN_ROUTES = [
-  /^\/app\/?$/,
-  /^\/app\/space\/[^/]+\/?$/,
-  /^\/app\/space\/[^/]+\/(pages|databases|notebooks|research|graph|models|paths|library|coding|terminal|docs|tasks|activity|canvas|settings)$/,
-  /^\/app\/space\/[^/]+\/(page|db|notebook|model)\/[^/]+$/,
-  /^\/app\/space\/[^/]+\/notebook\/[^/]+\/deck\/[^/]+$/,
-];
-
-/** Resolve the guide's path to a real route: accepts the shorthand the model
- * tends to produce ("/app/notebooks" without the space segment) and rejects
- * anything unknown with a helpful hint instead of navigating to a 404. */
-function resolveRoute(path: string, spaceId?: string | null): { to?: string; error?: string } {
-  if (!path.startsWith('/app')) return { error: 'path must start with /app' };
-  let to = path.replace(/\/+$/, '') || '/app';
-  // shorthand without the space segment: /app/notebooks → /app/space/<id>/notebooks
-  const short = to.match(/^\/app\/(pages|databases|notebooks|research|graph|models|paths|library|coding|terminal|docs|tasks|activity|canvas|settings)$/);
-  if (short) {
-    if (!spaceId) return { error: 'no current workspace to resolve the route against' };
-    to = `/app/space/${spaceId}/${short[1]}`;
-  }
-  if (!KNOWN_ROUTES.some((re) => re.test(to))) {
-    return { error: `unknown route "${path}" — valid destinations are /app/space/<id>/… (pages, notebooks, databases, graph, tasks, settings, …) or /app/space/<id>/page/<pageId>` };
-  }
-  return { to };
-}
+import { resolveCopilotRoute } from '../../lib/copilotRoutes';
 
 /**
  * Frontend tools for the on-screen guide agent (set_guide). These execute in
@@ -112,7 +85,7 @@ export function GuideTools() {
         path: z.string().describe('App route beginning with /app'),
       }),
       handler: async ({ path }) => {
-        const { to, error } = resolveRoute(path, spaceId);
+        const { to, error } = resolveCopilotRoute(path, spaceId);
         if (!to) return { navigated: false, error };
         navigate(to);
         return { navigated: true };

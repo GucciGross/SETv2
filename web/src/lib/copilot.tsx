@@ -18,9 +18,11 @@ export const GUIDE_AGENT = 'set_guide';
 
 export function SetCopilotProvider({ children }: { children: React.ReactNode }) {
   const currentSpaceId = useApp((s) => s.currentSpaceId);
+  const userId = useApp((s) => s.user?.id);
 
   return (
     <CopilotKit
+      key={`${userId ?? "anonymous"}:${currentSpaceId ?? "none"}`}
       runtimeUrl={COPILOTKIT_RUNTIME_URL}
       headers={() => {
         const token = getToken();
@@ -43,6 +45,8 @@ export function SetCopilotProvider({ children }: { children: React.ReactNode }) 
 }
 
 const VIEW_NAMES: [RegExp, string][] = [
+  [/\/h5p\/[^/]+/, 'H5P activity editor'],
+  [/\/h5p/, 'H5P Studio'],
   [/\/page\//, 'Page editor'],
   [/\/pages/, 'Pages list'],
   [/\/databases/, 'Databases list'],
@@ -84,6 +88,7 @@ export function useSetScreenContext() {
     notebookId: params.nbId ?? null,
     databaseId: params.dbId ?? null,
     modelId: params.modelId ?? null,
+    activityId: params.activityId ?? null,
   });
 
   useAgentContext({

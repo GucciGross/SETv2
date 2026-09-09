@@ -7,6 +7,7 @@ import { A2UIRenderer, type A2UIComponent } from '../A2UI';
 import { getToken } from '../../lib/api';
 import { askAgent, GUIDE_AGENT } from '../../lib/copilot';
 import { useApp } from '../../stores/app';
+import { parseToolResult, toolFailure } from '../../lib/approvals';
 
 /**
  * CopilotKit tool-call rendering for the SET agent: rich A2UI cards inline in
@@ -14,29 +15,17 @@ import { useApp } from '../../stores/app';
  * as a compact status line.
  */
 
-function parseResult(result: string | undefined): any {
-  if (result === undefined || result === null) return undefined;
-  if (typeof result !== 'string') return result;
-  try {
-    return JSON.parse(result);
-  } catch {
-    return result;
-  }
-}
+const parseResult = parseToolResult;
 
-function RunState({ result, children }: { result?: any; children: React.ReactNode }) {
+/** Never show success copy while the tool is pending, failed, or was not approved. */
+function RunState({ result, children }: { result?: unknown; children: React.ReactNode }) {
   const busy = result === undefined || result === null;
-  return (
-    <div className={`fadein my-1.5 border rounded-lg overflow-hidden ${busy ? 'border-set-border bg-set-panel2/60' : 'border-set-border bg-set-panel2'}`}>
-      {children}
-      {busy && (
-        <div className="px-2.5 py-1.5 text-[10px] text-set-dim flex items-center gap-1.5 border-t border-set-border/60">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-violet-300 animate-pulse" />
-          working…
-        </div>
-      )}
-    </div>
-  );
+  const failure = toolFailure(result);
+  return <div className="fadein my-1.5 min-w-0 border border-set-border rounded-lg overflow-hidden bg-set-panel2">
+    {busy ? <div role="status" className="p-2.5 text-xs text-set-dim">Working…</div>
+      : failure ? <div role="status" className="p-2.5 text-xs text-red-300 break-words">{failure}</div>
+        : children}
+  </div>;
 }
 
 export function SetToolRenderers() {
@@ -241,6 +230,26 @@ export function SetToolRenderers() {
     render: captureRender,
   });
 
+  const h5pRender = ({ result }: { result?: unknown }) => {
+    const res = parseResult(result);
+    const activity = res?.activity;
+    const ready = Number(activity?.draftRevision) > 0;
+    const published = activity?.publishedRevision === activity?.draftRevision && ready;
+    const canOpen = activity?.spaceId === spaceId && typeof activity?.id === 'string' && /^[0-9a-f-]{36}$/i.test(activity.id);
+    return <RunState result={result}>
+      <div className="p-3 min-w-0">
+        <div className="text-[11px] text-set-dim">H5P Studio · {published ? 'Published' : ready ? 'Draft saved' : 'Draft created'}</div>
+        <div className="mt-1 text-sm font-medium break-words">{activity?.title ?? 'Learning activity'}</div>
+        <p className="mt-1 text-xs text-set-dim">{published ? 'The published version is available in its workspace placements.' : ready ? 'Ready to preview and review before publishing.' : 'This is an empty draft, not a playable activity yet. Add and save content in Studio.'}</p>
+        {canOpen && <button className="set-btn mt-2 min-h-[44px] text-xs inline-flex items-center gap-2"
+          onClick={() => navigate(`/app/space/${spaceId}/h5p/${activity.id}`)}>Open in H5P Studio <ArrowRight size={14} aria-hidden /></button>}
+      </div>
+    </RunState>;
+  };
+  useRenderTool({ name: 'h5p_create_draft', parameters: z.record(z.string(), z.unknown()), render: h5pRender });
+  useRenderTool({ name: 'h5p_save_draft', parameters: z.record(z.string(), z.unknown()), render: h5pRender });
+  useRenderTool({ name: 'h5p_publish_activity', parameters: z.record(z.string(), z.unknown()), render: h5pRender });
+
   // everything else → transparent activity line: what the agent ran, with
   // what inputs, and what came back (details expandable)
   useDefaultRenderTool({
@@ -274,11 +283,12 @@ function summarizeArgs(parameters: unknown): string {
  */
 function ToolActivity({ name, args, result, busy }: { name: string; args: string; result: any; busy: boolean }) {
   const [open, setOpen] = useState(false);
+  const failure = toolFailure(result);
   return (
     <div className={`fadein my-1 border rounded-md text-[11px] ${busy ? 'border-set-border bg-set-panel2/60' : 'border-set-border/60 bg-set-panel2/40'}`}>
       <div className="flex items-center gap-1.5 px-2 py-1.5">
         <Wrench size={10} className="text-set-dim shrink-0" />
-        <span className="font-mono text-set-text/90">{name}</span>
+        <span className="font-mono text-set-text/90 break-all">{name}</span>
         {args && <span className="text-set-dim truncate flex-1">{args}</span>}
         {busy ? (
           <span className="text-violet-200 shrink-0 ml-auto flex items-center gap-1.5">
@@ -293,6 +303,7 @@ function ToolActivity({ name, args, result, busy }: { name: string; args: string
           </button>
         )}
       </div>
+      {failure && <p role="status" className="px-2 pb-2 text-xs text-red-300 break-words">{failure}</p>}
       {open && result !== undefined && (
         <pre className="max-h-40 overflow-auto border-t border-set-border/60 px-2 py-1.5 text-[10px] text-set-dim whitespace-pre-wrap break-all">
           {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}

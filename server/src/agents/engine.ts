@@ -1,6 +1,8 @@
 import { one, q } from '../db.js';
 import { getProvider, chatCompletionStream, ensureBootstrapProvider, type ChatMessage, type ToolDef } from '../llm/router.js';
 import { getTool, TOOL_DEFS } from './tools.js';
+import { getRole } from '../lib/http.js';
+import { approvalGates, approvalStopResult, type ApprovalOutcome } from './approvals.js';
 
 /**
  * Shared agent engine used by every entry point:
@@ -31,23 +33,6 @@ export interface AgentContext {
   view?: string;
   /** Free-form description of what the user is looking at (CopilotKit useAgentContext entries). */
   screen?: string;
-}
-
-export interface PendingApproval {
-  resolve: (decision: 'approve' | 'reject') => void;
-  tool: string;
-  args: any;
-}
-
-// In-memory approval gates shared by all entry points; resolved via the
-// REST endpoint POST /agent/runs/:id/approve (same process).
-const pending = new Map<string, PendingApproval>();
-
-export function resolveApproval(runId: string, decision: 'approve' | 'reject'): boolean {
-  const p = pending.get(runId);
-  if (!p) return false;
-  p.resolve(decision);
-  return true;
 }
 
 export type EmitFn = (type: string, payload?: any) => void;
@@ -154,7 +139,8 @@ export function sanitizeMessages(input: ChatMessage[]): ChatMessage[] {
   return out;
 }
 
-export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {  const { spaceId, userId, message, emit, signal } = opts;
+export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {
+  const { spaceId, userId, message, emit, signal } = opts;
   console.log(`[engine] runAgentLoop space=${spaceId} source=${opts.source ?? 'api'} msg="${message.slice(0, 60)}"`);
   const historyMode = opts.history ?? 'db';
   await ensureBootstrapProvider(spaceId);
@@ -162,10 +148,10 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {  
   telemetry.track(`agent_run_${opts.source ?? 'api'}`);
 
   // Thread continuity. CopilotKit clients send their own thread ids (not our
-  // uuids); runs store client_thread_id for continuity. Legacy callers pass a
+  // uuids, or UUIDs in newer clients); runs store client_thread_id for continuity. Legacy callers pass a
   // previous run's uuid — matched by id.
   const isUuid = (v?: string) => !!v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
-  const clientThreadId = historyMode === 'db' && opts.threadId && !isUuid(opts.threadId) ? opts.threadId : null;
+  const clientThreadId = historyMode === 'db' && opts.threadId && (opts.source === 'copilot' || !isUuid(opts.threadId)) ? opts.threadId : null;
   let thread: ChatMessage[] = [];
   let run = await one<any>(
     `INSERT INTO agent_runs (space_id, user_id, thread, status, client_thread_id) VALUES ($1, $2, $3, 'running', $4) RETURNING *`,
@@ -174,8 +160,8 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {  
   if (historyMode === 'db' && opts.threadId) {
     const prev = clientThreadId
       ? await one<any>(
-          `SELECT thread FROM agent_runs WHERE client_thread_id = $1 AND space_id = $2 AND user_id = $3 ORDER BY created_at DESC LIMIT 1`,
-          [clientThreadId, spaceId, userId]
+          `SELECT thread FROM agent_runs WHERE client_thread_id = $1 AND space_id = $2 AND user_id = $3 AND id <> $4 ORDER BY created_at DESC LIMIT 1`,
+          [clientThreadId, spaceId, userId, run.id]
         )
       : await one<any>(`SELECT thread FROM agent_runs WHERE id = $1 AND space_id = $2 AND user_id = $3`, [opts.threadId, spaceId, userId]);
     if (prev?.thread) {
@@ -192,17 +178,18 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {  
 
   const provider = await getProvider(spaceId);
   const settings = await one<{ data: any }>(`SELECT data FROM settings WHERE space_id = $1`, [spaceId]);
-  const approvals = opts.requireApprovals ?? settings?.data?.agentApprovals ?? false;
+  // A request may strengthen, but never disable, the workspace approval policy.
+  const approvals = opts.requireApprovals === true || settings?.data?.agentApprovals === true;
 
   let contextBlock = '';
   if (opts.context?.view) contextBlock += `Current screen: ${opts.context.view}\n\n`;
   if (opts.context?.screen) contextBlock += `What the user is looking at:\n${opts.context.screen.slice(0, 4000)}\n\n`;
   if (isUuid(opts.context?.pageId)) {
-    const page = await one<any>(`SELECT title, markdown FROM pages WHERE id = $1`, [opts.context!.pageId]);
+    const page = await one<any>(`SELECT title, markdown FROM pages WHERE id = $1 AND space_id = $2 AND deleted_at IS NULL`, [opts.context!.pageId, spaceId]);
     if (page) contextBlock += `Current page: "${page.title}"\n\n${page.markdown.slice(0, 4000)}\n\n`;
   }
   if (isUuid(opts.context?.notebookId)) {
-    const nb = await one<any>(`SELECT title FROM notebooks WHERE id = $1`, [opts.context!.notebookId]);
+    const nb = await one<any>(`SELECT id, title FROM notebooks WHERE id = $1 AND space_id = $2`, [opts.context!.notebookId, spaceId]);
     if (nb) contextBlock += `Current notebook: "${nb.title}" (id ${nb.id}) — use search_knowledge with this notebookId.\n\n`;
   }
   if (opts.context?.selection) contextBlock += `User selection: "${opts.context.selection.slice(0, 1000)}"\n\n`;
@@ -238,12 +225,17 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {  
   try {
     const MAX_STEPS = 16;
     let clientToolCalled = false;
+    let approvalStop: ApprovalOutcome | undefined;
 
     for (let step = 0; step < MAX_STEPS && !clientToolCalled; step++) {
       if (signal?.aborted) break;
       const { getActiveSkillPrompt } = await import('../skills/routes.js');
       const skillPrompt = await getActiveSkillPrompt(spaceId);
-      const base = opts.systemPrompt ?? BASE_SYSTEM_PROMPT;
+      const base = `${opts.systemPrompt ?? BASE_SYSTEM_PROMPT}
+Workflow integrity:
+- A pending approval is not a rejection. Only claim an action succeeded after its tool result confirms it.
+- When an action is rejected, expires, or is cancelled, stop that request. Do not use another tool or insert markdown to bypass it.
+- For H5P requests, inspect installed content types and their exact semantics before saving. An empty Studio draft is not a playable game or lesson. Report the actual saved/published state and its Studio location; preserve existing sources and assessments.`;
       const systemContent = skillPrompt ? `${base}\n\n# Active Skills\n${skillPrompt}` : base;
       const messages: ChatMessage[] = [
         { role: 'system', content: systemContent },
@@ -272,6 +264,9 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {  
         break;
       }
 
+      // Providers may reuse call_0 across steps/turns. Give each executable call a
+      // unique protocol id so old chat cards/results cannot bind to a later action.
+      for (const call of result.tool_calls) call.id = `set_${crypto.randomUUID().replaceAll('-', '')}`;
       thread.push({
         role: 'assistant',
         content: result.content,
@@ -287,6 +282,15 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {  
           /* empty args */
         }
         emit('TOOL_CALL_START', { callId: tc.id, name: tc.function.name, args });
+
+        // A declined/expired/cancelled gate stops the entire batch, including frontend writes.
+        if (approvalStop || signal?.aborted) {
+          const res = approvalStopResult(approvalStop ?? 'cancelled', true);
+          emit('TOOL_CALL_END', { callId: tc.id, name: tc.function.name, ok: false, result: res });
+          thread.push({ role: 'tool', tool_call_id: tc.id, name: tc.function.name, content: JSON.stringify(res) });
+          toolLog.push({ callId: tc.id, name: tc.function.name, ok: false, result: res });
+          continue;
+        }
 
         // Client-side (frontend) tool: CopilotKit executes it in the browser and
         // re-runs with the result appended — end this run after emitting.
@@ -308,43 +312,41 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {  
           continue;
         }
 
-        // Human-in-the-loop gate for write tools
+        // Human decisions are scoped to the exact call, not merely a run.
         if (tool.write && approvals) {
-          await q(`UPDATE agent_runs SET status = 'awaiting_approval' WHERE id = $1`, [run.id]);
-          emit('CUSTOM', {
-            subtype: 'approval_request',
-            runId: run.id,
-            callId: tc.id,
-            tool: tc.function.name,
-            args,
+          const requestedAt = Date.now();
+          const audit: any = { callId: tc.id, name: tc.function.name, approval: { status: 'pending', requestedAt } };
+          toolLog.push(audit);
+          await persist('awaiting_approval');
+          const status = await approvalGates.request({
+            runId: run.id, threadId, spaceId, callId: tc.id, tool: tc.function.name, args,
+          }, {
+            signal,
+            onRequest: (request) => emit('CUSTOM', { subtype: 'approval_request', ...request }),
           });
-          const decision = await new Promise<'approve' | 'reject'>((resolve) => {
-            const timer = setTimeout(() => {
-              pending.delete(run.id);
-              resolve('reject');
-            }, 180_000);
-            pending.set(run.id, {
-              resolve: (d) => {
-                clearTimeout(timer);
-                pending.delete(run.id);
-                resolve(d);
-              },
-              tool: tc.function.name,
-              args,
-            });
-          });
-          if (decision === 'reject') {
-            const res = { rejected: true, note: 'The user rejected this action.' };
+          audit.approval = { status, requestedAt, resolvedAt: Date.now() };
+          emit('CUSTOM', { subtype: 'approval_resolved', runId: run.id, threadId, spaceId, callId: tc.id, status });
+          if (status !== 'approved') {
+            approvalStop = status;
+            const res = approvalStopResult(status);
             emit('TOOL_CALL_END', { callId: tc.id, name: tc.function.name, ok: false, result: res });
-            thread.push({ role: 'tool', tool_call_id: tc.id, name: tc.function.name, content: JSON.stringify(res) } as ChatMessage);
-            toolLog.push({ name: tc.function.name, args, rejected: true });
-            await q(`UPDATE agent_runs SET status = 'running' WHERE id = $1`, [run.id]);
+            thread.push({ role: 'tool', tool_call_id: tc.id, name: tc.function.name, content: JSON.stringify(res) });
+            audit.result = res;
             continue;
           }
-          await q(`UPDATE agent_runs SET status = 'running' WHERE id = $1`, [run.id]);
+          await persist('running');
         }
 
         try {
+          if (signal?.aborted) { approvalStop = 'cancelled'; throw new Error('Run cancelled before execution'); }
+          // Re-check permissions after the human has had time to review.
+          if (tool.write) {
+            const role = await getRole(userId, spaceId);
+            if (!role || role === 'viewer') {
+              approvalStop = 'cancelled';
+              throw new Error('This action requires current editor access to the workspace. No change was made; request stopped.');
+            }
+          }
           const out = await tool.run(args, { spaceId, userId, provider });
           // The emitted event must stay small: strip inline screenshots (the
           // full result with data-URL still reaches the model via the thread).
@@ -361,6 +363,20 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {  
           thread.push({ role: 'tool', tool_call_id: tc.id, name: tc.function.name, content: JSON.stringify(res) } as ChatMessage);
           toolLog.push({ name: tc.function.name, args, ok: false, result: res });
         }
+      }
+      if (approvalStop) {
+        // End here: a model must not route around a human decision with a different tool.
+        const content = approvalStop === 'rejected'
+          ? 'Action rejected. I stopped this request without making that change.'
+          : approvalStop === 'expired'
+            ? 'The approval request expired without a decision. I stopped without making that change. Ask me again to create a new approval request.'
+            : 'Request cancelled. No further actions were taken.';
+        const messageId = crypto.randomUUID();
+        emit('TEXT_MESSAGE_START', { messageId });
+        emit('TEXT_MESSAGE_CONTENT', { messageId, delta: content });
+        emit('TEXT_MESSAGE_END', { messageId });
+        thread.push({ role: 'assistant', content });
+        break;
       }
       // loop continues: model sees tool results and may stream more text or call more tools
     }
