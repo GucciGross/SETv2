@@ -27,8 +27,14 @@ function StudioLibrary({ spaceId }: { spaceId: string }) {
   }, [spaceId, search, filter, offset, refresh]);
   useEffect(() => {
     if (tab !== 'types') return;
-    let active = true;
-    api.get(`/spaces/${spaceId}/h5p/catalog`).then((r) => { if (active) setCatalog(r.catalog.libraries ?? []); }).catch((e) => { if (active) setError(e.message); });
+    let active = true, attempts = 0;
+    const load = () => api.get(`/spaces/${spaceId}/h5p/catalog`).then((r) => {
+      const libraries: unknown[] = r.catalog.libraries ?? [];
+      // An empty catalog means the Hub was unreachable; the server refetches it on every request.
+      if (!libraries.length && attempts++ < 20) { setTimeout(load, 4000); return; }
+      if (active) setCatalog(libraries);
+    }).catch((e) => { if (active) setError(e.message); });
+    load();
     return () => { active = false; };
   }, [spaceId, tab, refresh]);
   const act = async (operation: () => Promise<void>) => { setBusy(true); setError(''); try { await operation(); } catch (reason: any) { setError(reason.message); } finally { setBusy(false); } };
