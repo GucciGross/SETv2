@@ -83,15 +83,31 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     const identity = Symbol(); active = identity;
     installNativeStyleScope();
     configure(model);
-    for (const path of model.styles) {
-      const url = codeUrl(path);
-      if (!styles.has(url)) { const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = url; document.head.appendChild(link); styles.add(url); }
+    // Bound the initial style burst through the same queue discipline the
+    // per-library loaders use; sequential await keeps insertion order.
+    {
+      const bootstrap = createScriptQueue(url => new Promise<void>((resolve, reject) => {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet'; link.href = url;
+        link.onload = () => resolve();
+        link.onerror = () => { link.remove(); reject(new Error('An H5P editor asset failed to load. Your saved draft is unchanged.')); };
+        document.head.appendChild(link);
+      }));
+      try {
+        for (const path of model.styles) {
+          const url = codeUrl(path);
+          if (!styles.has(url)) { await bootstrap.load(url); styles.add(url); }
+        }
+      } finally { bootstrap.dispose(); }
     }
     for (const src of model.scripts) { await loadScript(src); if (signal.aborted) throw new DOMException('Editor closed', 'AbortError'); }
     configure(model); // h5peditor.js initializes its globals once while bootstrapping.
     const w = globals(), H = w.H5P, E = w.H5PEditor, $ = H.jQuery;
     H.$body = $(document.body); E.$ = $;
-    E.libraryCache = {}; E.renderableCommonFields = {};
+    // Reset both halves of the library-load state: a remount (Reload editor)
+    // re-requests libraries; leaving libraryLoaded populated against an empty
+    // libraryCache makes H5PEditor skip re-running its form builders.
+    E.libraryCache = {}; E.renderableCommonFields = {}; E.libraryLoaded = {};
     const originalLayout = [document.documentElement.style.height, document.body.style.height, document.documentElement.style.maxWidth, document.body.style.maxWidth];
     const portals = new Set<HTMLElement>(), requests = new Set<any>();
     const tagPortals = () => {
@@ -122,7 +138,16 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     // insertion order, and the form cannot render before its styles are ready.
     const codeAbort = new AbortController();
     const ownedCode = new Set<HTMLElement>();
+    // H5P library JS is order-sensitive (widgets assign into namespaces their
+    // dependencies create), so JS must load strictly sequentially. CSS keeps
+    // concurrency 4 — stylesheets have no execution order dependency here.
+    const jsQueue = createScriptQueue(key => new Promise<void>((resolve, reject) => {
+      loadNode(key, resolve, reject);
+    }), 1);
     const queue = createScriptQueue(key => new Promise<void>((resolve, reject) => {
+      loadNode(key, resolve, reject);
+    }));
+    function loadNode(key: string, resolve: () => void, reject: (error: Error) => void) {
       const css = key.startsWith('css:'), src = codeUrl(key.slice(key.indexOf(':') + 1));
       const node = css ? document.createElement('link') : document.createElement('script');
       let timer: ReturnType<typeof setTimeout>;
@@ -140,7 +165,7 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
       timer = setTimeout(() => finish(new Error('H5P authoring code timed out. Check the connection and reload the authoring tools.')), 15_000);
       codeAbort.signal.addEventListener('abort', cancel, { once: true });
       if (codeAbort.signal.aborted) cancel(); else { ownedCode.add(node); document.head.appendChild(node); }
-    }));
+    }
     const originalLoadJs = E.loadJs, originalLoadCss = E.loadCss;
     const styleWork: Promise<void>[] = [];
     let reportedCodeFailure = false;
@@ -160,7 +185,7 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     };
     const loadJs = (src: string, callback?: () => void) => {
       if (signal.aborted || codeAbort.signal.aborted) return;
-      void Promise.all(styleWork).then(() => H.jsLoaded(src) ? undefined : queue.load('js:' + src)).then(() => {
+      void Promise.all(styleWork).then(() => H.jsLoaded(src) ? undefined : jsQueue.load('js:' + src)).then(() => {
         if (signal.aborted || codeAbort.signal.aborted) return;
         w.H5PIntegration.loadedJs ??= [];
         if (!H.jsLoaded(src)) w.H5PIntegration.loadedJs.push(src);
@@ -168,6 +193,31 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
       }).catch(failedCode);
     };
     E.loadJs = loadJs; E.loadCss = loadCss;
+    // H5PEditor.libraryRequested appends every dependency <link> at once,
+    // bypassing loadCss — the exact burst the loader bound was meant to stop.
+    // Route its CSS through the queue; JS already flows through loadJs.
+    const originalLibraryRequested = E.libraryRequested;
+    const boundedLibraryRequested = function (libraryName: string, callback: (...args: any[]) => void) {
+      const libraryData = E.libraryCache[libraryName];
+      if (libraryData && Array.isArray(libraryData.css) && libraryData.css.length) {
+        Promise.all(libraryData.css.map((path: string) => H.cssLoaded(path) ? undefined : queue.load('css:' + path).then(() => {
+          w.H5PIntegration.loadedCss ??= [];
+          if (!H.cssLoaded(path)) w.H5PIntegration.loadedCss.push(path);
+        }))).then(() => {
+          // Hand the original loader an empty CSS list; links are already in the
+          // document and H5PIntegration.loadedCss records them. Do not mutate the
+          // cached library data itself — a reload must be able to requeue.
+          const cached = E.libraryCache[libraryName];
+          const savedCss = cached.css;
+          cached.css = [];
+          try { originalLibraryRequested.call(E, libraryName, callback); }
+          finally { cached.css = savedCss; }
+        }, failedCode);
+      } else {
+        originalLibraryRequested.call(E, libraryName, callback);
+      }
+    };
+    E.libraryRequested = boundedLibraryRequested;
     // Track constructor-owned global listeners without removing anyone else's subscriptions.
     const subscriptions: [string, any][] = [], originalOn = H.externalDispatcher.on;
     H.externalDispatcher.on = function (type: string, handler: any) { subscriptions.push([type, handler]); return originalOn.call(this, type, handler); };
@@ -175,9 +225,10 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     let selector: any;
     destroy = () => {
       if (active !== identity) return;
-      exitFullscreen?.(); queue.dispose(); codeAbort.abort();
+      exitFullscreen?.(); queue.dispose(); jsQueue.dispose(); codeAbort.abort();
       if (E.loadJs === loadJs) E.loadJs = originalLoadJs;
       if (E.loadCss === loadCss) E.loadCss = originalLoadCss;
+      if (E.libraryRequested === boundedLibraryRequested) E.libraryRequested = originalLibraryRequested;
       ownedCode.forEach(node => node.remove()); ownedCode.clear();
       for (const xhr of requests) xhr.abort(); requests.clear();
       $(document).off('.setNativeH5p');
