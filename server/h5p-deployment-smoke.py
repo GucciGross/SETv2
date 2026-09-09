@@ -89,7 +89,7 @@ with sync_playwright() as playwright:
             code_requests["active"].add(id(req))
             peak = max(code_requests["peak"], len(code_requests["active"]))
             code_requests["peak"] = peak
-            if page.url.startswith(origin + studio_path):
+            if req.frame == page.main_frame:
                 editor_peak["value"] = max(editor_peak["value"], len(code_requests["active"]))
     page.on("request", track_code)
     page.on("requestfinished", lambda req: code_requests["active"].discard(id(req)))
