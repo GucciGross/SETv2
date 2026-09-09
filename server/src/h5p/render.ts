@@ -17,7 +17,14 @@ function bridge(grant: Grant): string {
 
 /** Native H5PEditor, not a replacement form or JSON textarea. Kept inside its own document. */
 export function editorDocument(model: IEditorModel, grant: Grant, baseUrl: string): string {
-  return `${head(model, 'H5P Studio')}<body><form id="studio-form"><div id="native-editor" class="h5p-editor"></div>
+  // h5peditor.js initializes the *inner* editor by copying its parent's globals.
+  // Loading it in this outer iframe would overwrite our integration with SET's
+  // unrelated parent window. Keep the full asset list only in editor.assets.
+  const editorRoot = model.urlGenerator.editorLibraryFiles().replace(/\/$/, '') + '/';
+  const shell = { ...model, scripts: model.scripts.filter((src) => !src.startsWith(editorRoot)
+    || /\/scripts\/h5peditor-editor\.js(?:[?#]|$)/.test(src)
+    || /\/language\/[^/]+\.js(?:[?#]|$)/.test(src)) };
+  return `${head(shell, 'H5P Studio')}<body><form id="studio-form"><div id="native-editor" class="h5p-editor"></div>
     <div class="studio-bar"><button id="studio-save" type="submit">Save draft</button><span id="studio-status" role="status" aria-live="polite">Choose a content type to begin.</span></div></form>
     <script>${bridge(grant)}
     (function($){

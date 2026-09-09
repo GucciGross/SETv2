@@ -163,9 +163,33 @@ with sync_playwright() as playwright:
         assert not failed, "Failed H5P requests: " + json.dumps(failed)
         assert not errors, "Browser JavaScript errors: " + json.dumps(errors)
         print("PASS multi-megabyte package import through Nginx, native media rendering and phone preview")
+        page.set_viewport_size({"width": 1440, "height": 1000})
+        page.goto(origin + studio_path + "/" + activity, wait_until="domcontentloaded")
+        page.get_by_role("button", name="Published activity", exact=True).click()
+        expect(player.locator(".h5p-content")).to_contain_text("SET uses")
+        api("POST", f"/h5p/activities/{activity}/unpublish", {"expectedRevision": 2})
+        page.locator('iframe[title^="Play "]').evaluate("frame => frame.contentWindow.location.reload()")
+        error_panel = page.get_by_role("alert").filter(has=page.get_by_role("button", name="Reopen activity", exact=True))
+        expect(error_panel).to_be_visible(timeout=10000)
+        assert any(item["status"] in [403, 404] for item in failed), "A revoked grant must be denied"
+        failed.clear()
+        api("POST", f"/h5p/activities/{activity}/publish", {"expectedRevision": 2})
+        page.get_by_role("button", name="Reopen activity", exact=True).click()
+        expect(player.locator(".h5p-content")).to_contain_text("SET uses")
+        expect(error_panel).not_to_be_visible()
+        expect(page.get_by_text("Loading interactive content…", exact=True)).not_to_be_visible()
+        assert not errors, "Browser JavaScript errors: " + json.dumps(errors)
+        assert not failed, "Failed recovery requests: " + json.dumps(failed)
+        print("PASS revoked-launch error is visible in Studio; reopening obtains a fresh authorized player")
     except Exception:
         page.screenshot(path=str(artifacts / "failure.png"), full_page=True)
-        (artifacts / "diagnostics.json").write_text(json.dumps({"errors": errors, "failed": failed, "frames": [redact(frame.locator("body").inner_text(timeout=3000))[:12000] for frame in page.frames]}, indent=2))
+        frame_text = []
+        for frame in page.frames:
+            try:
+                frame_text.append(redact(frame.locator("body").inner_text(timeout=3000))[:12000])
+            except Exception:
+                frame_text.append("Frame detached during diagnostic capture")
+        (artifacts / "diagnostics.json").write_text(json.dumps({"errors": errors, "failed": failed, "frames": frame_text}, indent=2))
         raise
     finally:
         browser.close()
