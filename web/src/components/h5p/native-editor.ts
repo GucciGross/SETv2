@@ -135,7 +135,16 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     // insertion order, and the form cannot render before its styles are ready.
     const codeAbort = new AbortController();
     const ownedCode = new Set<HTMLElement>();
+    // H5P library JS is order-sensitive (widgets assign into namespaces their
+    // dependencies create), so JS must load strictly sequentially. CSS keeps
+    // concurrency 4 — stylesheets have no execution order dependency here.
+    const jsQueue = createScriptQueue(key => new Promise<void>((resolve, reject) => {
+      loadNode(key, resolve, reject);
+    }), 1);
     const queue = createScriptQueue(key => new Promise<void>((resolve, reject) => {
+      loadNode(key, resolve, reject);
+    }));
+    function loadNode(key: string, resolve: () => void, reject: (error: Error) => void) {
       const css = key.startsWith('css:'), src = codeUrl(key.slice(key.indexOf(':') + 1));
       const node = css ? document.createElement('link') : document.createElement('script');
       let timer: ReturnType<typeof setTimeout>;
@@ -153,7 +162,7 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
       timer = setTimeout(() => finish(new Error('H5P authoring code timed out. Check the connection and reload the authoring tools.')), 15_000);
       codeAbort.signal.addEventListener('abort', cancel, { once: true });
       if (codeAbort.signal.aborted) cancel(); else { ownedCode.add(node); document.head.appendChild(node); }
-    }));
+    }
     const originalLoadJs = E.loadJs, originalLoadCss = E.loadCss;
     const styleWork: Promise<void>[] = [];
     let reportedCodeFailure = false;
@@ -173,7 +182,7 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     };
     const loadJs = (src: string, callback?: () => void) => {
       if (signal.aborted || codeAbort.signal.aborted) return;
-      void Promise.all(styleWork).then(() => H.jsLoaded(src) ? undefined : queue.load('js:' + src)).then(() => {
+      void Promise.all(styleWork).then(() => H.jsLoaded(src) ? undefined : jsQueue.load('js:' + src)).then(() => {
         if (signal.aborted || codeAbort.signal.aborted) return;
         w.H5PIntegration.loadedJs ??= [];
         if (!H.jsLoaded(src)) w.H5PIntegration.loadedJs.push(src);
@@ -213,7 +222,7 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     let selector: any;
     destroy = () => {
       if (active !== identity) return;
-      exitFullscreen?.(); queue.dispose(); codeAbort.abort();
+      exitFullscreen?.(); queue.dispose(); jsQueue.dispose(); codeAbort.abort();
       if (E.loadJs === loadJs) E.loadJs = originalLoadJs;
       if (E.loadCss === loadCss) E.loadCss = originalLoadCss;
       if (E.libraryRequested === boundedLibraryRequested) E.libraryRequested = originalLibraryRequested;
