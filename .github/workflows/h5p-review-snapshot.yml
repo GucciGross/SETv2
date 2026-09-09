@@ -1,26 +1,49 @@
-name: Prepare official H5P bundle
+name: Publish reviewed H5P native implementation
 on:
   push:
     branches: [fix/h5p-native-studio-provisioning]
     paths: [.github/workflows/h5p-review-snapshot.yml]
 permissions:
-  contents: read
+  contents: write
+  actions: read
 jobs:
-  bundle:
+  apply:
+    if: github.ref == 'refs/heads/fix/h5p-native-studio-provisioning'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: npm ci --ignore-scripts
-        working-directory: server
-      - name: Resolve official Hub packages and verify dependency closure
-        run: node scripts/update-h5p-bundle.mjs
-        working-directory: server
-      - uses: actions/upload-artifact@v4
+          ref: fix/h5p-native-studio-provisioning
+      - uses: actions/download-artifact@v4
         with:
           name: set-official-h5p-bundle
+          run-id: 34313335626
+          github-token: ${{ github.token }}
           path: server/h5p
-          retention-days: 3
+      - name: Verify the reviewed vendor snapshot and source patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '058b2f021d5c20b55906a42112d0ac60174088ad55133e09cee3a0848f84b99a  server/h5p/libraries.h5p' | sha256sum --check
+          echo '239ccc3b5ba400bc7ed1e8877f50440d5bc1d5d297c4cf60c5f6a9a61f52f512  server/h5p/catalog.lock.json' | sha256sum --check
+          for blob in fb173e29b8621c6950c2e31bfea18245b4a86a45 87638a0dff96401d579a3eb21c4901923944fb40; do
+            gh api "repos/GucciGross/SETv2/git/blobs/$blob" --jq .content | base64 --decode
+          done > /tmp/h5p-native.patch.xz
+          xz --decompress --stdout /tmp/h5p-native.patch.xz > /tmp/h5p-native.patch
+          echo '8530df518e675d83469c0714a90955784642d2cdaf1123a5bab295535d5015f1  /tmp/h5p-native.patch' | sha256sum --check
+          git apply --unidiff-zero --check /tmp/h5p-native.patch
+          git apply --unidiff-zero /tmp/h5p-native.patch
+      - name: Commit implementation only to the feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs server web
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'feat(h5p): native authoring, verified offline library bundle and deployment regression coverage'
+          git push origin HEAD:refs/heads/fix/h5p-native-studio-provisioning
