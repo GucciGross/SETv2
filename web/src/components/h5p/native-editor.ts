@@ -191,10 +191,16 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
         Promise.all(libraryData.css.map((path: string) => H.cssLoaded(path) ? undefined : queue.load('css:' + path).then(() => {
           w.H5PIntegration.loadedCss ??= [];
           if (!H.cssLoaded(path)) w.H5PIntegration.loadedCss.push(path);
-        }).catch(failedCode))).then(() => {
-          libraryData.css = [];
-          originalLibraryRequested.call(E, libraryName, callback);
-        }).catch(failedCode);
+        }))).then(() => {
+          // Hand the original loader an empty CSS list; links are already in the
+          // document and H5PIntegration.loadedCss records them. Do not mutate the
+          // cached library data itself — a reload must be able to requeue.
+          const cached = E.libraryCache[libraryName];
+          const savedCss = cached.css;
+          cached.css = [];
+          try { originalLibraryRequested.call(E, libraryName, callback); }
+          finally { cached.css = savedCss; }
+        }, failedCode);
       } else {
         originalLibraryRequested.call(E, libraryName, callback);
       }
