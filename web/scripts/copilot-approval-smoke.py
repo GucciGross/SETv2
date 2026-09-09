@@ -93,9 +93,10 @@ with sync_playwright() as playwright:
             else:
                 if outcome == "approve":
                     # Closing the panel must not render approvals behind it or discard them.
-                    toggle.click()
+                    # On mobile the popup is fullscreen and covers the FAB; close via the popup's own control.
+                    popup.get_by_role("button", name="Close", exact=True).click()
                     expect(page.locator("[data-set-approval]:visible")).to_have_count(0)
-                    toggle.click()
+                    page.locator("[data-slot='chat-toggle-button']").click()
                     expect(card).to_have_attribute("data-status", "pending")
                 button = card.get_by_role("button", name="Deny" if outcome == "reject" else "Approve", exact=True)
                 # A double tap before React re-renders must still submit only one decision.

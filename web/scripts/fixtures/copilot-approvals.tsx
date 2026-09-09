@@ -16,6 +16,7 @@ const spaceId = '10000000-0000-4000-8000-000000000001';
 useApp.setState({ currentSpaceId: spaceId, user: { id: 'author', name: 'Author', email: 'author@example.invalid' }, spaces: [{ id: spaceId, name: 'Training', kind: 'team', icon: '', role: 'owner' }] });
 const fixture = (window as any).approvalFixture = { timeoutMs: 180000, calls: [], finish: (_status: string) => {}, repeat: () => {} };
 class FixtureAgent extends AbstractAgent {
+  private stop?: () => void;
   run(input: any) {
     return new Observable<BaseEvent>((subscriber) => {
       const callId = crypto.randomUUID(), runId = crypto.randomUUID(), messageId = `tc-${callId}`;
@@ -37,11 +38,16 @@ class FixtureAgent extends AbstractAgent {
         send('RUN_FINISHED', { threadId: input.threadId, runId: input.runId });
         subscriber.complete();
       };
-      return () => {};
+      // AbstractAgent.abortRun() is a no-op; real agents are HttpAgents whose abort
+      // errors the fetch and finalizes the run. Mirror that so "Stop" can cancel.
+      this.stop = () => { subscriber.complete(); };
+      return () => { this.stop = undefined; };
     });
   }
 }
 const agent = new FixtureAgent({ agentId: 'set_guide' });
+const originalAbort = agent.abortRun.bind(agent);
+agent.abortRun = () => { agent['stop']?.(); originalAbort(); };
 createRoot(document.getElementById('root')!).render(<MemoryRouter><CopilotKit selfManagedAgents={{ set_guide: agent }} enableInspector={false}>
   <CopilotCoreBridge />
   <main className="p-6"><h1 className="text-lg">Learning workspace</h1><p className="text-set-dim">Copilot approvals must stay inside the conversation.</p></main>
