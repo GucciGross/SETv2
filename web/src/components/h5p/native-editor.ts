@@ -181,6 +181,25 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
       }).catch(failedCode);
     };
     E.loadJs = loadJs; E.loadCss = loadCss;
+    // H5PEditor.libraryRequested appends every dependency <link> at once,
+    // bypassing loadCss — the exact burst the loader bound was meant to stop.
+    // Route its CSS through the queue; JS already flows through loadJs.
+    const originalLibraryRequested = E.libraryRequested;
+    const boundedLibraryRequested = function (libraryName: string, callback: (...args: any[]) => void) {
+      const libraryData = E.libraryCache[libraryName];
+      if (libraryData && Array.isArray(libraryData.css) && libraryData.css.length) {
+        Promise.all(libraryData.css.map((path: string) => H.cssLoaded(path) ? undefined : queue.load('css:' + path).then(() => {
+          w.H5PIntegration.loadedCss ??= [];
+          if (!H.cssLoaded(path)) w.H5PIntegration.loadedCss.push(path);
+        }).catch(failedCode))).then(() => {
+          libraryData.css = [];
+          originalLibraryRequested.call(E, libraryName, callback);
+        }).catch(failedCode);
+      } else {
+        originalLibraryRequested.call(E, libraryName, callback);
+      }
+    };
+    E.libraryRequested = boundedLibraryRequested;
     // Track constructor-owned global listeners without removing anyone else's subscriptions.
     const subscriptions: [string, any][] = [], originalOn = H.externalDispatcher.on;
     H.externalDispatcher.on = function (type: string, handler: any) { subscriptions.push([type, handler]); return originalOn.call(this, type, handler); };
@@ -191,6 +210,7 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
       exitFullscreen?.(); queue.dispose(); codeAbort.abort();
       if (E.loadJs === loadJs) E.loadJs = originalLoadJs;
       if (E.loadCss === loadCss) E.loadCss = originalLoadCss;
+      if (E.libraryRequested === boundedLibraryRequested) E.libraryRequested = originalLibraryRequested;
       ownedCode.forEach(node => node.remove()); ownedCode.clear();
       for (const xhr of requests) xhr.abort(); requests.clear();
       $(document).off('.setNativeH5p');
