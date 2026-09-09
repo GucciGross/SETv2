@@ -1,5 +1,5 @@
 import * as H5P from '@lumieducation/h5p-server';
-import { access, cp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { access, cp, mkdir, rm } from 'node:fs/promises';
 import { randomInt } from 'node:crypto';
 import { resolve, join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -8,9 +8,13 @@ import type { JwtUser } from '../lib/tokens.js';
 import type { Role } from '../lib/http.js';
 import { contentId, StudioError } from './domain.js';
 import { PostgresUserData } from './user-data.js';
+import { fileURLToPath } from 'node:url';
+import { studioSettings } from './settings.js';
 
 export const h5pRoot = () => resolve(config.dataDir, 'h5p');
-export const coreRoot = () => resolve(process.env.H5P_ASSETS_DIR || './h5p-assets');
+export const coreRoot = () => process.env.H5P_ASSETS_DIR
+  ? resolve(process.env.H5P_ASSETS_DIR)
+  : fileURLToPath(new URL('../../h5p-assets/', import.meta.url));
 export const contentRoot = (spaceId: string) => join(h5pRoot(), 'spaces', spaceId, 'content');
 const cache = new H5P.fsImplementations.InMemoryStorage();
 const lockProvider = new H5P.SimpleLockProvider();
@@ -68,8 +72,7 @@ export async function runtime(scope: RuntimeScope, baseUrl = '/api/h5p/internal'
     mkdir(contentRoot(scope.spaceId), { recursive: true }),
     mkdir(join(h5pRoot(), 'spaces', scope.spaceId, 'temporary'), { recursive: true }),
   ]);
-  await writeFile(join(h5pRoot(), 'settings.json'), '{}', { flag: 'wx', mode: 0o600 }).catch((error) => { if (error.code !== 'EEXIST') throw error; });
-  const settings = await new H5P.H5PConfig(new H5P.fsImplementations.JsonStorage(join(h5pRoot(), 'settings.json'))).load();
+  const settings = await new H5P.H5PConfig(await studioSettings(join(h5pRoot(), 'settings.json'))).load();
   settings.baseUrl = baseUrl;
   settings.platformName = 'SET';
   settings.platformVersion = '2.1';

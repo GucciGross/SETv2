@@ -61,6 +61,7 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Build server image
@@ -69,3 +70,23 @@ jobs:
         run: docker build -t set-web ./web
       - name: Compose config check
         run: docker compose config --quiet
+
+      - name: Install deployed-browser test dependencies
+        run: |
+          python3 -m pip install playwright==1.57.0
+          python3 -m playwright install --with-deps chromium
+      - name: Exercise the built deployment through HTTP and HTTPS Nginx
+        run: |
+          set -euo pipefail
+          compose=(docker compose -p set-h5p-regression -f server/test/h5p-compose.yml)
+          trap '"${compose[@]}" down -v' EXIT
+          "${compose[@]}" up -d --wait --wait-timeout 120
+          H5P_TEST_DATABASE=1 H5P_BROWSER_ARTIFACTS=/tmp/h5p-deployment/http python3 server/h5p-deployment-smoke.py
+          H5P_TEST_DATABASE=1 SET_DEPLOYMENT_BASE=https://localhost:8448 H5P_TEST_SELF_SIGNED=1 H5P_BROWSER_ARTIFACTS=/tmp/h5p-deployment/https python3 server/h5p-deployment-smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: h5p-deployed-browser
+          path: /tmp/h5p-deployment
+          if-no-files-found: ignore
+          retention-days: 3
