@@ -13,44 +13,45 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - name: Archive current tracked sources
-        run: |
-          mkdir -p /tmp/h5p-review/packages
-          git archive --format=tar.gz HEAD > /tmp/h5p-review/source.tar.gz
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: server
       - name: Fetch official Hub catalog and complete content-type packages
+        working-directory: server
         run: |
-          python3 - <<'PY'
-          import json, time, hashlib
-          from pathlib import Path
-          from urllib.request import Request, urlopen
-          from urllib.parse import urlencode
-          from urllib.error import HTTPError
-          root=Path('/tmp/h5p-review')
-          endpoint='https://api.h5p.org/v1/content-types/'
-          data=urlencode({'core_api_version':'1.27','platform_name':'SET','platform_version':'2.1','h5p_version':'1.27','disabled':0}).encode()
-          with urlopen(Request(endpoint,data=data),timeout=60) as r: catalog=json.load(r)
-          (root/'hub.json').write_text(json.dumps(catalog,indent=2))
-          report=[]
-          for item in catalog['contentTypes']:
-              name=item['id']
-              try:
-                  try: response=urlopen(Request(endpoint+name,data=data),timeout=90)
-                  except HTTPError as e:
-                      if e.code != 405: raise
-                      response=urlopen(endpoint+name,timeout=90)
-                  with response: package=response.read(96*1024*1024+1)
-                  assert len(package)<=96*1024*1024 and package[:2]==b'PK','Not a bounded ZIP package'
-                  (root/'packages'/f'{name}.h5p').write_bytes(package)
-                  report.append({'machineName':name,'bytes':len(package),'sha256':hashlib.sha256(package).hexdigest()})
-                  print(name,len(package))
-              except Exception as e:
-                  report.append({'machineName':name,'error':str(e)})
-                  print(name,'FAILED',str(e))
-              time.sleep(.2)
-          (root/'report.json').write_text(json.dumps(report,indent=2))
-          print('Hub snapshot:',len(report),'content types;',sum('error' in r for r in report),'errors')
-          PY
-      - name: Package pinned frontend integration for inspection
+          mkdir -p /tmp/h5p-review/packages /tmp/h5p-review/libraries /tmp/h5p-review/content /tmp/h5p-review/temporary
+          node --input-type=module <<'JS'
+          import * as H5P from '@lumieducation/h5p-server';
+          import { writeFile } from 'node:fs/promises';
+          import { createHash } from 'node:crypto';
+          const root='/tmp/h5p-review';
+          const cache=new H5P.fsImplementations.InMemoryStorage();
+          const config=await new H5P.H5PConfig(new H5P.fsImplementations.InMemoryStorage()).load();
+          config.platformName='SET';config.sendUsageStatistics=false;
+          const editor=new H5P.H5PEditor(cache,config,new H5P.fsImplementations.FileLibraryStorage(root+'/libraries'),new H5P.fsImplementations.FileContentStorage(root+'/content'),new H5P.fsImplementations.DirectoryTemporaryFileStorage(root+'/temporary'));
+          const hub=await editor.contentTypeCache.downloadContentTypesFromHub();
+          await writeFile(root+'/hub.json',JSON.stringify({contentTypes:hub},null,2));
+          const report=[];
+          for(const item of hub){
+            try{
+              let response=await fetch(config.hubContentTypesEndpoint+item.id,{signal:AbortSignal.timeout(90000)});
+              if(!response.ok){
+                const getStatus=response.status;
+                response=await fetch(config.hubContentTypesEndpoint+item.id,{method:'POST',signal:AbortSignal.timeout(90000)});
+                if(!response.ok)throw new Error('GET '+getStatus+'; POST '+response.status);
+              }
+              const parts=[];let size=0;
+              for await(const part of response.body){size+=part.length;if(size>96*1024*1024)throw new Error('Package exceeds 96 MiB');parts.push(part);}
+              const data=Buffer.concat(parts);if(data.subarray(0,2).toString()!=='PK')throw new Error('Not a ZIP package');
+              await writeFile(root+'/packages/'+item.id+'.h5p',data);
+              report.push({machineName:item.id,bytes:data.length,sha256:createHash('sha256').update(data).digest('hex')});
+              console.log(item.id,data.length);
+            }catch(error){report.push({machineName:item.id,error:error.message});console.log(item.id,error.message);}
+          }
+          await writeFile(root+'/report.json',JSON.stringify(report,null,2));
+          console.log('Catalog',hub.length,'failures',report.filter(x=>x.error).length);
+          JS
+      - name: Package frontend integration source
+        if: always()
         run: |
           cd /tmp/h5p-review
           npm pack @lumieducation/h5p-webcomponents@10.0.4 --ignore-scripts
