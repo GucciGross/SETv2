@@ -76,6 +76,15 @@ with sync_playwright() as playwright:
     page.set_default_timeout(30000)
     errors = []
     failed = []
+    pending = {}
+    console_errors = []
+    def track_request(req):
+        if "/h5p/" in req.url:
+            pending[id(req)] = {"url": redact(req.url), "resource": req.resource_type}
+    page.on("request", track_request)
+    page.on("requestfinished", lambda req: pending.pop(id(req), None))
+    page.on("requestfailed", lambda req: (pending.pop(id(req), None), failed.append({"url": redact(req.url), "error": req.failure})) if "/h5p/" in req.url else None)
+    page.on("console", lambda message: console_errors.append(redact(message.text)) if message.type in ["error", "warning"] else None)
     page.on("pageerror", lambda error: errors.append(redact(error)))
     page.on("response", lambda response: failed.append({"url": redact(response.url), "status": response.status}) if "/h5p/" in response.url and response.status >= 400 else None)
     try:
@@ -113,7 +122,7 @@ with sync_playwright() as playwright:
         metadata = native.locator('.h5p-metadata-popup-overlay')
         expect(metadata.locator('.field-name-source input')).to_be_visible()
         metadata.locator('.field-name-source input').fill('https://example.org/lesson-source')
-        page.screenshot(path=str(artifacts / "native-metadata-phone.png"), full_page=True)
+        page.screenshot(path=str(artifacts / "native-metadata-phone.png"), full_page=True, animations="disabled")
         metadata.get_by_role("button", name="Save metadata", exact=True).click()
         expect(metadata).not_to_be_visible()
         publish = page.get_by_role("button", name="Publish saved draft", exact=True)
@@ -135,7 +144,7 @@ with sync_playwright() as playwright:
         expect(native.get_by_role("button", name="Save draft", exact=True).first).to_be_enabled()
         expect(publish).to_be_enabled()
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Native authoring overflows a phone"
-        page.screenshot(path=str(artifacts / "native-authoring-phone.png"), full_page=True)
+        page.screenshot(path=str(artifacts / "native-authoring-phone.png"), full_page=True, animations="disabled")
         page.set_viewport_size({"width": 1440, "height": 1000})
         publish.click()
         page.get_by_role("button", name="Published activity", exact=True).click()
@@ -145,7 +154,7 @@ with sync_playwright() as playwright:
         # Hub Blanks 1.14 sets aria-label "Check the answers…" which overrides the visible label.
         player.get_by_role("button", name=re.compile(r"^Check\b")).click()
         expect(player.locator(".h5p-content")).to_contain_text("1")
-        page.screenshot(path=str(artifacts / "published-lesson.png"), full_page=True)
+        page.screenshot(path=str(artifacts / "published-lesson.png"), full_page=True, animations="disabled")
         print("PASS empty activity → native authoring → two saves → parent publish → actual question playback")
         with page.expect_download() as download:
             page.get_by_role("button", name="Export H5P package", exact=True).click()
@@ -180,7 +189,7 @@ with sync_playwright() as playwright:
         page.get_by_role("button", name="Phone-width preview", exact=True).click()
         page.set_viewport_size({"width": 390, "height": 844})
         expect(image_view).to_be_visible()
-        page.screenshot(path=str(artifacts / "imported-media-phone.png"), full_page=True)
+        page.screenshot(path=str(artifacts / "imported-media-phone.png"), full_page=True, animations="disabled")
         assert not failed, "Failed H5P requests: " + json.dumps(failed)
         assert not errors, "Browser JavaScript errors: " + json.dumps(errors)
         print("PASS multi-megabyte package import through Nginx, native media rendering and phone preview")
@@ -229,20 +238,29 @@ with sync_playwright() as playwright:
                 expect(tour).not_to_be_visible()
             page.set_viewport_size({"width": 390, "height": 844})
             expect(native.locator(selector).first).to_be_visible()
-            page.screenshot(path=str(artifacts / (library.split()[0] + "-phone.png")), full_page=True)
+            page.screenshot(path=str(artifacts / (library.split()[0] + "-phone.png")), full_page=True, animations="disabled")
             assert not errors, label + ": " + json.dumps(errors)
             assert not failed, label + ": " + json.dumps(failed)
             print("PASS composite native authoring: " + label + ", phone viewport and CSS isolation")
 
     except Exception:
-        page.screenshot(path=str(artifacts / "failure.png"), full_page=True)
+        page.screenshot(path=str(artifacts / "failure.png"), full_page=True, animations="disabled")
         frame_text = []
         for frame in page.frames:
             try:
                 frame_text.append(redact(frame.locator("body").inner_text(timeout=3000))[:12000])
             except Exception:
                 frame_text.append("Frame detached during diagnostic capture")
-        (artifacts / "diagnostics.json").write_text(json.dumps({"errors": errors, "failed": failed, "frames": frame_text}, indent=2))
+        # Only library-code loading metadata, never content parameters, auth headers or state.
+        loading = page.evaluate("""() => {
+            const editor = window.H5PEditor;
+            return { libraries: Object.entries(editor?.libraryCache ?? {}).map(([name, data]) => ({
+                name, fetchingSemantics: data === 0, initialized: editor.libraryLoaded?.[name] === true,
+                missingScripts: (data?.javascript ?? []).filter(src => !window.H5P?.jsLoaded(src))
+            })), scripts: Array.from(document.scripts).map(script => script.src).filter(src => src.includes('/h5p/')) };
+        }""")
+        diagnostic = {"errors": errors, "failed": failed, "pending": list(pending.values()), "console": console_errors[-30:], "loading": loading, "frames": frame_text}
+        (artifacts / "diagnostics.json").write_text(redact(json.dumps(diagnostic, indent=2)))
         raise
     finally:
         browser.close()
