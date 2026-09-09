@@ -1,0 +1,19 @@
+name: H5P native review snapshot
+on:
+  push:
+    branches: [fix/h5p-native-studio-provisioning]
+    paths: [.github/workflows/h5p-review-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: git archive --format=tar.gz HEAD > /tmp/set-h5p-native.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: set-h5p-native-sources
+          path: /tmp/set-h5p-native.tar.gz
+          retention-days: 1
