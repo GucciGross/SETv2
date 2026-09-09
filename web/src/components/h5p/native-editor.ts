@@ -83,9 +83,22 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     const identity = Symbol(); active = identity;
     installNativeStyleScope();
     configure(model);
-    for (const path of model.styles) {
-      const url = codeUrl(path);
-      if (!styles.has(url)) { const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = url; document.head.appendChild(link); styles.add(url); }
+    // Bound the initial style burst through the same queue discipline the
+    // per-library loaders use; sequential await keeps insertion order.
+    {
+      const bootstrap = createScriptQueue(url => new Promise<void>((resolve, reject) => {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet'; link.href = url;
+        link.onload = () => resolve();
+        link.onerror = () => { link.remove(); reject(new Error('An H5P editor asset failed to load. Your saved draft is unchanged.')); };
+        document.head.appendChild(link);
+      }));
+      try {
+        for (const path of model.styles) {
+          const url = codeUrl(path);
+          if (!styles.has(url)) { await bootstrap.load(url); styles.add(url); }
+        }
+      } finally { bootstrap.dispose(); }
     }
     for (const src of model.scripts) { await loadScript(src); if (signal.aborted) throw new DOMException('Editor closed', 'AbortError'); }
     configure(model); // h5peditor.js initializes its globals once while bootstrapping.
