@@ -80,6 +80,7 @@ with sync_playwright() as playwright:
     transport_errors = []
     code_requests = {"active": set(), "peak": 0}
     editor_peak = {"value": 0}  # burst during native editor mounts only; the Play player document intentionally parallel-loads
+    editor_burst = []
     console_errors = []
     def track_request(req):
         if "/h5p/" in req.url:
@@ -91,6 +92,8 @@ with sync_playwright() as playwright:
             code_requests["peak"] = peak
             if req.frame == page.main_frame:
                 editor_peak["value"] = max(editor_peak["value"], len(code_requests["active"]))
+                if len(code_requests["active"]) > 4:
+                    editor_burst.append(redact(req.url))
     page.on("request", track_code)
     page.on("requestfinished", lambda req: code_requests["active"].discard(id(req)))
     page.on("requestfailed", lambda req: code_requests["active"].discard(id(req)))
@@ -255,7 +258,7 @@ with sync_playwright() as playwright:
             assert not errors, label + ": " + json.dumps(errors)
             assert not failed, label + ": " + json.dumps(failed)
             print("PASS composite native authoring: " + label + ", phone viewport and CSS isolation")
-        assert editor_peak["value"] <= 4, f"Native dependency burst exceeded bound: {editor_peak['value']}"
+        assert editor_peak["value"] <= 4, "Native dependency burst exceeded bound: {}\nBurst URLs (first 15): {}".format(editor_peak["value"], json.dumps(editor_burst[:15], indent=1))
         print(f"PASS actual editor dependency requests bounded to {editor_peak['value']} in flight")
         draft = api("POST", f"/spaces/{space}/h5p/activities", {"title": "Authoring recovery check"})["activity"]
         page.goto(origin + studio_path + "/" + draft["id"], wait_until="domcontentloaded")
