@@ -30,7 +30,7 @@ export async function libraryInventory(storage: ILibraryStorage) {
   };
   return names.map(name => {
     const lib = metadata.get(libraryDirectory(name)), issues = inspect(name);
-    return { ...name, patchVersion: lib?.patchVersion ?? 0, title: lib?.title ?? name.machineName, runnable: !!lib?.runnable, usable: issues.length === 0, issues };
+    return { ...name, patchVersion: lib?.patchVersion ?? 0, title: lib?.title ?? name.machineName, runnable: !!lib?.runnable, restricted: !!lib?.restricted, usable: issues.length === 0, issues };
   }).sort((a, b) => a.title.localeCompare(b.title) || b.majorVersion - a.majorVersion || b.minorVersion - a.minorVersion);
 }
 export async function requireUsableLibrary(storage: ILibraryStorage, library: ILibraryName) {

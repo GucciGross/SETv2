@@ -113,6 +113,7 @@ with sync_playwright() as playwright:
         metadata = native.locator('.h5p-metadata-popup-overlay')
         expect(metadata.locator('.field-name-source input')).to_be_visible()
         metadata.locator('.field-name-source input').fill('https://example.org/lesson-source')
+        page.screenshot(path=str(artifacts / "native-metadata-phone.png"), full_page=True)
         metadata.get_by_role("button", name="Save metadata", exact=True).click()
         expect(metadata).not_to_be_visible()
         publish = page.get_by_role("button", name="Publish saved draft", exact=True)
@@ -129,6 +130,9 @@ with sync_playwright() as playwright:
             native.get_by_role("button", name="Save draft", exact=True).first.click()
         assert saved_again.value.status == 200
         assert saved_again.value.json()["activity"]["draftRevision"] == 2
+        expect(title).to_have_value("Deployed H5P lesson revised")
+        expect(native.locator('.field-name-question [contenteditable="true"]').first).to_be_visible()
+        expect(native.get_by_role("button", name="Save draft", exact=True).first).to_be_enabled()
         expect(publish).to_be_enabled()
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Native authoring overflows a phone"
         page.screenshot(path=str(artifacts / "native-authoring-phone.png"), full_page=True)
@@ -198,6 +202,32 @@ with sync_playwright() as playwright:
         assert not errors, "Browser JavaScript errors: " + json.dumps(errors)
         assert not failed, "Failed recovery requests: " + json.dumps(failed)
         print("PASS revoked-launch error is visible in Studio; reopening obtains a fresh authorized player")
+        page.on("dialog", lambda dialog: dialog.accept())  # Disposable unsaved test drafts only.
+        for library, label, selector in [
+            ("H5P.GameMap 1.5", "Game Map", ".h5peditor-panes"),
+            ("H5P.CoursePresentation 1.26", "Course Presentation", ".h5p-course-presentation"),
+            ("H5P.BranchingScenario 1.8", "Branching Scenario", ".bs-editor-content-tab"),
+        ]:
+            draft = api("POST", f"/spaces/{space}/h5p/activities", {"title": label + " authoring check"})["activity"]
+            page.set_viewport_size({"width": 1440, "height": 1000})
+            page.goto(origin + studio_path + "/" + draft["id"], wait_until="domcontentloaded")
+            expect(native.get_by_label("Content type", exact=True)).to_be_visible()
+            before = page.evaluate("""() => {
+                const probe = document.createElement('div'); probe.id = 'set-style-scope-probe'; probe.className = 'canvas tabs-nav'; document.body.append(probe);
+                const css = getComputedStyle(probe); return [css.position, css.display, css.backgroundColor, css.padding, css.margin];
+            }""")
+            native.get_by_label("Content type", exact=True).select_option(library)
+            expect(native.locator(selector).first).to_be_visible(timeout=30000)
+            assert page.locator('iframe[title^="Edit "], iframe.h5p-editor-iframe').count() == 0
+            after = page.evaluate("""() => { const css = getComputedStyle(document.querySelector('#set-style-scope-probe')); return [css.position, css.display, css.backgroundColor, css.padding, css.margin]; }""")
+            assert before == after, label + " leaked editor styles into SET"
+            page.set_viewport_size({"width": 390, "height": 844})
+            expect(native.locator(selector).first).to_be_visible()
+            page.screenshot(path=str(artifacts / (library.split()[0] + "-phone.png")), full_page=True)
+            assert not errors, label + ": " + json.dumps(errors)
+            assert not failed, label + ": " + json.dumps(failed)
+            print("PASS composite native authoring: " + label + ", phone viewport and CSS isolation")
+
     except Exception:
         page.screenshot(path=str(artifacts / "failure.png"), full_page=True)
         frame_text = []

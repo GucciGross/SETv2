@@ -1,3 +1,4 @@
+import { installNativeStyleScope } from './native-styles';
 /** The only adapter to the pinned H5P browser globals. Real H5P widgets and semantics,
  * mounted in SET's document (not H5PEditor.Editor's iframe constructor).
  */
@@ -78,6 +79,7 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     if (signal.aborted) throw new DOMException('Editor closed', 'AbortError');
     if (active) throw new Error('Close the other H5P editor before opening this activity.');
     const identity = Symbol(); active = identity;
+    installNativeStyleScope();
     configure(model);
     for (const path of model.styles) {
       const url = codeUrl(path);
@@ -88,7 +90,7 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     const w = globals(), H = w.H5P, E = w.H5PEditor, $ = H.jQuery;
     H.$body = $(document.body); E.$ = $;
     E.libraryCache = {}; E.renderableCommonFields = {};
-    const originalHeights = [document.documentElement.style.height, document.body.style.height];
+    const originalLayout = [document.documentElement.style.height, document.body.style.height, document.documentElement.style.maxWidth, document.body.style.maxWidth];
     const portals = new Set<HTMLElement>(), requests = new Set<any>();
     const tagPortals = () => {
       for (const child of Array.from(document.body.children)) if (child instanceof HTMLElement && /(?:^|\s)(?:h5p|cke)[\w-]*/.test(child.className) && !root.contains(child)) { child.classList.add('set-h5p-native-portal'); portals.add(child); }
@@ -111,18 +113,12 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
     $(document).on('ajaxSend.setNativeH5p', (_e: any, xhr: any, options: any) => { if (String(options.url).startsWith(model.base)) requests.add(xhr); });
     $(document).on('ajaxComplete.setNativeH5p', (_e: any, xhr: any) => requests.delete(xhr));
     $(document).on('ajaxError.setNativeH5p', (_e: any, xhr: any, options: any) => {
-      if (!signal.aborted && String(options.url).startsWith(model.base) && xhr.statusText !== 'abort') onError(xhr.status === 413 ? 'This media exceeds the upload limit.' : 'H5P could not load a field or media. Your changes are still here; retry the operation or save a recovery copy.');
+      if (!signal.aborted && String(options.url).startsWith(model.base) && xhr.statusText !== 'abort') onError(xhr.status === 413 ? 'This media exceeds the upload limit.' : 'H5P could not load a field or media. Your changes are still here. Retry the operation; reloading will discard unsaved changes.');
     });
     // Track constructor-owned global listeners without removing anyone else's subscriptions.
     const subscriptions: [string, any][] = [], originalOn = H.externalDispatcher.on;
     H.externalDispatcher.on = function (type: string, handler: any) { subscriptions.push([type, handler]); return originalOn.call(this, type, handler); };
     let selector: any;
-    try { selector = new E.LibrarySelector(model.libraries, model.parameters?.library, JSON.stringify(model.parameters?.params ?? {})); }
-    finally { H.externalDispatcher.on = originalOn; }
-    selector.appendTo($(root));
-    selector.$selector.attr('aria-label', 'Content type');
-    if (model.parameters?.library) selector.setLibrary(model.parameters.library);
-    tagPortals();
     destroy = () => {
       if (active !== identity) return;
       exitFullscreen?.();
@@ -130,10 +126,16 @@ export async function mountNativeEditor(root: HTMLElement, model: EditorModel, s
       $(document).off('.setNativeH5p');
       for (const name of ['input', 'change', 'pointerup']) root.removeEventListener(name, changed, true);
       for (const [type, handler] of subscriptions) H.externalDispatcher.off(type, handler);
-      selector.form?.remove?.(); observer.disconnect(); tagPortals();
-      [document.documentElement.style.height, document.body.style.height] = originalHeights;
+      selector?.form?.remove?.(); observer.disconnect(); tagPortals();
+      [document.documentElement.style.height, document.body.style.height, document.documentElement.style.maxWidth, document.body.style.maxWidth] = originalLayout;
       portals.forEach(portal => portal.remove()); root.replaceChildren(); active = undefined;
     };
+    try { selector = new E.LibrarySelector(model.libraries, model.parameters?.library, JSON.stringify(model.parameters?.params ?? {})); }
+    finally { H.externalDispatcher.on = originalOn; }
+    selector.appendTo($(root));
+    selector.$selector.attr('aria-label', 'Content type');
+    if (model.parameters?.library) selector.setLibrary(model.parameters.library);
+    tagPortals();
     signal.addEventListener('abort', destroy, { once: true });
     return {
       read() {

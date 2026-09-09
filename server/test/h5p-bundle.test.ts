@@ -39,6 +39,10 @@ test('offline provisioning is idempotent, repairs corrupted files and preserves 
     await writeFile(file, 'corrupt');
     assert.equal((await provisionBundledLibraries(target, root)).changed.length, 1);
     assert.equal(await readFile(file, 'utf8'), '/* trusted fixture */');
+    await writeFile(join(target, 'H5P.BundleTest-1.0', 'library.json'), JSON.stringify({ ...meta, restricted: true }));
+    await writeFile(file, 'corrupt again');
+    await provisionBundledLibraries(target, root);
+    assert.equal((await libraryInventory(new fsImplementations.FileLibraryStorage(target)))[0].restricted, true, 'Repair preserves an operator restriction');
     await mkdir(join(target, 'H5P.BundleTest-0.9'));
     await writeFile(join(target, 'H5P.BundleTest-0.9', 'keep.txt'), 'old content still needs this');
     await writeFile(join(target, 'H5P.BundleTest-1.0', 'library.json'), JSON.stringify({ ...meta, patchVersion: 3 }));
