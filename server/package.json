@@ -18,7 +18,10 @@
     "wandgx:stub": "node scripts/wandgx-stub.mjs",
     "smoke:wandgx": "node smoke-wandgx.mjs",
     "test": "tsx --test test/*.test.ts",
-    "h5p:setup": "node scripts/install-h5p-core.mjs"
+    "h5p:setup": "node scripts/install-h5p-core.mjs",
+    "h5p:verify": "tsx src/h5p/bundle-cli.ts --verify",
+    "h5p:provision": "tsx src/h5p/bundle-cli.ts",
+    "h5p:update-bundle": "node scripts/update-h5p-bundle.mjs"
   },
   "dependencies": {
     "@ag-ui/client": "^0.0.57",

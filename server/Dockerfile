@@ -7,8 +7,9 @@ COPY tsconfig.json ./
 COPY sql ./sql
 COPY src ./src
 COPY scripts ./scripts
+COPY h5p ./h5p
 RUN npm run h5p:setup
-RUN npm run build && mkdir -p dist/importers/data && if [ -d src/importers/data ]; then cp -R src/importers/data/. dist/importers/data/; fi
+RUN npm run build && node dist/h5p/bundle-cli.js --verify && mkdir -p dist/importers/data && if [ -d src/importers/data ]; then cp -R src/importers/data/. dist/importers/data/; fi
 
 FROM node:22-alpine
 WORKDIR /app
@@ -18,6 +19,7 @@ RUN npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/sql ./sql
 COPY --from=build /app/h5p-assets ./h5p-assets
+COPY --from=build /app/h5p ./h5p
 RUN mkdir -p /app/data
 EXPOSE 4000
 CMD ["node", "dist/index.js"]

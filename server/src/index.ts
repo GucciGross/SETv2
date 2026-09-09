@@ -153,6 +153,10 @@ async function main() {
   const { initBriefScheduler } = await import('./study/briefScheduler.js');
   initBriefScheduler();
 
+  // Seed the persistent volume from the verified repository bundle before serving learners.
+  const { provisionBundledLibraries } = await import('./h5p/bundle.js');
+  const bundle = await provisionBundledLibraries(join(config.dataDir, 'h5p', 'libraries'));
+  console.log(`[H5P] ${bundle.contentTypes} bundled content types; ${bundle.changed.length} library versions installed or repaired`);
   await app.listen({ port: config.port, host: config.host });
   console.log(`[SET] server listening on :${config.port}`);
 

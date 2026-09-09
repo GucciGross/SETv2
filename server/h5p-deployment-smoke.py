@@ -1,7 +1,7 @@
 """Deployment contract: built SET web + real Nginx + server + disposable PostgreSQL.
 
 Run only with server/test/h5p-compose.yml. No application, H5P or database mocks.
-The official Hub must be reachable for a fresh content-type installation.
+All libraries are provisioned offline from the committed bundle. Authoring has no iframe.
 """
 import io
 import json
@@ -86,39 +86,53 @@ with sync_playwright() as playwright:
         page.get_by_role("button", name="Content types", exact=True).click()
         card = page.locator("article").filter(has=page.get_by_role("heading", name="Fill in the Blanks", exact=True))
         expect(card).to_be_visible(timeout=90000)
-        if card.get_by_role("button", name="Install type", exact=True).count():
-            with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/h5p/libraries"), timeout=90000) as installed:
-                card.get_by_role("button", name="Install type", exact=True).click()
-            assert installed.value.status == 200, "Official content-type installation failed"
-        expect(card.get_by_text(re.compile(r"Installed 1\."))).to_be_visible()
-        print("PASS fresh Studio content-type catalog and official installation")
+        expect(card.get_by_text(re.compile(r"Ready 1\."))).to_be_visible()
+        status = api("GET", f"/spaces/{space}/h5p/status")
+        assert status["bundle"]["ready"] and status["bundle"]["contentTypes"] == 53 and status["bundle"]["libraries"] == 145
+        with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/h5p/libraries")) as installed:
+            card.get_by_role("button", name="Verify type", exact=True).click()
+        assert installed.value.status == 200 and installed.value.json()["verified"] is True
+        print("PASS bundled catalog ready on fresh deployment; verify confirms real assets and dependencies")
         page.get_by_role("button", name=re.compile(r"^Activities")).click()
         page.get_by_role("button", name="Create activity", exact=True).click()
         page.wait_for_url(re.compile(r"/h5p/[0-9a-f-]{36}$"))
         activity = page.url.rsplit("/", 1)[1]
-        outer = page.frame_locator('iframe[title^="Edit "]')
-        native = outer.frame_locator("iframe").first
-        native.get_by_text("Fill in the Blanks", exact=True).click()
+        native = page.get_by_role("region", name="Native H5P editor", exact=True)
+        expect(native.get_by_label("Content type", exact=True)).to_be_visible()
+        assert page.locator('iframe[title^="Edit "], iframe.h5p-editor-iframe').count() == 0, "Authoring must mount in SET, not a frame"
+        native.get_by_label("Content type", exact=True).select_option(label="Fill in the Blanks")
         title = native.locator(".field-name-extraTitle input").first
         expect(title).to_be_visible()
+        native.get_by_role("button", name="Save draft", exact=True).first.click()
+        expect(native.get_by_role("alert")).to_contain_text("required fields")
+        page.set_viewport_size({"width": 390, "height": 844})
         title.fill("Deployed H5P lesson")
         native.locator('.field-name-question [contenteditable="true"]').first.fill("SET uses *H5P*.")
         title.click()
+        native.get_by_role("button", name="Metadata", exact=True).first.click()
+        metadata = native.locator('.h5p-metadata-popup-overlay')
+        expect(metadata.locator('.field-name-source input')).to_be_visible()
+        metadata.locator('.field-name-source input').fill('https://example.org/lesson-source')
+        metadata.get_by_role("button", name="Save metadata", exact=True).click()
+        expect(metadata).not_to_be_visible()
         publish = page.get_by_role("button", name="Publish saved draft", exact=True)
         expect(publish).to_be_disabled()
-        with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/save")) as saved:
-            outer.get_by_role("button", name="Save draft", exact=True).click()
+        with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/draft")) as saved:
+            native.get_by_role("button", name="Save draft", exact=True).first.click()
         assert saved.value.status == 200, "First native save failed"
         assert saved.value.json()["activity"]["draftRevision"] == 1
         expect(page.get_by_role("heading", name="Deployed H5P lesson", exact=True)).to_be_visible()
         expect(publish).to_be_enabled()
         expect(title).to_have_value("Deployed H5P lesson")
         title.fill("Deployed H5P lesson revised")
-        with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/save")) as saved_again:
-            outer.get_by_role("button", name="Save draft", exact=True).click()
+        with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/draft")) as saved_again:
+            native.get_by_role("button", name="Save draft", exact=True).first.click()
         assert saved_again.value.status == 200
         assert saved_again.value.json()["activity"]["draftRevision"] == 2
         expect(publish).to_be_enabled()
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Native authoring overflows a phone"
+        page.screenshot(path=str(artifacts / "native-authoring-phone.png"), full_page=True)
+        page.set_viewport_size({"width": 1440, "height": 1000})
         publish.click()
         page.get_by_role("button", name="Published activity", exact=True).click()
         player = page.frame_locator('iframe[title^="Play "]')

@@ -4,6 +4,7 @@ import type { JwtUser } from '../lib/tokens.js';
 import { libraryRef, placementSchema, saveSchema, StudioError } from './domain.js';
 import { activityFor, attachActivity, createActivity, listActivities, publishActivity, saveActivity, spaceRole } from './service.js';
 import { runtime } from './runtime.js';
+import { libraryInventory, requireUsableLibrary } from './libraries.js';
 
 /** One capability catalog, adapted into the existing copilot and MCP tool registries. */
 export interface H5PTool {
@@ -25,9 +26,9 @@ export const H5P_TOOLS: H5PTool[] = [
     async run(args, ctx) { const input = z.object({ search: z.string().max(100).optional(), offset: z.number().int().min(0).max(100000).optional() }).parse(args); return listActivities(ctx.spaceId, ctx.userId, input); },
   },
   {
-    name: 'h5p_content_types', description: 'List installed native H5P libraries. Supply an exact library reference to inspect its authoring semantics before producing parameters. Never invent library versions.', write: false,
+    name: 'h5p_content_types', description: 'List verified, usable native H5P content types bundled with SET. No manual Hub installation is needed. Supply an exact library reference to inspect its authoring semantics before producing parameters. Never invent library versions.', write: false,
     parameters: { type: 'object', properties: { library: { type: 'object', properties: { machineName: { type: 'string' }, majorVersion: { type: 'integer' }, minorVersion: { type: 'integer' } }, required: ['machineName', 'majorVersion', 'minorVersion'] } } },
-    async run(args, ctx) { const user = await actor(ctx); const role = await spaceRole(ctx.spaceId, ctx.userId); const rt = await runtime({ spaceId: ctx.spaceId, user, role, mode: 'preview', readable: [] }); const { library } = z.object({ library: libraryRef.optional() }).parse(args); return library ? { library: await rt.libraryStorage.getLibrary(library), semantics: JSON.parse(await rt.libraryStorage.getFileAsString(library, 'semantics.json')) } : { libraries: await rt.libraryStorage.getInstalledLibraryNames() }; },
+    async run(args, ctx) { const user = await actor(ctx); const role = await spaceRole(ctx.spaceId, ctx.userId); const rt = await runtime({ spaceId: ctx.spaceId, user, role, mode: 'preview', readable: [] }); const { library } = z.object({ library: libraryRef.optional() }).parse(args); if (library) { await requireUsableLibrary(rt.libraryStorage, library); return { library: await rt.libraryStorage.getLibrary(library), semantics: JSON.parse(await rt.libraryStorage.getFileAsString(library, 'semantics.json')) }; } const inventory = await libraryInventory(rt.libraryStorage); return { libraries: inventory.filter(l => l.runnable && l.usable), unavailable: inventory.filter(l => l.runnable && !l.usable), source: 'verified-local-libraries' }; },
   },
   {
     name: 'h5p_create_draft', description: 'Create a private H5P Studio draft. This does not publish or change an existing assessment. Open the returned Studio URL to author any installed content type.', write: true,

@@ -40,6 +40,9 @@ try {
   await writeFile(join(libraries, 'fixture.js'), 'H5P.StudioSmoke=function(p){this.attach=function(c){c.text(p.text)}};');
   const status = await call('GET', `/spaces/${testSpace}/h5p/status`);
   check('pinned browser runtime is installed', status.status === 200 && status.json.ready, status);
+  check('all repository content types are available without a Hub installation', status.json.bundle.ready && status.json.bundle.contentTypes === 53);
+  const agentTypes = await H5P_TOOLS.find(tool => tool.name === 'h5p_content_types').run({}, { spaceId: testSpace, userId: owner.id });
+  check('agents discover usable game and video types', ['H5P.GameMap', 'H5P.InteractiveVideo'].every(name => agentTypes.libraries.some(lib => lib.machineName === name && lib.usable)));
   check('unauthenticated management is denied', (await call('GET', `/spaces/${testSpace}/h5p/activities`, undefined, '')).status === 401);
   check('viewer cannot create', (await call('POST', `/spaces/${testSpace}/h5p/activities`, {}, viewer)).status === 403);
   check('editor cannot install library code', (await call('POST', `/spaces/${testSpace}/h5p/libraries`, { machineName: 'H5P.AdvancedText' }, editor)).status === 403);
@@ -50,6 +53,9 @@ try {
   check('viewer cannot read draft', (await call('GET', `/h5p/activities/${activity.id}`, undefined, viewer)).status === 404);
   const launch = (await call('POST', `/h5p/activities/${activity.id}/launch`, { mode: 'edit' })).json;
   const runtime = launch.url.replace(/\/editor$/, '');
+  const model = await call('GET', runtime + '/editor-model');
+  check('native authoring model delivers stable code assets and local types', model.status === 200 && model.json.scripts.every(src => src.startsWith('/api/h5p/assets/native/')) && model.json.libraries.some(lib => lib.name === 'H5P.GameMap'));
+  check('viewer cannot write native drafts', (await call('POST', `/h5p/activities/${activity.id}/draft`, { expectedRevision: 0, library: 'H5P.StudioSmoke 1.0', params: { metadata: { title: 'Denied', license: 'U' }, params: { text: 'denied' } } }, viewer)).status === 403);
   // Native iframes and their subresources cannot attach SET's application bearer header.
   const htmlResponse = await fetch(origin + launch.url);
   const htmlText = await htmlResponse.text();

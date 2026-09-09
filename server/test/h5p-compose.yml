@@ -13,6 +13,7 @@ services:
       retries: 30
   server:
     image: set-server
+    volumes: ['h5p-data:/app/data']
     environment:
       DATABASE_URL: postgres://set:set@db:5432/set
       DATA_DIR: /app/data
@@ -44,3 +45,6 @@ services:
     depends_on:
       server:
         condition: service_healthy
+
+volumes:
+  h5p-data:

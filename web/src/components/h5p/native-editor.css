@@ -1,0 +1,26 @@
+/* SET chrome stays in the product theme; upstream form styles are server-scoped.
+   No fixed-height authoring viewport: document scrolling reveals every field. */
+.set-h5p-native { color: #171717; background: #fff; border-radius: 8px; padding: 16px; font: 16px/1.5 system-ui, sans-serif; min-width: 0; isolation: isolate; }
+.set-h5p-native *, .set-h5p-native-portal * { box-sizing: border-box; }
+.set-h5p-native select[name="h5peditor-library"] { width: 100%; min-height: 44px; color: #171717; background: #fff; border: 1px solid #aaa; padding: 8px; border-radius: 6px; font-size: 16px; }
+.set-h5p-native .h5peditor-form { min-width: 0; }
+.set-h5p-native input[type="text"], .set-h5p-native textarea, .set-h5p-native select { max-width: 100%; font-size: 16px; }
+.set-h5p-native-portal { color: #171717; font: 16px/1.5 system-ui, sans-serif; z-index: 1200; }
+.set-h5p-native :focus-visible, .set-h5p-native-portal :focus-visible { outline: 3px solid #4d70e8; outline-offset: 2px; }
+.set-h5p-native-fullscreen { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100dvh !important; z-index: 1100 !important; overflow: auto !important; background: #fff; }
+@media (max-width: 640px) {
+  .set-h5p-native { padding: 10px; }
+  .set-h5p-native .field { min-width: 0; }
+  .set-h5p-native .h5peditor-form > .tree { padding-inline: 0; }
+  .set-h5p-native .h5peditor-form .field input[type="text"] { width: 100%; }
+}
+
+.set-h5p-native .h5p-metadata-popup-overlay { position: fixed; inset: 0; z-index: 1200; overflow-y: auto; }
+.set-h5p-native .h5p-metadata-wrapper { width: min(700px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); margin: 12px auto !important; }
+.set-h5p-native .h5p-metadata-wrapper .h5p-metadata-header { position: sticky; top: 0; background: white; z-index: 1; flex-wrap: wrap; gap: 12px; }
+.set-h5p-native .h5p-metadata-wrapper .h5p-title-container { white-space: normal; min-width: 0; }
+@media (max-width: 640px) {
+  .set-h5p-native .h5p-metadata-wrapper .h5p-metadata-fields-wrapper > .field { width: 100%; margin-inline: 0; }
+  .set-h5p-native .h5p-metadata-wrapper .h5p-metadata-header { padding: 12px; }
+  .set-h5p-native .h5p-metadata-author-widget .h5p-author-data { flex-wrap: wrap; gap: 8px; }
+}

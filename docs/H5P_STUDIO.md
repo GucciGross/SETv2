@@ -1,3 +1,5 @@
+> Updated authoring/provisioning contract: see [Native Studio](H5P_NATIVE_STUDIO.md). Content types now ship in the repository and Studio authoring no longer uses an editor iframe.
+
 # H5P Studio
 
 SET uses one native H5P editor/player integration for interactive learning, not embedded h5p.org demos or a replacement JSON form. Open **H5P Studio** in either shell mode. The editor supports installed content types from the live H5P Hub catalog rather than a fixed list of templates.

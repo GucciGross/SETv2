@@ -4,6 +4,7 @@ import { ArrowLeft, Archive, Copy, Download, History, Layers, Monitor, Play, Plu
 import { api } from '../lib/api';
 import { useAgentContext } from '@copilotkit/react-core/v2';
 import H5PFrame from '../components/h5p/H5PFrame';
+import H5PNativeEditor from '../components/h5p/H5PNativeEditor';
 import { activityApi, downloadActivity, studioPath, type ActivityList, type H5PActivity, type StudioStatus } from '../components/h5p/api';
 
 export default function H5PStudioView() {
@@ -15,6 +16,7 @@ function StudioLibrary({ spaceId }: { spaceId: string }) {
   const [status, setStatus] = useState<StudioStatus | null>(null), [data, setData] = useState<ActivityList | null>(null);
   const [search, setSearch] = useState(''), [filter, setFilter] = useState('all'), [offset, setOffset] = useState(0);
   const [tab, setTab] = useState<'activities' | 'types'>('activities'), [catalog, setCatalog] = useState<any[] | null>(null);
+  const [receipt, setReceipt] = useState('');
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [refresh, setRefresh] = useState(0);
   const loadStatus = useCallback(async () => { setStatus(await api.get(`/spaces/${spaceId}/h5p/status`)); }, [spaceId]);
   useEffect(() => { void loadStatus().catch((e) => setError(e.message)); }, [loadStatus, refresh]);
@@ -27,14 +29,8 @@ function StudioLibrary({ spaceId }: { spaceId: string }) {
   }, [spaceId, search, filter, offset, refresh]);
   useEffect(() => {
     if (tab !== 'types') return;
-    let active = true, attempts = 0;
-    const load = () => api.get(`/spaces/${spaceId}/h5p/catalog`).then((r) => {
-      const libraries: unknown[] = r.catalog.libraries ?? [];
-      // An empty catalog means the Hub was unreachable; the server refetches it on every request.
-      if (!libraries.length && attempts++ < 20) { setTimeout(load, 4000); return; }
-      if (active) setCatalog(libraries);
-    }).catch((e) => { if (active) setError(e.message); });
-    load();
+    let active = true;
+    void api.get(`/spaces/${spaceId}/h5p/catalog`).then(r => { if (active) setCatalog(r.catalog.libraries ?? []); }).catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
   }, [spaceId, tab, refresh]);
   const act = async (operation: () => Promise<void>) => { setBusy(true); setError(''); try { await operation(); } catch (reason: any) { setError(reason.message); } finally { setBusy(false); } };
@@ -49,8 +45,10 @@ function StudioLibrary({ spaceId }: { spaceId: string }) {
         </div>}
       </header>
       {status && !status.ready && <div role="status" className="set-card p-4 mb-4 border-amber-500/40"><h2 className="font-semibold text-sm">Browser runtime needs installation</h2><p className="text-sm text-set-dim mt-1">An instance administrator must run <code>npm run h5p:setup</code> in the server directory or rebuild the server image. Existing SET content is unaffected.</p><button className="set-btn text-xs mt-2" onClick={() => setRefresh((v) => v + 1)}>Check again</button></div>}
+      {!!status?.bundle?.missing.length && <div role="alert" className="set-card p-4 mb-4 border-amber-500/40"><p className="text-sm">Some bundled content types need repair: {status.bundle.missing.join(', ')}.</p>{status.canInstall && <button className="set-btn mt-2" disabled={busy} onClick={() => void act(async () => { await api.post(`/spaces/${spaceId}/h5p/libraries`, { machineName: status.bundle.missing[0] }); await loadStatus(); setRefresh(v => v + 1); })}>Repair bundled content types</button>}</div>}
       {error && <div role="alert" className="set-card p-3 mb-4 border-red-500/40 text-sm">{error}<button className="set-btn text-xs ml-3" onClick={() => { setError(''); setRefresh((v) => v + 1); }}>Retry</button></div>}
-      {busy && <p role="status" className="text-sm text-set-dim mb-3">Applying changes…</p>}
+      {status?.bundle && <p className="text-sm text-set-dim mb-3">{status.bundle.contentTypes} bundled content types · {status.bundle.libraries} library versions · {status.bundle.ready ? 'Ready for authors and agents' : 'Library repair required'}</p>}
+      {(receipt || busy) && <p role="status" className="text-sm text-set-dim mb-3">{busy ? 'Verifying files and dependencies…' : receipt}</p>}
       <div className="flex flex-wrap justify-between gap-3 mb-5">
         <div className="flex gap-1 rounded-lg border border-set-border p-1" aria-label="Studio section">
           <button className={tab === 'activities' ? 'set-btn-primary text-sm' : 'set-btn-ghost text-sm'} aria-pressed={tab === 'activities'} onClick={() => setTab('activities')}>Activities {data ? `(${data.total})` : ''}</button>
@@ -69,11 +67,11 @@ function StudioLibrary({ spaceId }: { spaceId: string }) {
         </Link>)}</div>
         {data && data.total > 40 && <div className="flex justify-center items-center gap-4 mt-5"><button className="set-btn" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 40))}>Previous</button><span className="text-xs text-set-dim">{offset + 1}–{Math.min(offset + 40, data.total)} of {data.total}</span><button className="set-btn" disabled={offset + 40 >= data.total} onClick={() => setOffset(offset + 40)}>Next</button></div>}
       </> : <>
-        <p className="text-sm text-set-dim mb-4">Choose from the live H5P Hub catalog. Owners install trusted libraries; editors use installed types. Uploaded packages never install executable library code.</p>
+        <p className="text-sm text-set-dim mb-4">The official Hub catalog is bundled with SET and works without an installation step. Ready means its files and dependencies were checked. Owners can verify or repair the repository bundle; uploaded activities never install executable code.</p>
         {!catalog && <p role="status" className="text-sm text-set-dim">Loading the H5P catalog…</p>}
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{catalog?.filter((type) => `${type.title} ${type.summary ?? ''}`.toLowerCase().includes(search.toLowerCase())).map((type) => {
-          const installed = status?.installed.find((l) => l.machineName === type.machineName);
-          return <article key={type.machineName} className="set-card p-4 flex flex-col min-w-0"><h2 className="font-semibold text-sm">{type.title}</h2><p className="text-xs text-set-dim mt-2 mb-4 flex-1">{type.summary || 'Interactive H5P content type'}</p><div className="flex flex-wrap justify-between items-center gap-2"><span className="text-xs text-set-dim">{installed ? `Installed ${installed.majorVersion}.${installed.minorVersion}` : 'Not installed'}</span>{status?.canInstall && <button className="set-btn text-xs" disabled={busy} onClick={() => void act(async () => { await api.post(`/spaces/${spaceId}/h5p/libraries`, { machineName: type.machineName }); setRefresh((v) => v + 1); })}>{installed ? 'Check / update' : 'Install type'}</button>}</div></article>;
+          const installed = status?.installed.find((l) => l.machineName === type.machineName && l.majorVersion === type.majorVersion && l.minorVersion === type.minorVersion);
+          return <article key={type.machineName} className="set-card p-4 flex flex-col min-w-0"><h2 className="font-semibold text-sm">{type.title}</h2><p className="text-xs text-set-dim mt-2 mb-4 flex-1">{type.summary || 'Interactive H5P content type'}</p><div className="flex flex-wrap justify-between items-center gap-2"><span className="text-xs text-set-dim">{installed?.usable ? `Ready ${installed.majorVersion}.${installed.minorVersion}.${installed.patchVersion}` : 'Needs repair'}</span>{status?.canInstall && <button className="set-btn text-xs" disabled={busy} onClick={() => void act(async () => { const result = await api.post(`/spaces/${spaceId}/h5p/libraries`, { machineName: type.machineName }); if (!result.verified) throw new Error('Installation did not pass verification.'); setReceipt(`${type.title}: verified and ready. ${result.changed.length} library versions installed or repaired from the repository bundle.`); await loadStatus(); setRefresh((v) => v + 1); })}>{installed?.usable ? 'Verify type' : 'Repair type'}</button>}</div></article>;
         })}</div>
       </>}
     </div>
@@ -122,8 +120,8 @@ function ActivityWorkspace({ spaceId, id }: { spaceId: string; id: string }) {
           {(tab === 'preview' || tab === 'play') && <div className="flex gap-1 items-center" aria-label="Preview width"><button className="set-btn" aria-pressed={width === 'full'} aria-label="Full-width preview" onClick={() => setWidth('full')}><Monitor size={15} /></button><button className="set-btn" aria-pressed={width === '375'} aria-label="Phone-width preview" onClick={() => setWidth('375')}><Smartphone size={15} /></button></div>}
         </div>
         {(['edit', 'preview', 'play'] as string[]).includes(tab) && <div className="mx-auto min-w-0" style={{ maxWidth: tab === 'edit' || width === 'full' ? '100%' : 375 }}>
-          <H5PFrame activity={activity} mode={tab as 'edit' | 'preview' | 'play'} onDirty={setDirty} onSaved={(saved) => { setActivity(saved); setDirty(false); setNotice('Draft saved. Preview it before publishing.'); }} />
-          <p className="text-xs text-set-dim mt-3">{tab === 'edit' ? 'Use Save draft inside the H5P editor. Publishing is separate; learners keep using the last published revision.' : tab === 'preview' ? 'Author preview. Practice scores and learner state are not recorded here.' : 'Practice results are client-reported and do not replace assessed grades or path completion.'}</p>
+          {tab === 'edit' ? <H5PNativeEditor activity={activity} onDirty={setDirty} onSaved={(saved) => { setActivity(saved); setDirty(false); setNotice('Draft saved. Preview it before publishing.'); }} /> : <H5PFrame activity={activity} mode={tab as 'preview' | 'play'} />}
+          <p className="text-xs text-set-dim mt-3">{tab === 'edit' ? 'Use Save draft above or below the authoring fields. Publishing is separate; learners keep using the last published revision.' : tab === 'preview' ? 'Author preview. Practice scores and learner state are not recorded here.' : 'Practice results are client-reported and do not replace assessed grades or path completion.'}</p>
         </div>}
         {tab === 'history' && <section aria-label="Revision history"><p className="text-sm text-set-dim mb-4">Restoring creates a new draft. Previously published revisions remain intact.</p>{history.length === 0 && <p className="text-sm text-set-dim">Save a draft to create the first revision.</p>}<div className="space-y-2">{history.map((revision) => <div key={revision.revision} className="set-card p-4 flex justify-between gap-3 flex-wrap"><div className="min-w-0"><h2 className="text-sm font-medium break-words">Revision {revision.revision} · {revision.title}</h2><p className="text-xs text-set-dim mt-1">{revision.author ?? 'Former member'} · {new Date(revision.created_at).toLocaleString()}{revision.published_at ? ' · Published previously' : ''}</p></div><button className="set-btn text-xs" disabled={busy || revision.revision === activity.draftRevision} onClick={() => void act(async () => { const result = await api.post(activityApi(id, '/restore'), { revision: revision.revision, expectedRevision: activity.draftRevision }); setActivity(result.activity); setTab('edit'); })}>Restore as draft</button></div>)}</div></section>}
         {tab === 'results' && <section aria-label="Practice results"><h2 className="text-sm font-semibold mb-2">Latest practice results per learner and revision</h2><p className="text-sm text-set-dim mb-4">These scores are reported by the browser, not verified assessment grades. Not every H5P content type reports a score.</p>{results.length === 0 && <div className="set-card p-5 text-sm text-set-dim">No reported results yet. Play a published activity that supports score reporting.</div>}<div className="space-y-2">{results.map((result, index) => <div key={index} className="set-card p-4 flex gap-3 justify-between flex-wrap text-sm"><span>{result.learner} · revision {result.revision}</span><strong>{result.score} / {result.max_score}</strong><span className="text-xs text-set-dim">{new Date(result.updated_at).toLocaleString()}</span></div>)}</div><button className="set-btn text-xs mt-3" onClick={() => void act(async () => { setResults((await api.get(activityApi(id, '/results'))).results); })}>Refresh results</button></section>}
