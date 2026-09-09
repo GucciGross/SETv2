@@ -41,8 +41,15 @@ export function editorDocument(model: IEditorModel, grant: Grant, baseUrl: strin
       H5PEditor.assets=settings.assets; H5PEditor.baseUrl=''; H5PEditor.enableContentHub=false;
       if(settings.nodeVersionId!==undefined)H5PEditor.contentId=settings.nodeVersionId;
       H5PEditor.getAjaxUrl=function(action,parameters){var url=settings.ajaxPath+encodeURIComponent(action);Object.keys(parameters||{}).forEach(function(k){url+='&'+encodeURIComponent(k)+'='+encodeURIComponent(parameters[k]);});return url;};
+      var preferencePrefix=${safeJson('set:h5p:editor:' + grant.sub + ':')},preferences=Object.create(null);
       function mount(data){
         editor=new H5PEditor.Editor(data&&data.library,data&&JSON.stringify(data.params),document.getElementById('native-editor'),function(){
+          // These are editor UI preferences (instruction toggles), not learner
+          // progress for content id 0. Keep them account-scoped in this browser.
+          this.H5PEditor.storage={
+            get:function(key,next){if(!/^[A-Za-z0-9_-]{1,128}$/.test(key)){next();return;}var value=preferences[key];try{var stored=localStorage.getItem(preferencePrefix+key);if(stored==='true'||stored==='false')value=stored==='true';}catch(_error){}next(value);},
+            set:function(key,value){if(typeof value!=='boolean'||!/^[A-Za-z0-9_-]{1,128}$/.test(key))return;preferences[key]=value;try{localStorage.setItem(preferencePrefix+key,String(value));}catch(_error){}}
+          };
           this.document.addEventListener('input',changed,true);this.document.addEventListener('change',changed,true);
           this.addEventListener('error',function(){failure('An H5P editor script failed. Check its installed content libraries.');});
           this.addEventListener('unhandledrejection',function(){failure('The H5P editor could not finish loading. Check the connection and reopen it.');});

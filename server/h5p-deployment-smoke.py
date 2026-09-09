@@ -16,11 +16,15 @@ import zipfile
 import zlib
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright, expect
 
 if os.environ.get("H5P_TEST_DATABASE") != "1":
     raise RuntimeError("H5P_TEST_DATABASE=1 is required; use the disposable test compose stack.")
 origin = os.environ.get("SET_DEPLOYMENT_BASE", "http://localhost:8088").rstrip("/")
+endpoint = urlsplit(origin)
+if endpoint.hostname not in ["localhost", "127.0.0.1"] or endpoint.port not in [8088, 8448] or endpoint.scheme not in ["http", "https"] or endpoint.path or endpoint.query or endpoint.fragment or endpoint.username or endpoint.password:
+    raise RuntimeError("Use only the disposable test stack on localhost:8088 or localhost:8448.")
 artifacts = Path(os.environ.get("H5P_BROWSER_ARTIFACTS", "/tmp/h5p-deployment"))
 artifacts.mkdir(parents=True, exist_ok=True)
 # Only the explicitly disposable TLS fixture uses its generated self-signed certificate.
@@ -67,7 +71,7 @@ studio_path = f"/app/space/{space}/h5p"
 with sync_playwright() as playwright:
     browser = playwright.chromium.launch()
     context = browser.new_context(ignore_https_errors=os.environ.get("H5P_TEST_SELF_SIGNED") == "1", viewport={"width": 1440, "height": 1000})
-    context.add_init_script("localStorage.setItem('set_token', " + json.dumps(token) + ");")
+    context.add_init_script("if (location.origin === " + json.dumps(origin) + ") localStorage.setItem('set_token', " + json.dumps(token) + ");")
     page = context.new_page()
     page.set_default_timeout(30000)
     errors = []
@@ -95,11 +99,11 @@ with sync_playwright() as playwright:
         outer = page.frame_locator('iframe[title^="Edit "]')
         native = outer.frame_locator("iframe").first
         native.get_by_text("Fill in the Blanks", exact=True).click()
-        title = native.locator(".field-name-title input").first
+        title = native.locator(".field-name-extraTitle input").first
         expect(title).to_be_visible()
         title.fill("Deployed H5P lesson")
         native.locator('.field-name-question [contenteditable="true"]').first.fill("SET uses *H5P*.")
-        title.click()  # commit the rich-text widget's blur handler
+        title.click()
         publish = page.get_by_role("button", name="Publish saved draft", exact=True)
         expect(publish).to_be_disabled()
         with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/save")) as saved:
@@ -108,7 +112,6 @@ with sync_playwright() as playwright:
         assert saved.value.json()["activity"]["draftRevision"] == 1
         expect(page.get_by_role("heading", name="Deployed H5P lesson", exact=True)).to_be_visible()
         expect(publish).to_be_enabled()
-        # The parent's saved-message handshake renews the immutable-revision launch.
         expect(title).to_have_value("Deployed H5P lesson")
         title.fill("Deployed H5P lesson revised")
         with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/save")) as saved_again:
@@ -128,7 +131,6 @@ with sync_playwright() as playwright:
         with page.expect_download() as download:
             page.get_by_role("button", name="Export H5P package", exact=True).click()
         package = Path(download.value.path()).read_bytes()
-        # Import a valid package larger than Nginx's old 1 MiB limit, with actual media.
         image = png()
         source, output = zipfile.ZipFile(io.BytesIO(package)), io.BytesIO()
         metadata = json.loads(source.read("h5p.json"))
