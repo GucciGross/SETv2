@@ -77,13 +77,14 @@ with sync_playwright() as playwright:
     errors = []
     failed = []
     pending = {}
+    transport_errors = []
     console_errors = []
     def track_request(req):
         if "/h5p/" in req.url:
             pending[id(req)] = {"url": redact(req.url), "resource": req.resource_type}
     page.on("request", track_request)
     page.on("requestfinished", lambda req: pending.pop(id(req), None))
-    page.on("requestfailed", lambda req: (pending.pop(id(req), None), failed.append({"url": redact(req.url), "error": req.failure})) if "/h5p/" in req.url else None)
+    page.on("requestfailed", lambda req: (pending.pop(id(req), None), transport_errors.append({"url": redact(req.url), "error": req.failure})) if "/h5p/" in req.url else None)
     page.on("console", lambda message: console_errors.append(redact(message.text)) if message.type in ["error", "warning"] else None)
     page.on("pageerror", lambda error: errors.append(redact(error)))
     page.on("response", lambda response: failed.append({"url": redact(response.url), "status": response.status}) if "/h5p/" in response.url and response.status >= 400 else None)
@@ -259,7 +260,7 @@ with sync_playwright() as playwright:
                 missingScripts: (data?.javascript ?? []).filter(src => !window.H5P?.jsLoaded(src))
             })), scripts: Array.from(document.scripts).map(script => script.src).filter(src => src.includes('/h5p/')) };
         }""")
-        diagnostic = {"errors": errors, "failed": failed, "pending": list(pending.values()), "console": console_errors[-30:], "loading": loading, "frames": frame_text}
+        diagnostic = {"errors": errors, "failed": failed, "pending": list(pending.values()), "transportErrors": transport_errors, "console": console_errors[-30:], "loading": loading, "frames": frame_text}
         (artifacts / "diagnostics.json").write_text(redact(json.dumps(diagnostic, indent=2)))
         raise
     finally:
