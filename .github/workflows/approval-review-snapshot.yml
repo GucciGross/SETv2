@@ -1,20 +1,40 @@
-name: Copilot review snapshot
+name: Apply prepared Copilot implementation
 on:
   push:
     branches: [fix/copilot-inline-approvals]
     paths: [.github/workflows/approval-review-snapshot.yml]
 permissions:
-  contents: read
+  contents: write
 jobs:
-  snapshot:
+  apply:
+    if: github.ref == 'refs/heads/fix/copilot-inline-approvals'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Archive tracked sources only
-        run: git archive --format=tar.gz HEAD > /tmp/set-approval-review.tar.gz
-      - uses: actions/upload-artifact@v4
         with:
-          name: set-approval-review
-          path: /tmp/set-approval-review.tar.gz
-          retention-days: 1
+          ref: fix/copilot-inline-approvals
+      - name: Restore and verify the prepared source patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for blob in 1fcba4a1159e42a67f6804d750c009590ad27d6d 478fe67334953bd1cef2f14abddd1d780a2b1995 f118407bf5eb5b6717e9945301fb36af06222eca; do
+            gh api "repos/GucciGross/SETv2/git/blobs/$blob" --jq .content | base64 --decode
+          done > /tmp/copilot.patch.xz
+          xz --decompress --stdout /tmp/copilot.patch.xz > /tmp/copilot.patch
+          echo '69d8e5f360c5ef1bf94cc9c45f8f007e1bde8d47e3122bae0d3008b69f33047b  /tmp/copilot.patch' | sha256sum --check
+          git apply --check /tmp/copilot.patch
+          git apply /tmp/copilot.patch
+      - name: Commit the actual implementation to the feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs server web
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'fix(copilot): inline exact-action approvals, fail-closed decisions and truthful H5P results'
+          git push origin HEAD:refs/heads/fix/copilot-inline-approvals

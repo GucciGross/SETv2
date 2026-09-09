@@ -50,14 +50,41 @@ jobs:
           retention-days: 3
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
       - run: npm ci
         working-directory: web
+      - run: npm test
+        working-directory: web
       - run: npm run build
         working-directory: web
+      - name: Install Copilot browser regression dependencies
+        run: |
+          python3 -m pip install playwright==1.57.0
+          python3 -m playwright install --with-deps chromium
+      - name: Exercise approvals in the actual Copilot popup
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm run dev -- --host 127.0.0.1 > /tmp/set-vite.log 2>&1 &
+          vite_pid=$!
+          trap 'kill "$vite_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:5173/ > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:5173/ > /dev/null
+          python3 scripts/copilot-approval-smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: copilot-inline-approvals
+          path: /tmp/copilot-approvals
+          if-no-files-found: ignore
+          retention-days: 3
 
   docker:
     runs-on: ubuntu-latest
