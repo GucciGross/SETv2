@@ -8,7 +8,7 @@ export const TOOLS = [...WORKSPACE_TOOLS, ...SKILL_LAB_TOOLS];
 export function toolList() {
   return TOOLS.map(t => ({
     name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema,
-    annotations: { title: t.title, readOnlyHint: t.scope === 'mcp:read', ...(t.annotations ?? {}) },
+    annotations: Object.assign({ title: t.title, readOnlyHint: t.scope === 'mcp:read' }, t.annotations ?? {}),
   }));
 }
 export async function callTool(name: string, args: any, ctx: ToolCtx) {
