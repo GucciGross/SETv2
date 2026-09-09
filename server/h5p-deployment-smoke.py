@@ -79,6 +79,7 @@ with sync_playwright() as playwright:
     pending = {}
     transport_errors = []
     code_requests = {"active": set(), "peak": 0}
+    editor_peak = {"value": 0}  # burst during native editor mounts only; the Play player document intentionally parallel-loads
     console_errors = []
     def track_request(req):
         if "/h5p/" in req.url:
@@ -86,7 +87,10 @@ with sync_playwright() as playwright:
     def track_code(req):
         if "/api/h5p/assets/native/libraries/" in req.url and req.resource_type in ["script", "stylesheet"]:
             code_requests["active"].add(id(req))
-            code_requests["peak"] = max(code_requests["peak"], len(code_requests["active"]))
+            peak = max(code_requests["peak"], len(code_requests["active"]))
+            code_requests["peak"] = peak
+            if page.url.startswith(origin + studio_path):
+                editor_peak["value"] = max(editor_peak["value"], len(code_requests["active"]))
     page.on("request", track_code)
     page.on("requestfinished", lambda req: code_requests["active"].discard(id(req)))
     page.on("requestfailed", lambda req: code_requests["active"].discard(id(req)))
@@ -251,8 +255,8 @@ with sync_playwright() as playwright:
             assert not errors, label + ": " + json.dumps(errors)
             assert not failed, label + ": " + json.dumps(failed)
             print("PASS composite native authoring: " + label + ", phone viewport and CSS isolation")
-        assert code_requests["peak"] <= 4, f"Native dependency burst exceeded bound: {code_requests['peak']}"
-        print(f"PASS actual dependency requests bounded to {code_requests['peak']} in flight")
+        assert editor_peak["value"] <= 4, f"Native dependency burst exceeded bound: {editor_peak['value']}"
+        print(f"PASS actual editor dependency requests bounded to {editor_peak['value']} in flight")
         draft = api("POST", f"/spaces/{space}/h5p/activities", {"title": "Authoring recovery check"})["activity"]
         page.goto(origin + studio_path + "/" + draft["id"], wait_until="domcontentloaded")
         expect(native.get_by_label("Content type", exact=True)).to_be_visible()
