@@ -1,0 +1,85 @@
+.set-copilot-dock {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .set-copilot-dock {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 14px 8px;
+    border-top: 1px solid rgba(150, 165, 200, 0.14);
+    background:
+      radial-gradient(circle at 1px 1px, rgba(158, 172, 205, 0.10) 0.8px, transparent 1px),
+      linear-gradient(180deg, rgba(17, 20, 29, 0.94), rgba(10, 12, 18, 0.98));
+    background-size: 6px 6px, 100% 100%;
+    backdrop-filter: blur(18px) saturate(150%);
+  }
+
+  .set-copilot-rocker {
+    width: min(88vw, 430px);
+    height: 64px;
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: stretch;
+    border: 1px solid rgba(145, 159, 205, 0.22);
+    border-radius: 9999px;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 18% 50%, rgba(77, 116, 255, 0.18), transparent 36%),
+      radial-gradient(circle at 82% 50%, rgba(208, 78, 255, 0.16), transparent 38%),
+      rgba(13, 16, 24, 0.92);
+    box-shadow:
+      0 10px 30px rgba(0, 0, 0, 0.38),
+      inset 0 1px 0 rgba(255,255,255,0.045);
+  }
+
+  .set-copilot-rocker-side {
+    border: 0;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 160ms ease, transform 120ms ease, color 160ms ease;
+  }
+
+  .set-copilot-rocker-side:active {
+    transform: scale(0.97);
+  }
+
+  .set-copilot-rocker-voice {
+    color: #7ea2ff;
+  }
+
+  .set-copilot-rocker-text {
+    color: #df7cff;
+  }
+
+  .set-copilot-rocker-side:hover,
+  .set-copilot-rocker-side[aria-pressed='true'] {
+    background: rgba(255,255,255,0.035);
+  }
+
+  .set-copilot-rocker-divider {
+    position: absolute;
+    left: 50%;
+    top: 27%;
+    bottom: 27%;
+    width: 1px;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, transparent, rgba(172, 183, 224, 0.62), transparent);
+    box-shadow: 0 0 14px rgba(120, 136, 255, 0.35);
+    pointer-events: none;
+  }
+
+  .set-copilot-dock-status {
+    min-height: 14px;
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    color: rgba(197, 204, 225, 0.72);
+    text-align: center;
+  }
+}
