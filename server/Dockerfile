@@ -11,7 +11,7 @@ COPY h5p ./h5p
 RUN npm run h5p:setup
 RUN npm run build && node dist/h5p/bundle-cli.js --verify && mkdir -p dist/importers/data && if [ -d src/importers/data ]; then cp -R src/importers/data/. dist/importers/data/; fi
 
-FROM node:22-alpine
+FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json* ./
@@ -23,3 +23,11 @@ COPY --from=build /app/h5p ./h5p
 RUN mkdir -p /app/data
 EXPOSE 4000
 CMD ["node", "dist/index.js"]
+
+# Explicit opt-in target, never the default hosted image.
+FROM runtime AS codex-self-hosted
+ARG CODEX_VERSION=0.154.0
+RUN npm install --global --no-audit --no-fund @openai/codex@${CODEX_VERSION}
+ENV SET_DEPLOYMENT_MODE=self-hosted SET_CODEX_OAUTH_ENABLED=0
+
+FROM runtime AS default

@@ -12,6 +12,8 @@
 services:
   server:
     environment:
+      SET_DEPLOYMENT_MODE: cloud
+      SET_CODEX_OAUTH_ENABLED: "0"
       GATEWAY_URL: http://gateway:4100/v1
 
   gateway:

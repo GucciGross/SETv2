@@ -20,6 +20,8 @@ import { SetCopilotProvider, useSetScreenContext } from '../lib/copilot';
 import { DitherAvatar } from './dither-kit';
 import WelcomeModal from './onboarding/WelcomeModal';
 import GuideFab from './GuideFab';
+import CopilotDock from './copilot/CopilotDock';
+import { openSetCopilot } from '../lib/copilotLauncher';
 import Notifications from './Notifications';
 import CommandPalette from './CommandPalette';
 import RecorderModal from './Recorder';
@@ -65,7 +67,7 @@ function NavGroup({ label, items, surfaces, railMode, onNavigate }: { label: str
     <div>
       {label && !railMode && (
         <button
-          className="set-mono set-mono-dim flex w-full items-center gap-1 px-1 pt-2 pb-1 hover:text-set-text"
+          className="set-mono set-mono-dim flex w-full items-center gap-1 px-1 pt-1.5 pb-1 hover:text-set-text"
           onClick={toggleGroup}
         >
           {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />} {label}
@@ -225,7 +227,7 @@ export default function AppShell() {
   );
 }
 
-function AppShellInner() {
+export function AppShellInner() {
   useSetScreenContext();
   const { spaceId } = useParams();
   const location = useLocation();
@@ -386,10 +388,7 @@ function AppShellInner() {
   const link = (sub: string) => `/app/space/${currentSpaceId}${sub}`;
   const subPath = location.pathname.replace(/^\/app\/space\/[^/]+\/?/, '');
 
-  const openCopilot = () => {
-    const btn = document.querySelector<HTMLButtonElement>("[data-slot='chat-toggle-button']");
-    if (btn && btn.getAttribute('aria-expanded') !== 'true') btn.click();
-  };
+  const openCopilot = () => { openSetCopilot(); };
 
   /** Compact header: past ~72px of scroll the mobile top bar shows the
    *  current page/view title (iOS large-title → small-title behavior). */
@@ -782,23 +781,23 @@ function AppShellInner() {
           <Outlet />
         </div>
 
-        {/* Mobile bottom tab bar — takes layout space (content scrolls above
-            it), matching a native app's primary navigation. Mode-aware: Simple
-            shows the task-shaped trio, Studio keeps Pages + Graph. */}
-        <nav className="md:hidden border-t border-set-border bg-set-panel/95 backdrop-blur flex pb-[env(safe-area-inset-bottom)]">
+        {/* One Copilot, two input modes. Existing navigation sits underneath. */}
+        <CopilotDock>
+        <nav className="set-copilot-taskbar" aria-label="Workspace navigation">
           {([
             { icon: <LayoutDashboard size={19} />, label: 'Home', to: link(''), active: subPath === '' },
             ...(simple ? [
-              { icon: <BookOpen size={19} />, label: 'Notebooks', to: link('/notebooks'), active: subPath.startsWith('/notebook') },
-              { icon: <ListTodo size={19} />, label: 'Tasks', to: link('/tasks'), active: subPath.startsWith('/tasks') },
+              { icon: <BookOpen size={19} />, label: 'Notebooks', to: link('/notebooks'), active: subPath.startsWith('notebook') },
+              { icon: <ListTodo size={19} />, label: 'Tasks', to: link('/tasks'), active: subPath.startsWith('tasks') },
             ] : [
-              { icon: <FileText size={19} />, label: 'Pages', to: link('/pages'), active: subPath.startsWith('/pages') || subPath.startsWith('/page/') },
-              { icon: <Network size={19} />, label: 'Graph', to: link('/graph'), active: subPath.startsWith('/graph') },
+              { icon: <FileText size={19} />, label: 'Pages', to: link('/pages'), active: subPath.startsWith('pages') || subPath.startsWith('page/') },
+              { icon: <Network size={19} />, label: 'Graph', to: link('/graph'), active: subPath.startsWith('graph') },
             ]),
           ] as const).map((t) => (
             <Link
               key={t.label}
               to={t.to}
+              aria-current={t.active ? 'page' : undefined}
               onClick={() => haptic(8)}
               className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 text-[10px] active:scale-95 transition-transform ${
                 t.active ? 'text-set-accent' : 'text-set-dim'
@@ -808,14 +807,8 @@ function AppShellInner() {
               {t.label}
             </Link>
           ))}
-          <button
-            className="flex-1 flex flex-col items-center gap-0.5 py-1.5 text-[10px] text-set-dim active:scale-95 transition-transform"
-            onClick={() => { haptic(8); openCopilot(); }}
-          >
-            <MessageCircle size={19} />
-            Ask SET
-          </button>
         </nav>
+        </CopilotDock>
       </main>
 
       {/* Non-blocking feedback (errors, confirmations) */}

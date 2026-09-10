@@ -1,0 +1,10 @@
+# Self-hosted single-replica opt-in ONLY. Do not use this override for SET Cloud.
+# docker compose -f docker-compose.yml -f docker-compose.codex.yml up -d --build
+services:
+  server:
+    build:
+      context: ./server
+      target: codex-self-hosted
+    environment:
+      SET_DEPLOYMENT_MODE: self-hosted
+      SET_CODEX_OAUTH_ENABLED: "1"
