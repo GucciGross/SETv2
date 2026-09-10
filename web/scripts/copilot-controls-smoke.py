@@ -91,7 +91,10 @@ with sync_playwright() as p:
             page.evaluate("window.dispatchEvent(new CustomEvent('set:ask-copilot', {detail:'Keep this conversation open'}))")
             expect(popup.get_by_text('Received in the same Copilot conversation: Keep this conversation open', exact=True)).to_be_visible()
             assert page.evaluate('window.controlsFixture.calls[1].threadId') == thread
-            header = popup.locator('[data-testid="copilot-modal-header"]')
+            # In-chat controls = the compact rocker the header renders (the dock's
+            # copy is hidden while the chat is open); CopilotKit 1.69 has no
+            # copilot-modal-header wrapper when a custom header slot is used.
+            header = popup.locator('.set-copilot-mode--compact')
             voice = header.get_by_role('button', name='Talk to Copilot', exact=True)
             expect(voice).to_be_visible()
             # Rejecting permission is visible and does not produce a user message.
@@ -116,7 +119,7 @@ with sync_playwright() as p:
             page.screenshot(path=str(artifacts / (name + '-conversation.png')))
             voice.click(); expect(stop).to_be_visible()
             before = page.evaluate('window.controlsFixture.stoppedTracks')
-            popup.locator("[data-slot='copilot-modal-close-button']").click()
+            popup.locator('[data-testid="copilot-close-button"]').click()
             expect(dock).to_be_visible()
             page.wait_for_function('(n) => window.controlsFixture.stoppedTracks > n', arg=before)
             assert len(uploads) == 1, 'Closing recording must not send it'

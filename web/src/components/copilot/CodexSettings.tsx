@@ -84,7 +84,15 @@ export default function CodexSettings() {
         <div className="space-y-3">
           <label className="flex items-center gap-2 text-sm text-set-text min-h-11">
             <input type="checkbox" checked={status.selected} disabled={busy || status.busy}
-              onChange={e => void action(() => api.put<{ selected: boolean }>('/codex/selection', { enabled: e.target.checked }))} />
+              onChange={e => {
+                const enabled = e.target.checked;
+                // Optimistic: a controlled checkbox needs local state at click time,
+                // or React snaps it back until the PUT round-trip lands (double-click
+                // then silently un-selects). ponytail: no revert-on-error — the alert
+                // below reports the failure; re-fetch /codex/account if that matters.
+                setStatus(previous => previous ? { ...previous, selected: enabled } : previous);
+                void action(() => api.put<{ selected: boolean }>('/codex/selection', { enabled }));
+              }} />
             Use Codex for my Copilot
           </label>
           <p className="text-xs text-set-dim">This applies only to your account. Other members keep their provider choices. Subscription limits still apply; failures do not silently switch to a paid API.</p>
