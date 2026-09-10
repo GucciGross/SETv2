@@ -21,3 +21,12 @@ export function validateDeviceLogin(value: unknown) {
   }
   return { loginId: v.loginId, userCode: v.userCode, verificationUrl: v.verificationUrl };
 }
+
+/** Experimental voice is separately opt-in and can never override the cloud gate. */
+export function codexVoiceEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return codexOAuthEnabled(env) && env.SET_CODEX_VOICE_ENABLED === '1';
+}
+
+export function requireCodexVoice(): void {
+  if (!codexVoiceEnabled()) throw new CodexError(404, 'Codex subscription voice is unavailable on this deployment.');
+}

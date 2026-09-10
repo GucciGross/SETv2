@@ -1,0 +1,6 @@
+# Experimental PERSONAL voice; layer after docker-compose.codex.yml, never in Cloud.
+# docker compose -f docker-compose.yml -f docker-compose.codex.yml -f docker-compose.codex-voice.yml up -d --build
+services:
+  server:
+    environment:
+      SET_CODEX_VOICE_ENABLED: "1"

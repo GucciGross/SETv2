@@ -5,7 +5,8 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CodexRpc } from './rpc.js';
 import { CodexBridge } from './bridge.js';
-import { CodexError, codexOAuthEnabled, requireCodexOAuth, validateDeviceLogin } from './policy.js';
+import { CodexVoice } from './voice.js';
+import { CodexError, codexOAuthEnabled, requireCodexOAuth, requireCodexVoice, validateDeviceLogin } from './policy.js';
 
 export const PRIVATE_CONFIG = [
   'cli_auth_credentials_store="file"', 'forced_login_method="chatgpt"',
@@ -38,7 +39,7 @@ async function privateDirectory(path: string) {
 
 interface Session {
   rpc: CodexRpc; home: string; workDir: string; touched: number; busy: boolean; locked: boolean;
-  bridge?: CodexBridge; lastLogin: number;
+  bridge?: CodexBridge; voice?: CodexVoice; lastLogin: number;
   login?: ReturnType<typeof validateDeviceLogin> & { startedAt: number };
   completedLogin?: { id: string; success: boolean };
   loginError?: string;
@@ -93,6 +94,7 @@ export class CodexSessions {
   }
 
   private async dispose(s: Session) {
+    await s.voice?.close();
     await s.bridge?.close();
     s.rpc.stop();
     // Wait until the process can no longer write credential files before cleanup.
@@ -162,7 +164,7 @@ export class CodexSessions {
     const info = await s.rpc.request('account/read', { refreshToken: false });
     const a = info?.account;
     return {
-      available: true, connected: a?.type === 'chatgpt', selected: await this.selected(userId), busy: s.busy,
+      available: true, connected: a?.type === 'chatgpt', selected: await this.selected(userId), busy: s.busy || !!s.voice,
       account: a?.type === 'chatgpt' ? {
         email: typeof a.email === 'string' ? a.email.slice(0, 254) : '',
         planType: typeof a.planType === 'string' ? a.planType.slice(0, 60) : '',
@@ -179,7 +181,7 @@ export class CodexSessions {
   private async loginImpl(userId: string) {
     const s = await this.get(userId);
     await this.exclusive(s, async () => {
-      if (s.busy) throw new CodexError(409, 'Stop the current Copilot run before changing accounts.');
+      if (s.busy || s.voice) throw new CodexError(409, 'Stop the current Copilot run before changing accounts.');
       if (s.login || (await s.rpc.request('account/read'))?.account?.type === 'chatgpt') return;
       if (Date.now() - s.lastLogin < 30_000) throw new CodexError(429, 'Wait 30 seconds before starting another sign-in.');
       s.lastLogin = Date.now(); s.loginError = undefined; s.completedLogin = undefined;
@@ -212,13 +214,13 @@ export class CodexSessions {
     if (!enabled) {
       requireCodexOAuth();
       const current = await this.sessions.get(userId);
-      if (current?.busy || current?.locked || this.disconnecting.has(userId)) throw new CodexError(409, 'Stop the current Codex operation before switching providers.');
+      if (current?.busy || current?.voice || current?.locked || this.disconnecting.has(userId)) throw new CodexError(409, 'Stop the current Codex operation before switching providers.');
       await this.saveSelection(await this.storage(userId), false);
       return { selected: false };
     }
     const s = await this.get(userId);
     await this.exclusive(s, async () => {
-      if (s.busy || s.login) throw new CodexError(409, 'Finish the current Codex operation before switching providers.');
+      if (s.busy || s.voice || s.login) throw new CodexError(409, 'Finish the current Codex operation before switching providers.');
       if ((await s.rpc.request('account/read', { refreshToken: false }))?.account?.type !== 'chatgpt') {
         throw new CodexError(409, 'Sign in with ChatGPT before selecting Codex for Copilot.');
       }
@@ -241,6 +243,7 @@ export class CodexSessions {
         if (s.locked) throw new CodexError(409, 'Another Codex account operation is in progress. Retry disconnect.');
         s.locked = true;
         try {
+          await s.voice?.close();
           await s.bridge?.close();
           if (!s.rpc.isClosed) {
             if (s.login) await s.rpc.request('account/login/cancel', { loginId: s.login.loginId }, 2000).catch(() => {});
@@ -274,10 +277,42 @@ export class CodexSessions {
     });
   }
 
+  /** One audio adapter per personal CLI; its handoffs still acquire the normal text bridge. */
+  async openVoice(userId: string, spaceId: string): Promise<CodexVoice> {
+    requireCodexVoice();
+    if (this.mutations.has(userId) || this.disconnecting.has(userId)) throw new CodexError(409, 'Finish the account operation before starting voice.');
+    const s = await this.get(userId);
+    return this.exclusive(s, async () => {
+      if (this.mutations.has(userId) || this.disconnecting.has(userId) || s.voice || s.busy || s.login) {
+        throw new CodexError(409, 'Finish the active Copilot or voice session first.');
+      }
+      if (!(await this.selected(userId)) || (await s.rpc.request('account/read', { refreshToken: false }))?.account?.type !== 'chatgpt') {
+        throw new CodexError(409, 'Connect and select your personal Codex account in Settings before starting voice.');
+      }
+      const voice = new CodexVoice(s.rpc, s.workDir, spaceId, healthy => {
+        if (s.voice === voice) s.voice = undefined;
+        s.touched = Date.now();
+        if (!healthy) s.rpc.stop();
+      });
+      s.voice = voice;
+      return voice;
+    });
+  }
+
+  /** Look up only an existing, user-owned session. Polling never spawns a process. */
+  async voiceSession(userId: string, spaceId: string, sessionId: string): Promise<CodexVoice> {
+    requireCodexVoice();
+    const s = await this.sessions.get(userId);
+    if (!s?.voice || s.voice.id !== sessionId || s.voice.spaceId !== spaceId) {
+      throw new CodexError(404, 'Voice session not found or ended. Start voice again or use text.');
+    }
+    return s.voice;
+  }
+
   private async sweep() {
     for (const [id, promise] of this.sessions) {
       const s = await promise.catch(() => null);
-      if (!s || s.busy || s.locked || this.disconnecting.has(id) || this.mutations.has(id)) continue;
+      if (!s || s.busy || s.voice || s.locked || this.disconnecting.has(id) || this.mutations.has(id)) continue;
       await this.exclusive(s, async () => {
         if (s.login && Date.now() - s.login.startedAt > 600_000) {
           await s.rpc.request('account/login/cancel', { loginId: s.login.loginId }).catch(() => {});
