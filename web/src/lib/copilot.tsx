@@ -5,6 +5,7 @@ import { useAgentContext, useCopilotKit } from '@copilotkit/react-core/v2';
 import { getToken } from './api';
 import { uuid } from './utils';
 import { useApp } from '../stores/app';
+import { CopilotInteractionProvider } from '../components/copilot/CopilotDock';
 
 /**
  * CopilotKit wiring for SET: provider (auth header + space routing) and the
@@ -39,7 +40,7 @@ export function SetCopilotProvider({ children }: { children: React.ReactNode }) 
       enableInspector={import.meta.env.DEV && window.location.hostname === 'localhost'}
     >
       <CopilotCoreBridge />
-      {children}
+      <CopilotInteractionProvider>{children}</CopilotInteractionProvider>
     </CopilotKit>
   );
 }

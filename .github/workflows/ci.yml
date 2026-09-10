@@ -67,7 +67,7 @@ jobs:
         run: |
           python3 -m pip install playwright==1.57.0
           python3 -m playwright install --with-deps chromium
-      - name: Exercise approvals in the actual Copilot popup
+      - name: Exercise approvals and input controls in the actual Copilot shell
         working-directory: web
         run: |
           set -euo pipefail
@@ -80,11 +80,19 @@ jobs:
           done
           curl --fail --silent http://127.0.0.1:5173/ > /dev/null
           python3 scripts/copilot-approval-smoke.py
+          python3 scripts/copilot-controls-smoke.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: copilot-inline-approvals
           path: /tmp/copilot-approvals
+          if-no-files-found: ignore
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: copilot-controls-browser
+          path: /tmp/copilot-controls
           if-no-files-found: ignore
           retention-days: 3
 
@@ -98,7 +106,14 @@ jobs:
       - name: Build web image
         run: docker build -t set-web ./web
       - name: Compose config check
-        run: docker compose config --quiet
+        run: |
+          docker compose config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.codex.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.cloud.yml config --quiet
+      - name: Validate the optional self-hosted Codex image without credentials
+        run: |
+          docker build --target codex-self-hosted -t set-server-codex ./server
+          docker run --rm -v "$PWD/server/scripts:/app/scripts:ro" --entrypoint node set-server-codex scripts/codex-cli-smoke.mjs
 
       - name: Install deployed-browser test dependencies
         run: |

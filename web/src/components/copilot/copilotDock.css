@@ -1,85 +1,82 @@
-.set-copilot-dock {
-  display: none;
+/* Scoped to the new controls. The workspace and existing chat keep SET's design system. */
+.set-copilot-command-dock {
+  flex: 0 0 auto;
+  width: min(460px, calc(100% - 28px));
+  margin: 10px 14px 12px auto;
+  padding: 9px 10px 4px;
+  border: 1px solid rgb(150 165 200 / 12%);
+  border-radius: 24px;
+  background: #10121a;
+  box-shadow: 0 4px 18px rgb(0 0 0 / 12%);
 }
-
+.set-copilot-mode { position: relative; min-width: 0; }
+.set-copilot-rocker {
+  position: relative; display: grid; grid-template-columns: 1fr 1fr; align-items: stretch;
+  height: 64px; overflow: hidden; border-radius: 999px;
+  background: #141620; border: 1px solid rgb(154 165 200 / 16%);
+}
+.set-copilot-rocker > button {
+  display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px;
+  border: 0; background: transparent; cursor: pointer; padding: 0;
+  transition: background-color 140ms ease, color 140ms ease; -webkit-tap-highlight-color: transparent;
+}
+.set-copilot-rocker > button::before {
+  content: ''; position: absolute; top: 31%; height: 38%; width: 2px; border-radius: 8px;
+  background: currentColor; opacity: .65;
+}
+.set-copilot-rocker-voice { color: #a6b8ff; }
+.set-copilot-rocker-text { color: #d8a4ef; }
+.set-copilot-rocker-voice::before { left: 2px; }
+.set-copilot-rocker-text::before { right: 2px; }
+.set-copilot-rocker-voice:hover, .set-copilot-rocker-voice[aria-pressed='true'] { background: rgb(117 145 248 / 9%); }
+.set-copilot-rocker-text:hover, .set-copilot-rocker-text[aria-pressed='true'] { background: rgb(195 122 228 / 8%); }
+.set-copilot-rocker > button:focus-visible { outline: 2px solid currentColor; outline-offset: -5px; border-radius: 999px; }
+.set-copilot-rocker > button:disabled { cursor: wait; opacity: .55; }
+.set-copilot-rocker-divider {
+  position: absolute; pointer-events: none; left: 50%; top: 35%; height: 30%; width: 1px;
+  background: rgb(176 169 224 / 52%);
+}
+.set-copilot-rocker[data-listening] .set-copilot-rocker-voice { color: #cad6ff; background: rgb(117 145 248 / 17%); }
+.set-copilot-rocker[data-listening] .set-copilot-rocker-voice::before { opacity: 1; box-shadow: 0 0 10px 1px #799bff; }
+.set-copilot-taskbar { display: flex; align-items: center; gap: 3px; padding-top: 5px; }
+.set-copilot-taskbar > a, .set-copilot-taskbar > button {
+  flex: 1 1 0; min-width: 0; min-height: 44px; display: flex; flex-direction: row;
+  align-items: center; justify-content: center; gap: 6px; padding: 0 3px;
+  border-radius: 12px; font-size: 11px; white-space: nowrap;
+}
+.set-copilot-taskbar svg { width: 15px; height: 15px; flex-shrink: 0; }
+.set-copilot-taskbar > :hover { background: rgb(154 165 200 / 7%); }
+.set-copilot-taskbar > :focus-visible { outline: 2px solid #a6b8ff; outline-offset: -3px; }
+.set-copilot-voice-status {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  color: #bcc6da; font-size: 12px; line-height: 1.4; padding: 6px 7px 0;
+}
+.set-copilot-voice-status[data-error] { color: #ffb5b5; }
+.set-copilot-voice-status > button { display: grid; place-items: center; min-width: 44px; min-height: 44px; border-radius: 10px; }
+.set-copilot-mode--compact { margin-left: auto; flex-shrink: 0; width: 96px; }
+.set-copilot-mode--compact .set-copilot-rocker { height: 44px; }
+.set-copilot-mode--compact .set-copilot-rocker svg { width: 19px; height: 19px; }
+.set-copilot-mode--compact .set-copilot-voice-status {
+  position: absolute; right: 0; top: calc(100% + 10px); width: min(290px, 74vw); z-index: 5;
+  background: #161a25; border: 1px solid rgb(154 165 200 / 22%); border-radius: 12px;
+  padding: 8px 12px; box-shadow: 0 8px 20px rgb(0 0 0 / 18%);
+}
+body.set-command-dock [data-slot='chat-toggle-button'] { display: none !important; }
 @media (max-width: 767px) {
-  .set-copilot-dock {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 10px 14px 8px;
-    border-top: 1px solid rgba(150, 165, 200, 0.14);
-    background:
-      radial-gradient(circle at 1px 1px, rgba(158, 172, 205, 0.10) 0.8px, transparent 1px),
-      linear-gradient(180deg, rgba(17, 20, 29, 0.94), rgba(10, 12, 18, 0.98));
-    background-size: 6px 6px, 100% 100%;
-    backdrop-filter: blur(18px) saturate(150%);
+  .set-copilot-command-dock {
+    margin: 5px auto 0; width: 100%; border: 0; border-top: 1px solid rgb(150 165 200 / 12%);
+    border-radius: 0; padding: 9px max(12px, env(safe-area-inset-left)) max(2px, env(safe-area-inset-bottom));
   }
-
-  .set-copilot-rocker {
-    width: min(88vw, 430px);
-    height: 64px;
-    position: relative;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    align-items: stretch;
-    border: 1px solid rgba(145, 159, 205, 0.22);
-    border-radius: 9999px;
-    overflow: hidden;
-    background:
-      radial-gradient(circle at 18% 50%, rgba(77, 116, 255, 0.18), transparent 36%),
-      radial-gradient(circle at 82% 50%, rgba(208, 78, 255, 0.16), transparent 38%),
-      rgba(13, 16, 24, 0.92);
-    box-shadow:
-      0 10px 30px rgba(0, 0, 0, 0.38),
-      inset 0 1px 0 rgba(255,255,255,0.045);
-  }
-
-  .set-copilot-rocker-side {
-    border: 0;
-    background: transparent;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 160ms ease, transform 120ms ease, color 160ms ease;
-  }
-
-  .set-copilot-rocker-side:active {
-    transform: scale(0.97);
-  }
-
-  .set-copilot-rocker-voice {
-    color: #7ea2ff;
-  }
-
-  .set-copilot-rocker-text {
-    color: #df7cff;
-  }
-
-  .set-copilot-rocker-side:hover,
-  .set-copilot-rocker-side[aria-pressed='true'] {
-    background: rgba(255,255,255,0.035);
-  }
-
-  .set-copilot-rocker-divider {
-    position: absolute;
-    left: 50%;
-    top: 27%;
-    bottom: 27%;
-    width: 1px;
-    transform: translateX(-50%);
-    background: linear-gradient(180deg, transparent, rgba(172, 183, 224, 0.62), transparent);
-    box-shadow: 0 0 14px rgba(120, 136, 255, 0.35);
-    pointer-events: none;
-  }
-
-  .set-copilot-dock-status {
-    min-height: 14px;
-    font-size: 10px;
-    letter-spacing: 0.02em;
-    color: rgba(197, 204, 225, 0.72);
-    text-align: center;
-  }
+  .set-copilot-rocker { height: 60px; }
+  .set-copilot-taskbar { gap: 2px; }
 }
+@media (prefers-reduced-motion: reduce) { .set-copilot-rocker > button { transition: none; } }
+@media (forced-colors: active) {
+  .set-copilot-rocker, .set-copilot-command-dock { border: 1px solid ButtonText; }
+  .set-copilot-rocker > button { color: ButtonText; }
+  .set-copilot-rocker-divider { background: ButtonText; }
+  .set-copilot-rocker > button[aria-pressed='true'] { outline: 2px solid Highlight; outline-offset: -4px; }
+}
+
+/* Keep the compact navigation only on phones; desktop already has its sidebar. */
+@media (min-width: 768px) { .set-copilot-taskbar { display: none; } }

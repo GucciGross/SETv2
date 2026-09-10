@@ -12,11 +12,14 @@ import { GuideTools } from './copilot/GuideTools';
 import { SetToolRenderers } from './copilot/ToolRenderers';
 import { ApprovalProvider, SetToolCallsView } from './copilot/ApprovalWatcher';
 import { askAgent, GUIDE_AGENT } from '../lib/copilot';
+import { openSetCopilot } from '../lib/copilotLauncher';
+import { CopilotModeControls } from './copilot/CopilotDock';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from './Mascot';
 
 /**
- * THE SET copilot — one floating overlay on every view (CopilotKit's built-in
- * toggle, restyled as the SET launcher in index.css). It's the onboarding
+ * THE SET copilot — one overlay and one thread on every view. The application
+ * dock and the in-chat controls share voice/text state; the stock toggle remains
+ * the compatibility bridge for tours and programmatic opening. It's the onboarding
  * companion and the workspace assistant in one: it sees the current screen,
  * writes into the open note, spotlights UI, runs the tour, navigates — and has
  * the full server toolkit (pages, notebooks, decks) with approvals.
@@ -130,7 +133,7 @@ function SetChatHeader({ titleContent, closeButton }: { titleContent?: React.Rea
       <button
         className="ml-auto p-1.5 rounded-md text-set-dim hover:text-set-text hover:bg-set-panel2 text-xs flex items-center gap-1 transition-colors"
         title="Start a new chat"
-        onClick={() => startNewThread?.()}
+        onClick={() => { window.dispatchEvent(new Event('set:copilot-reset-input')); startNewThread?.(); }}
       >
         <MessageSquarePlus size={14} />
         <span className="hidden sm:inline">New chat</span>
@@ -146,6 +149,7 @@ function SetChatHeader({ titleContent, closeButton }: { titleContent?: React.Rea
       >
         {docked ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
       </button>
+      <CopilotModeControls compact />
       {closeButton}
     </div>
   );
@@ -564,14 +568,12 @@ export default function GuideFab() {
     const handler = (e: Event) => {
       const text = (e as CustomEvent).detail as string;
       if (!text) return;
-      document.querySelector<HTMLButtonElement>("[data-slot='chat-toggle-button']")?.click();
+      openSetCopilot();
       if (agent) void askAgent(agent, text);
     };
     window.addEventListener('set:ask-copilot', handler);
     return () => window.removeEventListener('set:ask-copilot', handler);
   }, [agent]);
-
-  if (!mascotEnabled) return null;
 
   return (
     <ApprovalProvider>

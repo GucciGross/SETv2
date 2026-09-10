@@ -1,3 +1,5 @@
+import { codexSessions } from '../codex/service.js';
+import type { CodexBridge } from '../codex/bridge.js';
 import { one, q } from '../db.js';
 import { getProvider, chatCompletionStream, ensureBootstrapProvider, type ChatMessage, type ToolDef } from '../llm/router.js';
 import { getTool, TOOL_DEFS } from './tools.js';
@@ -140,7 +142,8 @@ export function sanitizeMessages(input: ChatMessage[]): ChatMessage[] {
 }
 
 export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {
-  const { spaceId, userId, message, emit, signal } = opts;
+  const { spaceId, userId, message, emit, signal: callerSignal } = opts;
+  let signal = callerSignal;
   console.log(`[engine] runAgentLoop space=${spaceId} source=${opts.source ?? 'api'} msg="${message.slice(0, 60)}"`);
   const historyMode = opts.history ?? 'db';
   await ensureBootstrapProvider(spaceId);
@@ -210,19 +213,21 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<void> {
     ]);
   };
 
-  if (!provider) {
-    const msg =
-      ' No LLM provider configured yet. Go to **Settings  AI Providers** and add one (Ollama at `http://localhost:11434/v1`, LM Studio, or any OpenAI-compatible endpoint).';
-    const messageId = crypto.randomUUID();
-    emit('TEXT_MESSAGE_START', { messageId });
-    emit('TEXT_MESSAGE_CONTENT', { messageId, delta: msg });
-    emit('TEXT_MESSAGE_END', { messageId });
-    emit('RUN_FINISHED', { threadId, runId: run.id });
-    await persist('finished');
-    return;
-  }
-
+  let codex: CodexBridge | null = null;
   try {
+    // Subscription access is personal and interactive, never a background/channel default.
+    if (opts.source === 'guide' || opts.source === 'copilot') codex = await codexSessions.acquire(userId);
+    if (codex) signal = callerSignal ? AbortSignal.any([callerSignal, codex.signal]) : codex.signal;
+    if (!provider && !codex) {
+      const messageId = crypto.randomUUID();
+      emit('TEXT_MESSAGE_START', { messageId });
+      emit('TEXT_MESSAGE_CONTENT', { messageId, delta: 'No Copilot provider is configured. Open Settings to connect a workspace AI provider or, on an enabled self-hosted instance, your personal Codex account.' });
+      emit('TEXT_MESSAGE_END', { messageId });
+      emit('RUN_FINISHED', { threadId, runId: run.id });
+      await persist('finished');
+      return;
+    }
+
     const MAX_STEPS = 16;
     let clientToolCalled = false;
     let approvalStop: ApprovalOutcome | undefined;
@@ -244,20 +249,19 @@ Workflow integrity:
       ];
       let assistantContent = '';
       let messageId: string | null = null;
-      const result = await chatCompletionStream(
-        provider,
-        null,
-        { messages, tools: allTools.length ? allTools : undefined, signal },
-        (delta) => {
-          if (!messageId) {
-            messageId = crypto.randomUUID();
-            emit('TEXT_MESSAGE_START', { messageId });
-          }
-          assistantContent += delta;
-          emit('TEXT_MESSAGE_CONTENT', { messageId, delta });
+      const completionOptions = { messages, tools: allTools.length ? allTools : undefined, signal };
+      const onDelta = (delta: string) => {
+        if (!messageId) {
+          messageId = crypto.randomUUID();
+          emit('TEXT_MESSAGE_START', { messageId });
         }
-      );
-      if (messageId) emit('TEXT_MESSAGE_END', { messageId });
+        assistantContent += delta;
+        emit('TEXT_MESSAGE_CONTENT', { messageId, delta });
+      };
+      const result = await (codex
+        ? codex.complete(completionOptions, onDelta)
+        : chatCompletionStream(provider!, null, completionOptions, onDelta)
+      ).finally(() => { if (messageId) emit('TEXT_MESSAGE_END', { messageId }); });
 
       if (!result.tool_calls.length) {
         thread.push({ role: 'assistant', content: result.content ?? '' });
@@ -386,5 +390,7 @@ Workflow integrity:
   } catch (e: any) {
     emit('RUN_ERROR', { message: e.message ?? String(e) });
     await q(`UPDATE agent_runs SET status = 'error' WHERE id = $1`, [run.id]);
+  } finally {
+    await codex?.close();
   }
 }

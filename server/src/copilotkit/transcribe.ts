@@ -16,7 +16,7 @@ export function transcriptionConfigured(): boolean {
 }
 
 /** One-shot STT for uploaded recordings (recorder mode). Throws on failure. */
-export async function transcribeBuffer(buf: Buffer, filename: string): Promise<string> {
+export async function transcribeBuffer(buf: Buffer, filename: string, signal?: AbortSignal): Promise<string> {
   const { baseUrl, apiKey, model } = config.transcribe;
   if (!baseUrl) throw new Error('No transcription provider configured (api key missing): set TRANSCRIBE_BASE_URL or LLM_BASE_URL');
   const form = new FormData();
@@ -26,6 +26,7 @@ export async function transcribeBuffer(buf: Buffer, filename: string): Promise<s
     method: 'POST',
     headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {},
     body: form,
+    signal,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
