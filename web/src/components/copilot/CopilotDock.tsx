@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { Mic, Square, Keyboard, Volume2, VolumeX } from 'lucide-react';
 import { useAgent } from '@copilotkit/react-core/v2';
 import { askAgent, GUIDE_AGENT } from '../../lib/copilot';
-import { openSetCopilot, focusCopilotInput } from '../../lib/copilotLauncher';
+import { openSetCopilot, focusCopilotInput, isSetCopilotOpen, COPILOT_TOGGLE_SELECTOR } from '../../lib/copilotLauncher';
 import { useCopilotVoice, type VoiceState } from './useCopilotVoice';
 import './copilotDock.css';
 
@@ -41,12 +41,12 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
     setOpen(false);
     let buttonObserver: MutationObserver | undefined;
     const connect = () => {
-      const button = document.querySelector<HTMLButtonElement>("[data-slot='chat-toggle-button']");
+      const button = document.querySelector<HTMLButtonElement>(COPILOT_TOGGLE_SELECTOR);
       if (!button) return false;
-      let wasOpen = button.getAttribute('aria-expanded') === 'true';
+      let wasOpen = isSetCopilotOpen(button);
       setOpen(wasOpen);
       const update = () => {
-        const next = button.getAttribute('aria-expanded') === 'true';
+        const next = isSetCopilotOpen(button);
         setOpen(next);
         if (wasOpen && !next) {
           voice.cancel(); window.speechSynthesis?.cancel(); setMode('text');
@@ -55,7 +55,7 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
         wasOpen = next;
       };
       buttonObserver = new MutationObserver(update);
-      buttonObserver.observe(button, { attributes: true, attributeFilter: ['aria-expanded'] });
+      buttonObserver.observe(button, { attributes: true, attributeFilter: ['aria-pressed', 'data-state'] });
       return true;
     };
     const mounting = new MutationObserver(() => { if (connect()) mounting.disconnect(); });

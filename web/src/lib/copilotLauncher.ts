@@ -1,7 +1,14 @@
+export const COPILOT_TOGGLE_SELECTOR = "[data-slot='chat-toggle-button']";
+
+/** CopilotKit v2 exposes aria-pressed/data-state, not aria-expanded. */
+export function isSetCopilotOpen(button: Pick<Element, 'getAttribute'> | null = document.querySelector(COPILOT_TOGGLE_SELECTOR)): boolean {
+  return button?.getAttribute('aria-pressed') === 'true' || button?.getAttribute('data-state') === 'open';
+}
+
 export function openSetCopilot(): boolean {
-  const button = document.querySelector<HTMLButtonElement>("[data-slot='chat-toggle-button']");
+  const button = document.querySelector<HTMLButtonElement>(COPILOT_TOGGLE_SELECTOR);
   if (!button) return false;
-  if (button.getAttribute('aria-expanded') !== 'true') button.click();
+  if (!isSetCopilotOpen(button)) button.click();
   return true;
 }
 
