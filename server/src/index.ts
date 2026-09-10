@@ -37,6 +37,8 @@ import { mcpRoutes } from './mcp/routes.js';
 import { skillsRoutes, seedSkills, getActiveSkillPrompt } from './skills/routes.js';
 import { onboardingRoutes } from './onboarding/routes.js';
 import { copilotKitRoutes } from './copilotkit/route.js';
+import { copilotVoiceRoutes } from './copilotkit/voice.js';
+import { codexRoutes } from './codex/routes.js';
 import { channelRoutes } from './channels/routes.js';
 import { wandgxRoutes } from './wandgx/routes.js';
 import { clipRoutes } from './clip/routes.js';
@@ -46,10 +48,6 @@ import { seed } from './seed.js';
 async function main() {
   const app = Fastify({ logger: true, bodyLimit: 64 * 1024 * 1024, maxParamLength: 2048 });
 
-  // /api/clip is posted by the clipper bookmarklet from arbitrary origins.
-  // The cors plugin's origin callback can't see the URL, so open CORS for the
-  // clip route manually — this hook is registered first and Fastify runs
-  // same-scope hooks in order, letting it answer the preflight itself.
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/api/clip')) return;
     reply.header('Access-Control-Allow-Origin', req.headers.origin ?? '*');
@@ -66,9 +64,6 @@ async function main() {
   await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024 } });
   await app.register(websocket);
 
-  // tolerate POSTs with a JSON content-type but no body (e.g. curl without -d).
-  // The raw string is stashed on the request — Stripe webhook signature
-  // verification needs the exact bytes the sender signed.
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
     const text = body as string;
     (req as any).rawBody = text ?? '';
@@ -83,8 +78,6 @@ async function main() {
 
   app.get('/health', async () => ({ ok: true, name: 'SET', version: '2.1.0' }));
 
-  // capture screenshots from the computer-use tools — JWT via header or
-  // ?token= so <img> tags can authenticate
   app.get('/api/captures/:file', async (req, reply) => {
     const { getUser } = await import('./lib/http.js');
     if (!getUser(req)) return reply.code(401).send({ error: 'Unauthorized' });
@@ -98,14 +91,11 @@ async function main() {
     }
   });
 
-  // clipper lives in its own scope: the bookmarklet posts cross-origin, so it
-  // carries its own permissive CORS registration instead of the main API's
   await app.register(clipRoutes, { prefix: '/api' });
 
   await app.register(async (api) => {
     await authRoutes(api);
     await oidcRoutes(api);
-    // public instance metadata: version + SSO availability (login page, about)
     api.get('/meta', async () => {
       const { oidcEnabled } = await import('./auth/oidc.js');
       return { version: '2.1.0', sso: { enabled: oidcEnabled(), name: config.oidc.displayName } };
@@ -143,6 +133,8 @@ async function main() {
     await billingRoutes(api);
     await skillsRoutes(api);
     await copilotKitRoutes(api);
+    await copilotVoiceRoutes(api);
+    await codexRoutes(api);
     await channelRoutes(api);
     await wandgxRoutes(api);
   }, { prefix: '/api' });
@@ -153,7 +145,6 @@ async function main() {
   const { initBriefScheduler } = await import('./study/briefScheduler.js');
   initBriefScheduler();
 
-  // Seed the persistent volume from the verified repository bundle before serving learners.
   const { provisionBundledLibraries } = await import('./h5p/bundle.js');
   const bundle = await provisionBundledLibraries(join(config.dataDir, 'h5p', 'libraries'));
   console.log(`[H5P] ${bundle.contentTypes} bundled content types; ${bundle.changed.length} library versions installed or repaired`);
