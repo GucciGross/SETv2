@@ -1,0 +1,24 @@
+name: Codex contract
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  protocol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
+      - run: npm ci && npm run build
+        working-directory: server
+      - name: Install pinned official Codex (no account credentials)
+        run: npm install --prefix /tmp/set-codex --no-audit --no-fund @openai/codex@0.154.0
+      - name: Exercise the real managed-account protocol, without logging in
+        working-directory: server
+        env:
+          SET_CODEX_BIN: /tmp/set-codex/node_modules/.bin/codex
+        run: node scripts/codex-cli-smoke.mjs
