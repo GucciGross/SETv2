@@ -1,0 +1,25 @@
+name: Review source
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Archive the exact reviewed source (tracked files only)
+        run: |
+          mkdir -p /tmp/set-review
+          git archive --format=tar.gz --output=/tmp/set-review/SETv2-source.tar.gz HEAD
+          git rev-parse HEAD > /tmp/set-review/COMMIT.txt
+          sha256sum /tmp/set-review/SETv2-source.tar.gz > /tmp/set-review/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: set-review-source
+          path: /tmp/set-review
+          retention-days: 3
+          if-no-files-found: error

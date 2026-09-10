@@ -9,16 +9,15 @@ const env = z
     JWT_SECRET: z.string().default('set-dev-secret-change-me'),
     DATA_DIR: z.string().default('./data'),
     WEB_ORIGIN: z.string().default('*'),
-    // Bootstrap LLM provider (BYOK). Leave empty to configure in the UI.
+    SET_DEPLOYMENT_MODE: z.enum(['self-hosted', 'cloud']).default('self-hosted'),
+    SET_CODEX_OAUTH_ENABLED: z.string().default('0'),
     LLM_BASE_URL: z.string().optional(),
     LLM_API_KEY: z.string().optional(),
     LLM_CHAT_MODEL: z.string().optional(),
     LLM_EMBED_MODEL: z.string().optional(),
-    // Optional RAGFlow integration (retrieval routed through a RAGFlow instance)
     RAGFLOW_URL: z.string().optional(),
     RAGFLOW_API_KEY: z.string().optional(),
     APP_URL: z.string().default('http://localhost:5173'),
-    // ForwardEmail REST API (primary mail transport). Domain must be verified in the ForwardEmail account.
     FORWARDEMAIL_API_KEY: z.string().optional(),
     FORWARDEMAIL_DOMAIN: z.string().default('trainwithset.com'),
     FORWARDEMAIL_FROM: z.string().optional(),
@@ -27,38 +26,22 @@ const env = z
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
     SMTP_FROM: z.string().default('SET <noreply@set.local>'),
-    // Optional HuggingFace token for the Library surface (higher rate limits / gated repos)
     HF_TOKEN: z.string().optional(),
     SEED_DEMO: z.string().optional(),
     REGISTRATION_OPEN: z.string().default('1'),
     MCP_ENABLED: z.string().default('1'),
-    // Voice: server-side speech-to-text via any OpenAI-compatible /audio/transcriptions
-    // endpoint. Falls back to the bootstrap LLM env when only that is set. When
-    // neither is configured the runtime omits /transcribe and the web client
-    // falls back to the browser's Web Speech API.
     TRANSCRIBE_BASE_URL: z.string().optional(),
     TRANSCRIBE_API_KEY: z.string().optional(),
     TRANSCRIBE_MODEL: z.string().default('whisper-1'),
-    // SET anonymous usage telemetry — aggregated feature counters only, no
-    // content or PII. Opt out with TELEMETRY_ENABLED=0.
     TELEMETRY_ENABLED: z.string().default('1'),
     TELEMETRY_URL: z.string().optional(),
-    TELEMETRY_FLUSH_MINUTES: z.coerce.number().default(360), // 6h
-    // Deep-research worker (docker compose service "research"; see PLAN.md)
+    TELEMETRY_FLUSH_MINUTES: z.coerce.number().default(360),
     RESEARCH_SERVICE_URL: z.string().default('http://research:8000'),
-    // LLM gateway (PLAN.md Phase 5): internal URL of the OpenAI-compatible
-    // proxy. When set, spaces can enable the managed "SET Cloud" provider.
     GATEWAY_URL: z.string().optional(),
-    // Single sign-on (OIDC): any compliant provider — Google Workspace,
-    // Keycloak, Authentik, Auth0, Zitadel… Auto-provisions users by email.
     OIDC_ISSUER: z.string().optional(),
     OIDC_CLIENT_ID: z.string().optional(),
     OIDC_CLIENT_SECRET: z.string().optional(),
     OIDC_NAME: z.string().optional(),
-    // WandGx creation connector: delegate app generation to a WandGx instance.
-    // url = its API base (dev default below); token = service credential
-    // (empty = connector disabled); webhookSecret = HMAC key for inbound
-    // /api/wandgx/events build callbacks.
     WANDGX_URL: z.string().optional(),
     WANDGX_TOKEN: z.string().optional(),
     WANDGX_WEBHOOK_SECRET: z.string().optional(),
@@ -74,6 +57,8 @@ export const config = {
   jwtSecret: env.JWT_SECRET,
   dataDir: env.DATA_DIR,
   webOrigin: env.WEB_ORIGIN,
+  deploymentMode: env.SET_DEPLOYMENT_MODE,
+  codexOAuthEnabled: env.SET_DEPLOYMENT_MODE === 'self-hosted' && env.SET_CODEX_OAUTH_ENABLED === '1',
   bootstrapLlm: {
     baseUrl: env.LLM_BASE_URL,
     apiKey: env.LLM_API_KEY,
@@ -86,8 +71,6 @@ export const config = {
   forwardEmail: {
     apiKey: env.FORWARDEMAIL_API_KEY,
     domain: env.FORWARDEMAIL_DOMAIN,
-    // bare address — ForwardEmail's send API can't parse "Name <addr>" envelope senders.
-    // `||` (not ??): docker-compose passes unset vars as empty strings.
     from: env.FORWARDEMAIL_FROM || `noreply@${env.FORWARDEMAIL_DOMAIN}`,
   },
   smtp: { host: env.SMTP_HOST, port: env.SMTP_PORT, user: env.SMTP_USER, pass: env.SMTP_PASS, from: env.SMTP_FROM },
@@ -104,7 +87,6 @@ export const config = {
     displayName: env.OIDC_NAME || 'SSO',
   },
   wandgx: {
-    // WandGx dev API runs on :4001 (its prod port collides with SET's :4000)
     url: env.WANDGX_URL || 'http://127.0.0.1:4001/api/v1',
     token: env.WANDGX_TOKEN,
     webhookSecret: env.WANDGX_WEBHOOK_SECRET,
