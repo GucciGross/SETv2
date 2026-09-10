@@ -10,6 +10,12 @@ export class CodexRpc {
   readonly events = new EventEmitter();
   readonly terminated: Promise<void>;
   onServerRequest?: (message: RpcMessage & { id: RpcId; method: string }) => boolean;
+  private serverRequestHandlers = new Set<(message: RpcMessage & { id: RpcId; method: string }) => boolean>();
+  /** Thread-scoped audio handlers coexist with the existing SET text-tool bridge. */
+  addServerRequestHandler(handler: (message: RpcMessage & { id: RpcId; method: string }) => boolean) {
+    this.serverRequestHandlers.add(handler);
+    return () => { this.serverRequestHandlers.delete(handler); };
+  }
   private nextId = 0;
   private buffer = '';
   private closed = false;
@@ -73,7 +79,9 @@ export class CodexRpc {
         const msg: RpcMessage = JSON.parse(line);
         if (!msg || typeof msg !== 'object' || Array.isArray(msg)) throw new Error();
         if (msg.method && msg.id !== undefined) {
-          if (!this.onServerRequest?.(msg as RpcMessage & { id: RpcId; method: string }) && !this.closed) {
+          const request = msg as RpcMessage & { id: RpcId; method: string };
+          const handled = [...this.serverRequestHandlers].some(handler => handler(request)) || this.onServerRequest?.(request);
+          if (!handled && !this.closed) {
             this.send({ id: msg.id, error: { code: -32601, message: 'Method not permitted by SET' } });
           }
         } else if (msg.method) {
@@ -96,7 +104,7 @@ export class CodexRpc {
     for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new CodexError(503, reason)); }
     this.pending.clear();
     this.events.emit('closed', new CodexError(503, reason));
-    this.onServerRequest = undefined;
+    this.onServerRequest = undefined; this.serverRequestHandlers.clear();
     this.child.stdin.end();
     this.child.kill('SIGTERM');
     const kill = setTimeout(() => { if (this.child.exitCode === null) this.child.kill('SIGKILL'); }, 1500);

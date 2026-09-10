@@ -1,14 +1,21 @@
 import type { FastifyInstance } from 'fastify';
+import { codexVoiceRoutes } from './codex-voice.js';
+import { codexSessions } from '../codex/service.js';
+import { codexVoiceEnabled } from '../codex/policy.js';
 import { requireUser } from '../lib/http.js';
 import { transcribeBuffer, transcriptionConfigured } from './transcribe.js';
 
 /** Reuses SET's transcription service; Codex OAuth is never an audio API key. */
 export async function copilotVoiceRoutes(app: FastifyInstance) {
+  await codexVoiceRoutes(app);
   const inFlight = new Set<string>();
   app.get('/copilot/voice/capabilities', async (req, reply) => {
-    if (!(await requireUser(req, reply))) return;
+    const user = await requireUser(req, reply);
+    if (!user) return;
     reply.header('Cache-Control', 'no-store');
-    return { serverTranscription: transcriptionConfigured() };
+    return { serverTranscription: transcriptionConfigured(), codexRealtime: {
+      enabled: codexVoiceEnabled(), selected: codexVoiceEnabled() && await codexSessions.selected(user.id), experimental: true,
+    } };
   });
   app.post('/copilot/voice/transcribe', async (req, reply) => {
     const user = await requireUser(req, reply);

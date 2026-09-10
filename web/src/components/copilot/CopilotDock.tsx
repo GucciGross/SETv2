@@ -1,13 +1,15 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Mic, Square, Keyboard, Volume2, VolumeX } from 'lucide-react';
 import { useAgent } from '@copilotkit/react-core/v2';
 import { askAgent, GUIDE_AGENT } from '../../lib/copilot';
 import { openSetCopilot, focusCopilotInput, isSetCopilotOpen, COPILOT_TOGGLE_SELECTOR } from '../../lib/copilotLauncher';
 import { useCopilotVoice, type VoiceState } from './useCopilotVoice';
+import { useCodexVoice } from './useCodexVoice';
+import { runVoiceCopilot } from './runVoiceCopilot';
 import './copilotDock.css';
 
 interface Interaction {
-  open: boolean; mode: 'voice' | 'text'; state: VoiceState; error: string; interim: string;
+  open: boolean; mode: 'voice' | 'text'; state: VoiceState | 'live'; error: string; interim: string;
   sending: boolean; ready: boolean; spoken: boolean;
   text: (source?: HTMLElement) => void; voice: (source?: HTMLElement) => void;
   toggleSpoken: () => void;
@@ -29,12 +31,37 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
   const origin = useRef<HTMLElement | undefined>(undefined);
   const focusCleanup = useRef<(() => void) | undefined>(undefined);
   const live = useRef(true);
-  const voice = useCopilotVoice(text => {
+  const dictation = useCopilotVoice(text => {
     if (!agent || agent.isRunning) { setSendError('Copilot is still working. Wait for this run to finish, then try again.'); return; }
     openSetCopilot(); setSending(true); setSendError('');
     void askAgent(agent, text).catch(() => { if (live.current) setSendError('The voice message could not finish. Review the chat and retry.'); })
       .finally(() => { if (live.current) setSending(false); });
   });
+
+
+  const native = useCodexVoice(async (text, signal) => {
+    if (signal.aborted) return { success: false, text: 'Voice cancelled.' };
+    openSetCopilot(); setSending(true); setSendError('');
+    try { return await runVoiceCopilot(agent, text, signal, askAgent); }
+    finally { if (live.current) setSending(false); }
+  }, spoken);
+  const voiceGeneration = useRef(0);
+  const cancelVoice = useCallback(() => {
+    voiceGeneration.current++; native.cancel(); dictation.cancel();
+  }, [native.cancel, dictation.cancel]);
+  const voice = {
+    state: native.state !== 'idle' ? native.state : dictation.state,
+    error: native.selected ? native.error : dictation.error,
+    interim: native.selected ? native.interim : dictation.interim,
+    ready: dictation.ready,
+    cancel: cancelVoice,
+    stop: () => native.state !== 'idle' ? native.cancel() : dictation.stop(),
+    start: async () => {
+      cancelVoice(); window.speechSynthesis?.cancel();
+      const current = voiceGeneration.current;
+      if (!(await native.start()) && current === voiceGeneration.current) await dictation.start();
+    },
+  };
 
   useEffect(() => {
     live.current = true;
@@ -73,7 +100,7 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
   }, [voice.cancel]);
 
   useEffect(() => {
-    if (!agent || mode !== 'voice' || !spoken || !('speechSynthesis' in window)) return;
+    if (!agent || native.selected || mode !== 'voice' || !spoken || !('speechSynthesis' in window)) return;
     const sub = agent.subscribe({ onTextMessageEndEvent: (params: any) => {
       if (voice.state !== 'idle') return;
       const text = String(params?.textMessageBuffer ?? '').replace(/[#*`_>\[\]]/g, '').slice(0, 1600).trim();
@@ -81,7 +108,7 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
       window.speechSynthesis.cancel(); window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
     } });
     return () => { sub.unsubscribe(); window.speechSynthesis.cancel(); };
-  }, [agent, mode, spoken, voice.state]);
+  }, [agent, mode, spoken, voice.state, native.selected]);
 
   const ensureOpen = (source?: HTMLElement) => {
     if (!open && source) origin.current = source;
@@ -93,7 +120,7 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
     if (ensureOpen(source)) { focusCleanup.current?.(); focusCleanup.current = focusCopilotInput(); }
   };
   const toggleVoice = (source?: HTMLElement) => {
-    if (voice.state === 'listening') { voice.stop(); return; }
+    if (voice.state === 'listening' || voice.state === 'live') { voice.stop(); return; }
     if (voice.state === 'requesting' || voice.state === 'transcribing') { voice.cancel(); return; }
     if (sending || agent?.isRunning) { setSendError('Copilot is working. Finish or stop the current run before speaking.'); return; }
     focusCleanup.current?.(); setMode('voice'); setSendError('');
@@ -114,12 +141,12 @@ export function CopilotModeControls({ compact = false }: { compact?: boolean }) 
   if (!i) return null;
   const recording = i.state === 'listening';
   const active = i.state !== 'idle';
-  const label = recording ? 'Stop recording and send to Copilot' : active ? 'Cancel voice input' : 'Talk to Copilot';
-  const status = i.error || (i.state === 'requesting' ? 'Waiting for microphone permission…' : recording ? 'Listening — tap the microphone to send.'
+  const label = i.state === 'live' ? 'End Codex voice conversation' : recording ? 'Stop recording and send to Copilot' : active ? 'Cancel voice input' : 'Talk to Copilot';
+  const status = i.error || (i.state === 'live' ? (i.sending ? 'Copilot is working — review approvals in chat.' : 'Codex subscription voice · Listening') : i.state === 'requesting' ? 'Connecting voice — allow the microphone when prompted…' : recording ? 'Listening — tap the microphone to send.'
     : i.state === 'transcribing' ? 'Transcribing…' : i.sending ? 'Copilot is working…' : '');
   return (
     <div className={`set-copilot-mode${compact ? ' set-copilot-mode--compact' : ''}`}>
-      <div className="set-copilot-rocker" role="group" aria-label="Copilot voice and text" data-listening={recording || undefined}>
+      <div className="set-copilot-rocker" role="group" aria-label="Copilot voice and text" data-listening={recording || i.state === 'live' || undefined}>
         <button type="button" className="set-copilot-rocker-voice" aria-label={label} title={label}
           aria-pressed={i.open && i.mode === 'voice'} disabled={!i.ready && !active}
           onClick={e => i.voice(e.currentTarget)}>
