@@ -18,10 +18,35 @@ with sync_playwright() as p:
     if sys.platform.startswith('linux'):
         args += ['--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
                  '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface']
-    browser = p.chromium.launch(channel='chromium', executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args)
+    # ubuntu-latest ships current stable Chrome. Keep legacy Chromium for the
+    # shell suites, but exercise 2026 WebGPU on a current supported browser.
+    channel = os.environ.get('SET_BROWSER_CHANNEL', 'chrome' if os.environ.get('GITHUB_ACTIONS') == 'true' else 'chromium')
+    browser = p.chromium.launch(channel=channel, executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args)
+    print('Real WebGPU browser:', browser.version, channel, flush=True)
     page = browser.new_page(viewport={'width': 440, 'height': 560})
     errors = []; page.on('pageerror', lambda error: errors.append(str(error)))
     console = []; page.on('console', lambda message: console.append({'type': message.type, 'text': message.text}))
+    # Isolate environment/device availability before loading React or adding
+    # lifecycle instrumentation; an unavailable GPU is a hard failure, not a skip.
+    page.route('**/voice-gpu-probe.html', lambda route: route.fulfill(content_type='text/html', body='<!doctype html><title>GPU probe</title>'))
+    page.goto(base + '/voice-gpu-probe.html')
+    probe = page.evaluate('''async () => {
+      const adapter = await navigator.gpu?.requestAdapter();
+      if (!adapter) return {available:false, reason:'No adapter'};
+      const device = await adapter.requestDevice();
+      window.probeDevice = device;
+      const result = await Promise.race([
+        device.lost.then(info => ({available:false, reason:info.reason, message:info.message})),
+        new Promise(resolve => setTimeout(() => resolve({available:true}), 300)),
+      ]);
+      device.destroy(); window.probeDevice = null;
+      return result;
+    }''')
+    print('Uninstrumented GPU device:', json.dumps(probe), flush=True)
+    if not probe.get('available'):
+        (artifacts / 'environment.json').write_text(json.dumps({'browser':browser.version, 'probe':probe, 'console':console}, indent=2))
+        browser.close()
+        raise AssertionError('Real GPU environment failed before renderer startup: ' + json.dumps(probe))
     # Observe actual device creation/destruction; no fake GPU, shader or renderer.
     page.add_init_script("""window.gpuLifecycle = {created:0, destroyed:0, events:[]};
       if (typeof GPUAdapter !== 'undefined') {
