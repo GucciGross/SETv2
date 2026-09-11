@@ -1,3 +1,5 @@
+import type { VoiceCapabilities } from './voiceCapabilities';
+
 export interface CopilotVoiceResult { success: boolean; text: string }
 export interface CodexVoiceCallbacks {
   onConnecting?: () => void;
@@ -39,9 +41,9 @@ export class CodexVoiceClient {
   }
 
   /** False means explicitly unselected/disabled, never an upstream failure. */
-  async start(): Promise<boolean> {
+  async start(preflight?: VoiceCapabilities): Promise<boolean> {
     try {
-      const cap = await this.request('/capabilities');
+      const cap = preflight ?? await this.request('/capabilities');
       if (this.stopped) return true;
       if (!cap.codexRealtime?.enabled || !cap.codexRealtime?.selected) return false;
       if (!this.spaceId) throw new Error('Select a workspace before starting Codex voice.');

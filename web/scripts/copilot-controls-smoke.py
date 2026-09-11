@@ -32,7 +32,7 @@ with sync_playwright() as p:
             elif path.endswith('/codex/selection'):
                 selections.append(request.post_data_json); account['selected'] = request.post_data_json['enabled']; route.fulfill(json={'selected': account['selected']})
             elif path.endswith('/codex/account'): route.fulfill(json=account)
-            else: route.fulfill(json={'settings': {}, 'pages': [], 'notebooks': [], 'databases': [], 'subjects': [], 'notifications': [], 'providers': [], 'members': []})
+            else: route.fulfill(json={'settings': {}, 'pages': [], 'notebooks': [], 'databases': [], 'subjects': [], 'notifications': [], 'providers': [], 'presets': [], 'members': []})
         page.route('**/api/**', transport)
         try:
             page.goto(base + '/scripts/fixtures/copilot-controls.html' + ('?settings=1' if settings else ''), wait_until='domcontentloaded')
@@ -161,3 +161,7 @@ with sync_playwright() as p:
             raise
         finally: page.close()
     browser.close()
+
+# Keep viewport/setup regressions in the existing browser CI entry point.
+import runpy
+runpy.run_path(str(Path(__file__).with_name('mobile-setup-smoke.py')), run_name='__main__')

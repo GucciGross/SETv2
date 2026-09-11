@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, getToken } from '../../lib/api';
+import { getToken } from '../../lib/api';
 import { browserDictationAvailable, startDictation, type Dictation } from '../../lib/voiceFallback';
 
 export type VoiceState = 'idle' | 'requesting' | 'listening' | 'transcribing';
 
 /** One microphone owner, cancelled on close, modality change, workspace change or unmount. */
-export function useCopilotVoice(onText: (text: string) => void) {
+export function useCopilotVoice(onText: (text: string) => void, serverStt: boolean | null) {
   const [state, setState] = useState<VoiceState>('idle');
   const [error, setError] = useState('');
   const [interim, setInterim] = useState('');
-  const [serverStt, setServerStt] = useState<boolean | null>(null);
   const generation = useRef(0);
   const dictation = useRef<Dictation | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
@@ -29,17 +28,12 @@ export function useCopilotVoice(onText: (text: string) => void) {
     setState('idle'); setInterim('');
   }, []);
 
-  useEffect(() => {
-    let active = true;
-    api.get('/copilot/voice/capabilities').then(v => { if (active) setServerStt(v.serverTranscription === true); })
-      .catch(() => { if (active) setServerStt(false); });
-    return () => { active = false; cancel(); };
-  }, [cancel]);
+  useEffect(() => cancel, [cancel]);
 
   const start = async () => {
     cancel(); setError('');
     const current = generation.current;
-    if (!window.isSecureContext) { setError('Voice needs HTTPS or localhost. Text is still available.'); return; }
+    if (!window.isSecureContext) { setError('Microphone blocked: open SET using trusted HTTPS, not an http:// LAN address. See AI setup. Text still works.'); return; }
     if (serverStt === null) { setError('Voice capabilities are still loading. Try again in a moment.'); return; }
     window.speechSynthesis?.cancel();
     if (!serverStt) {
@@ -55,6 +49,7 @@ export function useCopilotVoice(onText: (text: string) => void) {
         if (current !== generation.current) return;
         clearTimeout(timer.current); dictation.current = null; setState('idle'); setInterim('');
         if (final && !failed) done.current(final);
+        else if (!failed) setError('No speech was heard. Tap the microphone and try again.');
       }, { continuous: false, onError: message => { failed = true; if (current === generation.current) setError(message); } });
       timer.current = setTimeout(() => dictation.current?.stop(), 60_000);
       return;
@@ -91,7 +86,8 @@ export function useCopilotVoice(onText: (text: string) => void) {
           .then(async response => {
             const data = await response.json();
             if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Transcription failed.');
-            if (current === generation.current && typeof data.text === 'string' && data.text.trim()) done.current(data.text.trim());
+            if (typeof data.text !== 'string' || !data.text.trim()) throw new Error('No speech was detected. Try a shorter recording.');
+            if (current === generation.current) done.current(data.text.trim());
           })
           .catch(e => { if (current === generation.current) setError(e?.name === 'AbortError' ? 'Transcription timed out. Try again or use text.' : e.message); })
           .finally(() => { clearTimeout(timeout); if (current === generation.current) { upload.current = null; setState('idle'); } });

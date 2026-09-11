@@ -6,6 +6,7 @@ import VoiceOrb from './VoiceOrb';
 import { voiceOrbState } from './voiceOrbState';
 import { observeVoiceAudio } from './voiceAudioMeter';
 import './copilotVoice.css';
+import AIConnectionButton from './AIConnectionButton';
 
 /** Rendered by CopilotChat's body slot. No transcript, textarea, starter
  * pills, hidden composer, iframe, second agent or separate conversation. */
@@ -36,9 +37,9 @@ export default function CopilotVoiceSurface() {
   if (!interaction) return null;
   const state = voiceOrbState({ ...interaction, speaking: interaction.speaking || audioSpeaking });
   const active = interaction.state !== 'idle';
-  const status = interaction.error || ({
+  const status = interaction.error || (!interaction.ready ? 'Checking voice setup' : ({
     idle: 'Voice ready', connecting: 'Connecting voice', listening: 'Listening', thinking: 'Thinking', speaking: 'Speaking', error: 'Voice unavailable',
-  }[state]);
+  }[state]));
   const action = interaction.state === 'live' ? 'End voice conversation'
     : interaction.state === 'listening' ? 'Send voice message' : active ? 'Cancel voice connection' : 'Start listening';
   return <section ref={root} tabIndex={-1} className="set-copilot-voice-surface" role="region" aria-label="Copilot voice conversation" data-state={state}>
@@ -55,6 +56,7 @@ export default function CopilotVoiceSurface() {
         </button>
         {interaction.sending && <button type="button" onClick={interaction.stopRun} aria-label="Stop Copilot work" title="Stop Copilot work"><Square size={18} aria-hidden /></button>}
       </div>
+      <div className="mt-3"><AIConnectionButton /></div>
     </div>
     <VoiceApprovals />
   </section>;

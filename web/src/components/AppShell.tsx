@@ -22,6 +22,8 @@ import WelcomeModal from './onboarding/WelcomeModal';
 import GuideFab from './GuideFab';
 import CopilotDock from './copilot/CopilotDock';
 import { openSetCopilot } from '../lib/copilotLauncher';
+import { installViewport } from '../lib/viewport';
+import AIConnectionButton from './copilot/AIConnectionButton';
 import Notifications from './Notifications';
 import CommandPalette from './CommandPalette';
 import RecorderModal from './Recorder';
@@ -228,6 +230,7 @@ export default function AppShell() {
 }
 
 export function AppShellInner() {
+  useEffect(installViewport, []);
   useSetScreenContext();
   const { spaceId } = useParams();
   const location = useLocation();
@@ -760,8 +763,8 @@ export function AppShellInner() {
       )}
 
       {/* Main */}
-      <main className="flex-1 overflow-hidden flex flex-col min-w-0">
-        <div className="h-12 border-b border-set-border flex items-center px-3 gap-2 bg-set-panel/50 backdrop-blur-sm">
+      <main className="flex-1 overflow-hidden flex flex-col min-w-0 min-h-0">
+        <div className="h-12 shrink-0 border-b border-set-border flex items-center px-3 gap-2 bg-set-panel/50 backdrop-blur-sm">
           <button className="md:hidden set-btn-ghost p-1.5" onClick={() => setMobileNav(true)} aria-label="Open navigation">
             <Menu size={18} />
           </button>
@@ -775,9 +778,9 @@ export function AppShellInner() {
           <span className={`md:hidden flex-1 text-center truncate text-sm text-set-text/90 min-w-0 transition-opacity ${scrolled && headerTitle ? 'opacity-100' : 'opacity-0'}`}>
             {headerTitle}
           </span>
-          <div className="ml-auto"><Notifications /></div>
+          <div className="ml-auto flex items-center gap-1"><AIConnectionButton /><Notifications /></div>
         </div>
-        <div ref={scrollRef} data-scroll-root className="flex-1 overflow-y-auto">
+        <div ref={scrollRef} data-scroll-root className="flex-1 min-h-0 overflow-y-auto">
           <Outlet />
         </div>
 

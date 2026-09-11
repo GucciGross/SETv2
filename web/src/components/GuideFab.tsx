@@ -15,6 +15,7 @@ import { askAgent, GUIDE_AGENT } from '../lib/copilot';
 import { openSetCopilot } from '../lib/copilotLauncher';
 import { CopilotModeControls, useCopilotInteraction } from './copilot/CopilotDock';
 import CopilotVoiceSurface from './copilot/CopilotVoiceSurface';
+import AIConnectionButton from './copilot/AIConnectionButton';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from './Mascot';
 
 /**
@@ -150,6 +151,7 @@ function SetChatHeader({ titleContent, closeButton }: { titleContent?: React.Rea
       >
         {docked ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
       </button>
+      <AIConnectionButton compact />
       <CopilotModeControls compact />
       {closeButton}
     </div>
@@ -505,49 +507,7 @@ export default function GuideFab() {
   // beside the work and closing on any outside click would be maddening.
   const isMobile = useIsMobileViewport();
 
-  // Keyboard-aware mobile sheet: expose the software keyboard's height as a
-  // CSS var (--set-kb) so the sheet can sit on top of it. visualViewport is
-  // the only reliable source on iOS. Updates are debounced — the raw events
-  // fire many times during the keyboard animation and each one snapped the
-  // sheet around; debounced + a CSS transition it does one smooth glide.
-  // The same events carry iOS's pan: when the input focuses, Safari shoves
-  // the visual viewport up to reveal the caret, which drags our fixed sheet
-  // with it and pushes the header off-screen. While the copilot owns the
-  // focused element we push straight back — the sheet manages the keyboard
-  // itself via --set-kb and must stay pinned to the real viewport.
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const root = document.documentElement;
-    let timer: number | undefined;
-    const update = () => {
-      const kb = Math.max(0, Math.round(window.innerHeight - vv.height));
-      root.style.setProperty('--set-kb', `${kb < 40 ? 0 : kb}px`);
-    };
-    const copilotOwnsFocus = () =>
-      !!(document.activeElement as Element | null)?.closest?.('[data-copilot-popup]');
-    const onVV = () => {
-      schedule();
-      if (copilotOwnsFocus()) {
-        window.scrollTo(0, 0);
-        document.scrollingElement?.scrollTo(0, 0);
-      }
-    };
-    const schedule = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(update, 120);
-    };
-    update();
-    vv.addEventListener('resize', onVV);
-    vv.addEventListener('scroll', onVV);
-    window.addEventListener('scroll', onVV);
-    return () => {
-      window.clearTimeout(timer);
-      vv.removeEventListener('resize', onVV);
-      vv.removeEventListener('scroll', onVV);
-      window.removeEventListener('scroll', onVV);
-    };
-  }, []);
+
 
   // restore the desktop panel preference (docked vs floating)
   useEffect(() => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getToken } from '../../lib/api';
 import { useApp } from '../../stores/app';
+import type { VoiceCapabilities } from './voiceCapabilities';
 import { CodexVoiceClient, type CopilotVoiceResult } from './codexVoiceClient';
 
 export function useCodexVoice(onRequest: (text: string, signal: AbortSignal) => Promise<CopilotVoiceResult>, spoken: boolean) {
@@ -20,7 +21,7 @@ export function useCodexVoice(onRequest: (text: string, signal: AbortSignal) => 
   }, []);
   useEffect(() => cancel, [cancel]);
   useEffect(() => { client.current?.setMuted(!spoken); }, [spoken]);
-  const start = useCallback(async () => {
+  const start = useCallback(async (capabilities: VoiceCapabilities) => {
     cancel(); setError(''); setSelected(true); setState('requesting');
     const current = generation.current;
     const c = new CodexVoiceClient(getToken(), useApp.getState().currentSpaceId ?? '', {
@@ -33,7 +34,7 @@ export function useCodexVoice(onRequest: (text: string, signal: AbortSignal) => 
       onRequest: (text, signal) => request.current(text, signal),
     });
     client.current = c; c.setMuted(muted.current);
-    const handled = await c.start();
+    const handled = await c.start(capabilities);
     if (current !== generation.current) return true;
     if (!handled) { cancel(); setSelected(false); }
     return handled;

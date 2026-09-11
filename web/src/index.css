@@ -63,16 +63,17 @@ body,
   overflow-x: hidden;
   overflow-x: clip;
 }
-/* iOS: pinned to the layout viewport — 100dvh under-fills on some iOS
-   configurations (status-bar + PWA combos), leaving dead space below the
-   tab bar; inset:0 always spans the real screen */
+/* Fill the visible browser area, including toolbar/keyboard/orientation changes.
+   Insets are padding inside this height, never extra height under the dock. */
 .app-shell {
   position: fixed;
-  inset: 0;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+  inset: 0 0 auto;
+  top: var(--set-viewport-top, 0px);
+  height: 100vh;
+  height: var(--set-viewport-height, 100dvh);
+  min-height: 0;
+  box-sizing: border-box;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 body {
@@ -605,7 +606,7 @@ h1, h2, h3, h4 {
 }
 
 /* welcome screen + suggestion pills */
-/* The mobile welcome must fit the compact sheet with zero scrolling — these
+/* Keep the mobile welcome concise — these
    hooks let the media query tighten every block (see the mobile section). */
 .set-welcome {
   display: flex;
@@ -759,15 +760,9 @@ div[data-copilotkit] {
   --copilot-popup-height: 480px !important;
   --copilot-popup-max-height: min(76vh, 640px) !important;
 }
-/* Mobile: a compact bottom sheet (the page stays visible, dimmed by a scrim,
-   above a ~62%-height sheet). The welcome screen is tuned to fit it with
-   zero scrolling; once the conversation starts (body.set-chat-live, set by
-   SheetModeWatcher in GuideFab) the sheet grows to full screen. The header is
-   a grab zone: dragging translates the sheet via --set-dy and the scrim fades
-   via --set-drag-p (GuideFab's SheetDragZone writes both); releasing past the
-   threshold slides the sheet out and closes it, otherwise it springs back.
-   --set-kb (set in GuideFab, debounced) keeps the sheet on top of the
-   software keyboard; the transitions make each state change one smooth glide. */
+/* Mobile welcome, text and voice share the measured visible viewport.
+   Safe areas belong to the popup once. Drag-to-close remains a transform;
+   it must not introduce a second height or keyboard-offset calculation. */
 
 /* Registered so --set-drag-p interpolates (scrim fades with the drag) instead
    of snapping. Browsers without @property just get a discrete fade. */
@@ -794,66 +789,33 @@ html:has(body.set-sheet-dragging) { transition: none !important; }
     ) !important;
     -webkit-backdrop-filter: blur(calc(3px * (1 - var(--set-drag-p, 0))));
     backdrop-filter: blur(calc(3px * (1 - var(--set-drag-p, 0))));
-    padding: 0.6rem !important;
-    padding-top: calc(0.6rem + env(safe-area-inset-top)) !important;
-    /* flush: just a breathing gap under the sheet — no safe-area stacking.
-       Once the keyboard is up (--set-kb > the gap) the sheet rides exactly
-       on the keyboard's top edge. */
-    padding-bottom: max(0.6rem, var(--set-kb, 0px)) !important;
-    padding-left: calc(0.6rem + env(safe-area-inset-left)) !important;
-    padding-right: calc(0.6rem + env(safe-area-inset-right)) !important;
-    transition: padding-bottom 0.3s cubic-bezier(0.32, 0.72, 0.35, 1);
-  }
-  /* The double test-id selector is deliberate: it out-specifies the vendor's
-     single-class utilities regardless of stylesheet order. */
-  [data-copilot-popup][data-testid='copilot-popup'] {
-    /* compact on the full screen; capped to the space above the keyboard */
-    height: clamp(340px, 62dvh, 640px) !important;
-    max-height: calc(100dvh - var(--set-kb, 0px) - 0.4rem) !important;
-    /* the vendor inlines env(safe-area-inset-*) paddings on this element;
-       the wrapper already owns the insets, and the popup's own bottom one
-       read as a dead band under the composer */
+    position: fixed !important;
+    inset: auto 0 auto !important;
+    top: var(--set-viewport-top, 0px) !important;
+    height: var(--set-viewport-height, 100dvh) !important;
+    max-height: var(--set-viewport-height, 100dvh) !important;
     padding: 0 !important;
-    border-radius: 1.25rem !important;
-    border: 1px solid rgb(150 165 200 / 0.18) !important;
-    box-shadow:
-      0 24px 70px rgba(0, 0, 0, 0.6),
-      0 2px 10px rgba(0, 0, 0, 0.35) !important;
-    /* the sheet rides the finger via --set-dy; spring back on release.
-       translate/opacity stay on the vendor's own open/close animation. */
+    box-sizing: border-box;
+    transition: none !important;
+  }
+  /* Out-specify vendor utilities regardless of stylesheet order. */
+  [data-copilot-popup][data-testid='copilot-popup'] {
+    height: 100% !important;
+    max-height: 100% !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) !important;
+    box-sizing: border-box;
     transform: translateY(var(--set-dy, 0px));
-    transition:
-      transform 0.45s cubic-bezier(0.22, 1.35, 0.36, 1),
-      height 0.32s cubic-bezier(0.32, 0.72, 0.35, 1),
-      max-height 0.32s cubic-bezier(0.32, 0.72, 0.35, 1),
-      translate 0.2s ease-out,
-      opacity 0.2s ease-out;
+    transition: transform 0.45s cubic-bezier(0.22, 1.35, 0.36, 1), translate 0.2s ease-out, opacity 0.2s ease-out;
   }
   body.set-sheet-dragging [data-copilot-popup] { transition: none !important; }
   body.set-sheet-closing [data-copilot-popup] { transition: transform 0.3s cubic-bezier(0.5, 0, 0.75, 0) !important; }
 
-  /* conversation started → the chat takes the whole screen, edge to edge;
-     the height transition above turns the growth into one glide. Height
-     resolves against the fixed wrapper (the real layout viewport) instead of
-     100dvh — on iOS Safari the two drift apart and left a dead band under
-     the sheet. The keyboard claims the bottom through the wrapper's padding:
-     top stays pinned at 0, the sheet's bottom edge lands exactly on the
-     keyboard's top. */
-  body.set-chat-live div[data-copilotkit]:has(> [data-copilot-popup]) {
-    padding: 0 !important;
-    padding-bottom: var(--set-kb, 0px) !important;
-  }
-  body.set-chat-live [data-copilot-popup][data-testid='copilot-popup'] {
-    height: 100% !important;
-    max-height: none !important;
-    border-radius: 0 !important;
-    border: 0 !important;
-    box-shadow: none !important;
-    /* notch clearance above the header; nothing under the composer — the
-       sheet ends where the screen (or keyboard) ends */
-    padding-top: env(safe-area-inset-top) !important;
-    padding-bottom: 0 !important;
-  }
   /* The composer floats over the feed (absolute overlay), and the vendor
      undercuts the newest message with paddingBottom = composerHeight + 32 —
       a permanent ~190px void between the last message and the input. The
@@ -940,7 +902,7 @@ html:has(body.set-sheet-dragging) { transition: none !important; }
     z-index: 1250 !important;
   }
 
-  /* Welcome in the compact sheet: every block tightened so the whole thing —
+  /* Mobile welcome: every block tightened so the whole thing —
      mascot, identity, starters, input — fits without scrolling. On very
      short screens the tagline steps aside instead of forcing a scroll. */
   .set-welcome-m { gap: 0.55rem; padding: 0.4rem 1.1rem 0.3rem; }
@@ -1139,3 +1101,15 @@ button, [role='button'], .set-btn, .set-btn-ghost, .set-btn-primary {
    children directly, not `.prose-set > *` (that's the ProseMirror root). */
 .editor-focus .ProseMirror > * { transition: opacity 0.3s ease; }
 .editor-focus .ProseMirror > *:not(.active-block) { opacity: 0.24; }
+
+/* Keep the mobile sidebar and form controls usable with the same viewport. */
+@media (max-width: 767px) {
+  .app-shell > aside[data-tour-sidebar] {
+    top: var(--set-viewport-top, 0px);
+    bottom: auto;
+    height: var(--set-viewport-height, 100dvh);
+  }
+  /* Prevent focus-triggered iOS text-field zoom without disabling user zoom. */
+  .app-shell input, .app-shell textarea, .app-shell select,
+  [data-copilot-popup] textarea { font-size: 16px; }
+}

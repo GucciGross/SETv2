@@ -23,12 +23,17 @@ test('Codex HTTP: cloud blocks every action; bearer identity owns all self-hoste
     assert.equal((await app.inject(`/codex/account?token=${token}`)).statusCode, 401);
     assert.equal((await app.inject({ url: '/codex/account', headers: { authorization: `Bearer ${signServiceToken()}` } })).statusCode, 401);
     const cap = await app.inject({ url: '/codex/capabilities', headers });
-    assert.equal(cap.json().available, false); assert.equal(cap.headers['cache-control'], 'no-store');
+    assert.equal(cap.json().available, false); assert.equal(cap.json().deploymentMode, 'cloud'); assert.equal(cap.headers['cache-control'], 'no-store');
     for (const [method, url, payload] of [['GET', '/account', undefined], ['POST', '/login', {}], ['POST', '/login/cancel', {}], ['POST', '/logout', {}], ['PUT', '/selection', { enabled: true }]] as const) {
       assert.equal((await app.inject({ method, url: '/codex' + url, headers, payload })).statusCode, 404);
     }
     assert.equal(calls.length, 0);
-    process.env.SET_DEPLOYMENT_MODE = 'self-hosted';
+    process.env.SET_DEPLOYMENT_MODE = 'self-hosted'; process.env.SET_CODEX_OAUTH_ENABLED = '0';
+    const disabled = await app.inject({ url: '/codex/capabilities', headers });
+    assert.equal(disabled.json().deploymentMode, 'self-hosted'); assert.equal(disabled.json().available, false);
+    assert.equal((await app.inject({ method: 'POST', url: '/codex/login', headers, payload: {} })).statusCode, 404);
+    assert.equal(calls.length, 0);
+    process.env.SET_CODEX_OAUTH_ENABLED = '1';
     assert.equal((await app.inject({ url: '/codex/account?userId=bob', headers })).statusCode, 200);
     assert.deepEqual(calls, ['alice']);
     assert.equal((await app.inject({ method: 'PUT', url: '/codex/selection', headers, payload: {} })).statusCode, 400);
