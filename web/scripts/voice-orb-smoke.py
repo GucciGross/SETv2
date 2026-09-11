@@ -16,15 +16,22 @@ with sync_playwright() as p:
     # differ in whether SwiftShader is exposed through ANGLE or native Vulkan.
     # No WebGPU validation is disabled and lack of a device is a hard failure.
     common = ['--enable-unsafe-webgpu', '--disable-gpu-watchdog']
+    # Lavapipe (Mesa CPU Vulkan) is the only deterministic software backend:
+    # ANGLE/SwiftShader loses the device once a canvas presents, and the
+    # bundled Vulkan SwiftShader adapter enumerates nondeterministically.
+    lavapipe = common + ['--enable-features=Vulkan', '--use-angle=vulkan', '--disable-vulkan-surface']
     angle = common + ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']
-    vulkan = common + ['--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
-                       '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface']
     channel = os.environ.get('SET_BROWSER_CHANNEL', 'chrome' if os.environ.get('GITHUB_ACTIONS') == 'true' else 'chromium')
-    candidates = [('angle', angle), ('vulkan', vulkan)] if sys.platform.startswith('linux') else [('native', common)]
+    if sys.platform.startswith('linux'):
+        candidates = [('lavapipe', lavapipe), ('angle', angle)]
+    else:
+        candidates = [('native', common)]
+    icd = '/usr/share/vulkan/icd.d/lvp_icd.json'
+    launch_env = {'VK_ICD_FILENAMES': icd, 'VK_DRIVER_FILES': icd} if os.path.exists(icd) else {}
     attempts = []
     browser = page = None
     for backend, args in candidates:
-        candidate = p.chromium.launch(channel=channel, headless=headless, executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args)
+        candidate = p.chromium.launch(channel=channel, headless=headless, executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args, env={**os.environ, **launch_env} if launch_env else None)
         candidate_page = candidate.new_page(viewport={'width': 440, 'height': 560})
         candidate_page.route('**/voice-gpu-probe.html', lambda route: route.fulfill(content_type='text/html', body='<!doctype html><title>GPU probe</title>'))
         candidate_page.goto(base + '/voice-gpu-probe.html')
@@ -60,7 +67,7 @@ with sync_playwright() as p:
             candidate.close()
             # The availability probe owns and destroys its device; keep that
             # document/context out of the renderer lifecycle under test.
-            browser = p.chromium.launch(channel=channel, headless=headless, executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args)
+            browser = p.chromium.launch(channel=channel, headless=headless, executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args, env={**os.environ, **launch_env} if launch_env else None)
             page = browser.new_page(viewport={'width': 440, 'height': 560})
             break
         candidate.close()
