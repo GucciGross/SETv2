@@ -10,7 +10,7 @@ assert urlparse(base).hostname in {'localhost', '127.0.0.1'}, 'Disposable loopba
 artifacts = Path('/tmp/copilot-controls'); artifacts.mkdir(parents=True, exist_ok=True)
 
 with sync_playwright() as p:
-    browser = p.chromium.launch()
+    browser = p.chromium.launch(executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'))
     for name, width, settings in [('phone', 390, False), ('small-phone', 320, False), ('desktop', 1440, False), ('account', 390, True), ('cloud', 390, True)]:
         page = browser.new_page(viewport={'width': width, 'height': 900}, reduced_motion='reduce')
         errors, uploads, selections = [], [], []
@@ -80,9 +80,27 @@ with sync_playwright() as p:
                 expect(page.get_by_role('button', name='Create a new workspace')).to_be_visible()
             page.screenshot(path=str(artifacts / (name + '-workspace.png')))
             dock.screenshot(path=str(artifacts / (name + '-dock.png')))
-            dock.get_by_role('button', name='Type to Copilot', exact=True).click()
+            # Voice from the CLOSED dock opens the orb directly, not a welcome/text flash.
+            mic.click()
+            popup = page.locator('[data-copilot-popup]'); expect(popup).to_be_visible()
+            orb = popup.locator('[data-set-voice-orb]')
+            expect(orb).to_be_visible()
+            expect(orb).to_have_attribute('data-renderer', 'reduced-motion')
+            expect(popup.locator('textarea')).to_have_count(0)
+            expect(popup.locator('.set-welcome')).to_have_count(0)
+            expect(popup.locator('[data-testid="copilot-message-list"]')).to_have_count(0)
+            header = popup.locator('.set-copilot-mode--compact')
+            expect(header.get_by_role('button', name='Stop recording and send to Copilot')).to_be_visible()
+            header.get_by_role('button', name='Type to Copilot', exact=True).click()
             popup = page.locator('[data-copilot-popup]'); expect(popup).to_be_visible()
             text = popup.locator('textarea').last
+            text.fill('Keep my unsent draft')
+            header.get_by_role('button', name='Talk to Copilot', exact=True).click()
+            expect(orb).to_be_visible(); expect(popup.locator('textarea')).to_have_count(0)
+            header.get_by_role('button', name='Type to Copilot', exact=True).click()
+            expect(text).to_have_value('Keep my unsent draft')
+            expect(text).to_be_focused()
+            assert not uploads, 'Changing modality must cancel capture, not submit it'
             text.fill('Explain the actuator'); text.press('Enter')
             expect(popup.get_by_text('Received in the same Copilot conversation: Explain the actuator', exact=True)).to_be_visible()
             page.wait_for_function('window.controlsFixture.calls.length === 1')
@@ -99,7 +117,8 @@ with sync_playwright() as p:
             expect(voice).to_be_visible()
             # Rejecting permission is visible and does not produce a user message.
             page.evaluate('window.controlsFixture.denyPermission = true'); voice.click()
-            expect(header.get_by_role('alert')).to_contain_text('permission was denied')
+            expect(popup.get_by_role('alert')).to_contain_text('permission was denied')
+            expect(orb).to_be_visible(); expect(popup.locator('textarea')).to_have_count(0)
             page.evaluate('window.controlsFixture.denyPermission = false; window.controlsFixture.deferPermission = true')
             voice.click(); expect(header.get_by_role('button', name='Cancel voice input')).to_be_visible()
             header.get_by_role('button', name='Type to Copilot', exact=True).click()
@@ -112,6 +131,16 @@ with sync_playwright() as p:
             stop = header.get_by_role('button', name='Stop recording and send to Copilot')
             expect(stop).to_be_visible()
             stop.click()
+            page.wait_for_function('window.controlsFixture.calls.length === 3')
+            expect(orb).to_be_visible()
+            expect(popup.locator('[data-testid="copilot-message-list"]')).to_have_count(0)
+            expect(popup.locator('textarea')).to_have_count(0)
+            expect(popup.get_by_text('Received in the same Copilot conversation: Summarize the joint limits', exact=True)).to_have_count(0)
+            page.screenshot(path=str(artifacts / (name + '-voice-orb.png')))
+            popup.get_by_role('button', name='Mute spoken replies').click()
+            expect(popup.get_by_role('button', name='Enable spoken replies')).to_be_visible()
+            header.get_by_role('button', name='Type to Copilot', exact=True).click()
+            expect(orb).to_have_count(0)
             expect(popup.get_by_text('Received in the same Copilot conversation: Summarize the joint limits', exact=True)).to_be_visible()
             assert len(uploads) == 1
             assert page.evaluate('window.controlsFixture.calls.at(-1).threadId') == thread

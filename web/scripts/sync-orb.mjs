@@ -37,4 +37,12 @@ if (write) for (const [name, bytes] of verified) {
   await mkdir(path.dirname(destination), { recursive: true });
   await writeFile(destination, bytes);
 }
+const publicNotice = fileURLToPath(new URL('../public/third-party/lersent-orb-LICENSE.txt', import.meta.url));
+const license = verified.find(([name]) => name === 'LICENSE')[1];
+if (write) {
+  await mkdir(path.dirname(publicNotice), { recursive: true });
+  await writeFile(publicNotice, license);
+} else if (!(await readFile(publicNotice)).equals(license)) {
+  throw new Error('Distributed Orb MIT notice does not match the vendored license');
+}
 console.log(`${write ? 'Imported' : 'Verified'} ${verified.length} pinned Orb files from ${revision}`);

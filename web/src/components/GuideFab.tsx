@@ -13,7 +13,8 @@ import { SetToolRenderers } from './copilot/ToolRenderers';
 import { ApprovalProvider, SetToolCallsView } from './copilot/ApprovalWatcher';
 import { askAgent, GUIDE_AGENT } from '../lib/copilot';
 import { openSetCopilot } from '../lib/copilotLauncher';
-import { CopilotModeControls } from './copilot/CopilotDock';
+import { CopilotModeControls, useCopilotInteraction } from './copilot/CopilotDock';
+import CopilotVoiceSurface from './copilot/CopilotVoiceSurface';
 import Mascot, { DEFAULT_MASCOT, type MascotConfig } from './Mascot';
 
 /**
@@ -337,7 +338,8 @@ function SheetModeWatcher() {
  * re-engages it. */
 function ChatBottomPinner() {
   const config = useCopilotChatConfiguration();
-  const isOpen = !!config?.isModalOpen;
+  const voiceMode = useCopilotInteraction()?.mode === 'voice';
+  const isOpen = !!config?.isModalOpen && !voiceMode;
   useEffect(() => {
     if (!isOpen || !window.matchMedia('(max-width: 767px)').matches) return;
     const root = document.documentElement;
@@ -490,7 +492,11 @@ function useIsMobileViewport() {
   return mobile;
 }
 
+// A stable render function: only the chat body changes, never the thread owner.
+const renderVoiceBody = () => <CopilotVoiceSurface />;
+
 export default function GuideFab() {
+  const voiceMode = useCopilotInteraction()?.mode === 'voice';
   const user = useApp((s) => s.user);
   const mascotEnabled = (user as any)?.mascot?.enabled !== false;
   const { agent } = useAgent({ agentId: GUIDE_AGENT });
@@ -595,7 +601,8 @@ export default function GuideFab() {
         }}
         width={400}
         header={SET_HEADER}
-        welcomeScreen={SetWelcomeScreen}
+        welcomeScreen={voiceMode ? false : SetWelcomeScreen}
+        children={voiceMode ? renderVoiceBody : undefined}
         messageView={{ assistantMessage: SetAssistantMessage as any }}
         toggleButton={{ openIcon: CopilotOpenIcon, closeIcon: CopilotCloseIcon }}
       />

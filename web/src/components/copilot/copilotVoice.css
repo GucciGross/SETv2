@@ -1,0 +1,35 @@
+/* This is the chat body, not an overlay over an interactive text composer. */
+.set-copilot-voice-surface {
+  height: 100%; min-height: 0; display: flex; flex-direction: column;
+  overflow: auto; overscroll-behavior: contain; outline: none;
+  background: radial-gradient(ellipse at 50% 45%, rgb(96 68 156 / 12%), transparent 68%), #050609;
+  color: #e3e6f0;
+}
+.set-voice-stage {
+  flex: 1 0 auto; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 8px 18px 20px; min-width: 0;
+}
+.set-voice-orb { position: relative; width: min(100%, 300px); aspect-ratio: 1; flex: 0 0 auto; }
+.set-voice-orb-canvas, .set-voice-orb-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.set-voice-orb-poster { mix-blend-mode: screen; }
+.set-voice-state { max-width: 310px; text-align: center; font-size: 13px; line-height: 1.6; color: #bbc4db; padding: 0 8px; }
+.set-copilot-voice-surface[data-state='error'] .set-voice-state { color: #ffc1cd; }
+.set-voice-actions { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
+.set-voice-actions button {
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
+  background: rgb(189 176 225 / 7%); border: 1px solid rgb(189 176 225 / 20%); color: #d7d9ee;
+}
+.set-voice-actions button:hover { background: rgb(189 176 225 / 16%); }
+.set-voice-actions button:focus-visible { outline: 2px solid #a6b8ff; outline-offset: 3px; }
+.set-voice-actions button:disabled { opacity: .4; cursor: not-allowed; }
+.set-voice-approvals { flex: 0 0 auto; padding: 0 16px max(16px, env(safe-area-inset-bottom)); }
+.set-copilot-voice-surface:has(.set-voice-approvals) .set-voice-stage { flex: 0 0 auto; padding-bottom: 12px; }
+.set-copilot-voice-surface:has(.set-voice-approvals) .set-voice-orb { width: 148px; }
+/* Ensure flex shrinking remains possible in floating and full-height/docked chat. */
+[data-popup-chat]:has(.set-copilot-voice-surface) { min-height: 0; }
+@media (max-height: 650px) { .set-voice-orb { width: min(100%, 210px); } }
+@media (forced-colors: active) {
+  .set-copilot-voice-surface { background: Canvas; color: CanvasText; }
+  .set-voice-state { color: CanvasText; }
+  .set-voice-actions button { border-color: ButtonText; color: ButtonText; }
+}

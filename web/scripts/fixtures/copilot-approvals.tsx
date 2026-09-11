@@ -7,6 +7,7 @@ import type { BaseEvent } from '@ag-ui/core';
 import { AbstractAgent } from '@ag-ui/client';
 import { Observable } from 'rxjs';
 import GuideFab from '../../src/components/GuideFab';
+import { CopilotInteractionProvider } from '../../src/components/copilot/CopilotDock';
 import { CopilotCoreBridge } from '../../src/lib/copilot';
 import { useApp } from '../../src/stores/app';
 import '../../src/index.css';
@@ -49,7 +50,8 @@ const agent = new FixtureAgent({ agentId: 'set_guide' });
 const originalAbort = agent.abortRun.bind(agent);
 agent.abortRun = () => { agent['stop']?.(); originalAbort(); };
 createRoot(document.getElementById('root')!).render(<MemoryRouter><CopilotKit selfManagedAgents={{ set_guide: agent }} enableInspector={false}>
-  <CopilotCoreBridge />
+  <CopilotCoreBridge /><CopilotInteractionProvider>
   <main className="p-6"><h1 className="text-lg">Learning workspace</h1><p className="text-set-dim">Copilot approvals must stay inside the conversation.</p></main>
   <GuideFab />
+  </CopilotInteractionProvider>
 </CopilotKit></MemoryRouter>);
