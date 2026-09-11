@@ -146,8 +146,9 @@ with sync_playwright() as p:
         page.wait_for_function('window.gpuLifecycle.created === window.gpuLifecycle.destroyed')
         assert not errors, errors
         # Unsupported rendering must retain an orb, not change the voice modality.
+        # A fresh navigation is more robust than reload after heavy GPU churn.
         page.add_init_script("Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true })")
-        page.reload(wait_until='domcontentloaded')
+        page.goto(base + '/scripts/fixtures/voice-orb.html', wait_until='domcontentloaded', timeout=60000)
         expect(orb).to_have_attribute('data-renderer', 'unsupported')
         expect(orb.locator('img')).to_be_visible()
         assert not errors, errors
