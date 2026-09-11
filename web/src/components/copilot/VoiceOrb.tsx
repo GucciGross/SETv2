@@ -11,6 +11,7 @@ export default function VoiceOrb({ state, level }: { state: VoiceOrbState; level
   const currentState = useRef(state); currentState.current = state;
   const [rendering, setRendering] = useState(false);
   const [fallback, setFallback] = useState('loading');
+  const [rendererError, setRendererError] = useState<string>();
   useEffect(() => {
     const element = canvas.current;
     if (!element) return;
@@ -19,7 +20,7 @@ export default function VoiceOrb({ state, level }: { state: VoiceOrbState; level
     let dispose: (() => void) | undefined;
     const release = () => { generation++; dispose?.(); dispose = undefined; };
     const start = () => {
-      release(); setRendering(false);
+      release(); setRendering(false); setRendererError(undefined);
       if (document.hidden) { setFallback('hidden'); return; }
       if (reduced.matches) { setFallback('reduced-motion'); return; }
       if (!navigator.gpu) { setFallback('unsupported'); return; }
@@ -31,16 +32,16 @@ export default function VoiceOrb({ state, level }: { state: VoiceOrbState; level
           canvas: element,
           getTarget: () => voiceOrbTarget(currentState.current, level.current),
           onReady: () => { if (expected === generation) { setRendering(true); setFallback(''); } },
-          onError: () => { if (expected === generation) { setRendering(false); setFallback('unavailable'); } },
+          onError: error => { if (expected === generation) { setRendering(false); setFallback('unavailable'); setRendererError(error.message); } },
         });
-      }).catch(() => { if (expected === generation) { setRendering(false); setFallback('unavailable'); } });
+      }).catch(error => { if (expected === generation) { setRendering(false); setFallback('unavailable'); setRendererError(error instanceof Error ? error.message : String(error)); } });
     };
     start();
     document.addEventListener('visibilitychange', start);
     reduced.addEventListener('change', start);
     return () => { release(); document.removeEventListener('visibilitychange', start); reduced.removeEventListener('change', start); };
   }, [level]);
-  return <div className="set-voice-orb" data-set-voice-orb data-renderer={rendering ? 'webgpu' : fallback} aria-hidden="true">
+  return <div className="set-voice-orb" data-set-voice-orb data-renderer={rendering ? 'webgpu' : fallback} data-renderer-error={rendererError} aria-hidden="true">
     <img src={poster} alt="" className="set-voice-orb-poster" hidden={rendering} draggable={false} />
     <canvas ref={canvas} className="set-voice-orb-canvas" style={{ opacity: rendering ? 1 : 0 }} />
   </div>;

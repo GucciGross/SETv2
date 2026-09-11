@@ -1,6 +1,7 @@
 """Real pinned WGSL compilation/drawing + disposal. Software GPU is deliberate CI coverage."""
 import json
 import os
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright, expect
@@ -8,9 +9,18 @@ base = os.environ.get('SET_WEB_TEST_BASE', 'http://127.0.0.1:5173')
 assert urlparse(base).hostname in {'localhost', '127.0.0.1'}
 artifacts = Path('/tmp/voice-orb'); artifacts.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as p:
-    browser = p.chromium.launch(executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=['--enable-unsafe-webgpu', '--use-angle=swiftshader'])
+    # Use full Chromium's modern headless compositor; ANGLE's WebGL SwiftShader
+    # switch alone does not select a WebGPU Vulkan adapter on GPU-less Linux CI.
+    # https://developer.chrome.com/blog/supercharge-web-ai-testing
+    # https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/swiftshader.md
+    args = ['--enable-unsafe-webgpu']
+    if sys.platform.startswith('linux'):
+        args += ['--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
+                 '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface']
+    browser = p.chromium.launch(channel='chromium', executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args)
     page = browser.new_page(viewport={'width': 440, 'height': 560})
     errors = []; page.on('pageerror', lambda error: errors.append(str(error)))
+    console = []; page.on('console', lambda message: console.append({'type': message.type, 'text': message.text}))
     # Observe actual device creation/destruction; no fake GPU, shader or renderer.
     page.add_init_script("""window.gpuLifecycle = {created:0, destroyed:0};
       if (typeof GPUAdapter !== 'undefined') {
@@ -25,7 +35,8 @@ with sync_playwright() as p:
     try:
         page.goto(base + '/scripts/fixtures/voice-orb.html', wait_until='domcontentloaded')
         orb = page.locator('[data-set-voice-orb]')
-        expect(orb).to_have_attribute('data-renderer', 'webgpu', timeout=90000)
+        page.wait_for_function("() => { const orb = document.querySelector('[data-set-voice-orb]'); return orb && orb.dataset.renderer !== 'loading'; }", timeout=90000)
+        expect(orb).to_have_attribute('data-renderer', 'webgpu', timeout=10000)
         assert page.evaluate('window.gpuLifecycle.created > 0'), 'Must exercise the real WebGPU renderer'
         page.wait_for_timeout(600)
         orb.screenshot(path=str(artifacts / 'listening.png'))
@@ -54,7 +65,12 @@ with sync_playwright() as p:
         print('PASS real WebGPU shader, state changes, reduced motion, cleanup, StrictMode, unsupported fallback')
     except Exception:
         page.screenshot(path=str(artifacts / 'failure.png'))
-        (artifacts / 'errors.json').write_text(json.dumps(errors))
+        diagnostics = {'errors': errors, 'console': console,
+                       'renderer': page.locator('[data-set-voice-orb]').get_attribute('data-renderer'),
+                       'rendererError': page.locator('[data-set-voice-orb]').get_attribute('data-renderer-error'),
+                       'lifecycle': page.evaluate('window.gpuLifecycle')}
+        (artifacts / 'errors.json').write_text(json.dumps(diagnostics, indent=2))
+        print(json.dumps(diagnostics, indent=2), flush=True)
         raise
     finally:
         browser.close()
