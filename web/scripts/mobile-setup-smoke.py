@@ -15,13 +15,11 @@ viewport_shim = """(() => {
     Object.assign(viewport, { height, offsetTop: top, scale }); viewport.dispatchEvent(new Event('resize'));
   };
   // A gesture-scoped recognizer catches an await/network hop before start().
-  let tapping = false;
-  document.addEventListener('click', () => { tapping = true; queueMicrotask(() => tapping = false); }, true);
   class Recognition {
     start() {
       window.recognitionStarts = (window.recognitionStarts || 0) + 1;
-      window.recognitionInTap = tapping;
-      if (!tapping) throw new Error('Microphone startup lost the tap');
+      window.recognitionInTap = window.event?.type === 'click';
+      if (!window.recognitionInTap) throw new Error('Microphone startup lost the tap');
     }
     abort() {}
     stop() { this.onend?.(); }
@@ -100,7 +98,7 @@ with sync_playwright() as p:
             setup.get_by_role('button', name='Recheck Codex setup').click()
             card = page.get_by_role('region', name='Codex · Sign in with ChatGPT')
             checkbox = card.get_by_role('checkbox', name='Use Codex for my Copilot')
-            expect(checkbox).to_be_visible(); checkbox.check()
+            expect(checkbox).to_be_visible(); checkbox.click()
             expect(card.get_by_role('alert')).to_contain_text('Selection failed')
             expect(checkbox).not_to_be_checked()
             # Reachable LLM form, first provider default, masked/cleared key, visible errors.
