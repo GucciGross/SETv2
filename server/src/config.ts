@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { transcriptionConfig } from './transcription-config.js';
 
 const env = z
   .object({
@@ -33,9 +34,8 @@ const env = z
     REGISTRATION_OPEN: z.string().default('1'),
     MCP_ENABLED: z.string().default('1'),
     // Voice: server-side speech-to-text via any OpenAI-compatible /audio/transcriptions
-    // endpoint. Falls back to the bootstrap LLM env when only that is set. When
-    // neither is configured the runtime omits /transcribe and the web client
-    // falls back to the browser's Web Speech API.
+    // endpoint. Explicit opt-in: a chat provider does not imply speech support.
+    // Without it, dictation can use browser recognition where available.
     TRANSCRIBE_BASE_URL: z.string().optional(),
     TRANSCRIBE_API_KEY: z.string().optional(),
     TRANSCRIBE_MODEL: z.string().default('whisper-1'),
@@ -109,11 +109,7 @@ export const config = {
     token: env.WANDGX_TOKEN,
     webhookSecret: env.WANDGX_WEBHOOK_SECRET,
   },
-  transcribe: {
-    baseUrl: env.TRANSCRIBE_BASE_URL || env.LLM_BASE_URL,
-    apiKey: env.TRANSCRIBE_API_KEY || env.LLM_API_KEY,
-    model: env.TRANSCRIBE_MODEL,
-  },
+  transcribe: transcriptionConfig(env),
   telemetry: {
     enabled: env.TELEMETRY_ENABLED !== '0',
     url: env.TELEMETRY_URL || 'https://telemetry.trainwithset.com/v1/ingest',

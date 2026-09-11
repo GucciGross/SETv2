@@ -6,6 +6,7 @@ import { openSetCopilot, focusCopilotInput, isSetCopilotOpen, COPILOT_TOGGLE_SEL
 import { useCopilotVoice, type VoiceState } from './useCopilotVoice';
 import { useCodexVoice } from './useCodexVoice';
 import { runVoiceCopilot } from './runVoiceCopilot';
+import { useVoiceCapabilities, nativeVoiceSelected } from './voiceCapabilities';
 import './copilotDock.css';
 
 interface Interaction {
@@ -43,12 +44,14 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
     window.speechSynthesis?.cancel();
     if (live.current) setSpeaking(false);
   }, []);
+  const capabilities = useVoiceCapabilities();
+  const nativeSelected = nativeVoiceSelected(capabilities.data);
   const dictation = useCopilotVoice(text => {
     if (!agent || agent.isRunning) { setSendError('Copilot is still working. Wait for this run to finish, then try again.'); return; }
     openSetCopilot(); setSending(true); setSendError('');
     void askAgent(agent, text).catch(() => { if (live.current) setSendError('The voice message could not finish. Review the chat and retry.'); })
       .finally(() => { if (live.current) setSending(false); });
-  });
+  }, capabilities.data?.serverTranscription ?? null);
 
 
   const native = useCodexVoice(async (text, signal) => {
@@ -57,21 +60,31 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
     try { return await runVoiceCopilot(agent, text, signal, askAgent); }
     finally { if (live.current) setSending(false); }
   }, spoken);
-  const voiceGeneration = useRef(0);
   const cancelVoice = useCallback(() => {
-    voiceGeneration.current++; native.cancel(); dictation.cancel(); stopSpeech();
+    native.cancel(); dictation.cancel(); stopSpeech();
   }, [native.cancel, dictation.cancel, stopSpeech]);
   const voice = {
     state: native.state !== 'idle' ? native.state : dictation.state,
-    error: native.selected ? native.error : dictation.error,
-    interim: native.selected ? native.interim : dictation.interim,
-    ready: dictation.ready,
+    error: capabilities.error || (nativeSelected ? native.error : dictation.error),
+    interim: nativeSelected ? native.interim : dictation.interim,
+    ready: capabilities.data !== null,
     cancel: cancelVoice,
     stop: () => native.state !== 'idle' ? native.cancel() : dictation.stop(),
-    start: async () => {
+    start: () => {
       cancelVoice();
-      const current = voiceGeneration.current;
-      if (!(await native.start()) && current === voiceGeneration.current) await dictation.start();
+      if (!window.isSecureContext) {
+        setSendError('Microphone blocked: use trusted HTTPS for SET on your phone. An http:// LAN address cannot use the microphone. Open AI setup for help.');
+        return;
+      }
+      if (!capabilities.data) {
+        setSendError(capabilities.error || 'Checking voice setup. Tap Voice again when the check finishes.');
+        capabilities.refresh();
+        return;
+      }
+      // Deliberately no await/fetch here: Safari speech recognition must start
+      // from the user's tap. A selected native error never falls back to STT.
+      if (nativeSelected) void native.start(capabilities.data);
+      else void dictation.start();
     },
   };
 
@@ -115,7 +128,7 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
   // when transcription finishes while a fast assistant response starts playing.
   const captureState = useRef(voice.state); captureState.current = voice.state;
   useEffect(() => {
-    if (!agent || native.selected || mode !== 'voice' || !spoken || !('speechSynthesis' in window)) return;
+    if (!agent || nativeSelected || mode !== 'voice' || !spoken || !('speechSynthesis' in window)) return;
     const sub = agent.subscribe({ onTextMessageEndEvent: (params: any) => {
       if (captureState.current === 'listening' || captureState.current === 'requesting' || document.hidden) return;
       const text = String(params?.textMessageBuffer ?? '').replace(/[#*`_>\[\]]/g, '').slice(0, 1600).trim();
@@ -131,7 +144,7 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
       window.speechSynthesis.speak(reply);
     } });
     return () => { sub.unsubscribe(); stopSpeech(); };
-  }, [agent, mode, spoken, native.selected, stopSpeech]);
+  }, [agent, mode, spoken, nativeSelected, stopSpeech]);
 
   const ensureOpen = (source?: HTMLElement) => {
     if (!open && source) origin.current = source;
@@ -156,7 +169,7 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
   const value: Interaction = {
     open, mode, state: voice.state, error: mode === 'voice' ? sendError || voice.error : sendError, interim: voice.interim,
     sending: sending || !!agent?.isRunning, ready: voice.ready, spoken, speaking,
-    inputStream: native.selected ? native.inputStream : dictation.inputStream,
+    inputStream: nativeSelected ? native.inputStream : dictation.inputStream,
     outputStream: spoken ? native.outputStream : null,
     text, voice: toggleVoice,
     toggleSpoken: () => { setSpoken(v => !v); stopSpeech(); },

@@ -22,7 +22,10 @@ export async function codexRoutes(app: FastifyInstance, sessions: Pick<typeof co
       // Neither raw app-server responses nor filesystem paths are public errors.
       return reply.code(503).send({ error: 'Codex is unavailable. Check its installation and the self-hosted server configuration.' });
     });
-    api.get('/capabilities', async () => ({ available: codexOAuthEnabled(), personalOnly: true }));
+    api.get('/capabilities', async () => ({
+      available: codexOAuthEnabled(), personalOnly: true,
+      deploymentMode: process.env.SET_DEPLOYMENT_MODE === 'self-hosted' ? 'self-hosted' : process.env.SET_DEPLOYMENT_MODE === 'cloud' ? 'cloud' : 'unconfigured',
+    }));
     api.get('/account', async req => sessions.status(req.user!.id));
     const emptyBody = { schema: { body: { type: 'object', additionalProperties: false, properties: {} } } };
     api.post('/login', emptyBody, async req => sessions.login(req.user!.id));

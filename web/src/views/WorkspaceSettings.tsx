@@ -10,23 +10,30 @@ import { applyTheme, saveThemePreference, currentTheme, type Theme } from '../li
 import McpSettings from '../components/McpSettings';
 import SkillsSettings from '../components/SkillsSettings';
 import { DitherButton } from '../components/dither-kit';
+import CodexSettings from '../components/copilot/CodexSettings';
+import VoiceSettings from '../components/copilot/VoiceSettings';
+import { AI_CONNECTION_CHANGED } from '../components/copilot/voiceCapabilities';
 
 export default function SettingsView() {
   const { spaceId } = useParams();
-  const [tab, setTab] = useState<'surfaces' | 'appearance' | 'skills' | 'mcp' | 'channels' | 'mascot' | 'providers' | 'members' | 'workspace' | 'research' | 'companion' | 'clipper' | 'notifications' | 'billing'>('surfaces');
+  const [search, setSearch] = useSearchParams();
+  const tabs = ['surfaces', 'appearance', 'skills', 'mcp', 'channels', 'mascot', 'providers', 'members', 'workspace', 'research', 'companion', 'clipper', 'notifications', 'billing'];
+  const requestedTab = search.get('tab') ?? 'providers';
+  const tab = tabs.includes(requestedTab) ? requestedTab : 'providers';
+  const setTab = (next: string) => setSearch(previous => { const params = new URLSearchParams(previous); params.set('tab', next); return params; });
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold text-white mb-4">Settings</h1>
       <div className="flex flex-wrap gap-1 mb-4">
         {([
+          ['providers', 'AI Providers', <Cpu key="a" size={14} />],
           ['surfaces', 'Work surfaces', <LayoutGrid key="z" size={14} />],
           ['appearance', 'Appearance', <Sun key="ap" size={14} />],
           ['skills', 'Skills', <Sparkles key="y" size={14} />],
           ['mcp', 'MCP', <Plug key="z" size={14} />],
           ['channels', 'Channels', <Radio key="ch" size={14} />],
           ['mascot', 'Mascot', <Cat key="m" size={14} />],
-          ['providers', 'AI Providers', <Cpu key="a" size={14} />],
           ['members', 'Members', <Users key="b" size={14} />],
           ['workspace', 'Workspace', <ShieldCheck key="c" size={14} />],
           ['research', 'Deep Research', <Telescope key="r" size={14} />],
@@ -35,7 +42,7 @@ export default function SettingsView() {
           ['notifications', 'Notifications', <Bell key="nt" size={14} />],
           ['billing', 'Billing', <CreditCard key="bl" size={14} />],
         ] as const).map(([id, label, icon]) => (
-          <button key={id} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm ${tab === id ? 'bg-set-accent/20 text-blue-200' : 'text-set-dim hover:text-set-text'}`} onClick={() => setTab(id)}>
+          <button key={id} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm ${tab === id ? 'bg-set-accent/20 text-blue-200' : 'text-set-dim hover:text-set-text'}`} aria-pressed={tab === id} onClick={() => setTab(id)}>
             {icon} {label}
           </button>
         ))}
@@ -46,7 +53,7 @@ export default function SettingsView() {
       {tab === 'mcp' && <McpSettings />}
       {tab === 'channels' && <ChannelsTab spaceId={spaceId!} />}
       {tab === 'mascot' && <MascotTab />}
-      {tab === 'providers' && <ProvidersTab spaceId={spaceId!} />}
+      {tab === 'providers' && <><CodexSettings /><ProvidersTab key={spaceId} spaceId={spaceId!} /><VoiceSettings /></>}
       {tab === 'members' && <MembersTab spaceId={spaceId!} />}
       {tab === 'workspace' && <WorkspaceTab spaceId={spaceId!} />}
       {tab === 'research' && <ResearchTab spaceId={spaceId!} />}
@@ -133,7 +140,7 @@ function ChannelsTab({ spaceId }: { spaceId: string }) {
 
       <div className="space-y-2">
         {(data?.links ?? []).map((l: any) => (
-          <div key={l.id} className="set-card p-3 flex items-center gap-3">
+          <div key={l.id} className="set-card p-3 flex flex-wrap items-center gap-3">
             <Radio size={15} className="text-violet-300" />
             <div className="flex-1 min-w-0">
               <div className="text-sm text-white">{l.platform_name || l.platform_id} <span className="text-xs text-set-dim uppercase">{l.platform}</span></div>
@@ -474,13 +481,15 @@ function ProvidersTab({ spaceId }: { spaceId: string }) {
   const [capsSaved, setCapsSaved] = useState(false);
   const [platformMsg, setPlatformMsg] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, any>>({});
+  const [providerError, setProviderError] = useState('');
+  const [savingProvider, setSavingProvider] = useState(false);
   const [form, setForm] = useState({ name: '', baseUrl: '', apiKey: '', chatModel: '', embedModel: '', isDefault: false });
 
   const load = async () => {
     const r = await api.get(`/spaces/${spaceId}/providers`);
-    setProviders(r.providers);
+    setProviders(r.providers ?? []);
     setGatewayEnabled(!!r.gatewayEnabled);
-    setPresets((await api.get('/providers/presets')).presets);
+    setPresets((await api.get('/providers/presets')).presets ?? []);
     const u = await api.get(`/spaces/${spaceId}/usage`).catch(() => null);
     if (u) {
       setUsage(u);
@@ -491,7 +500,7 @@ function ProvidersTab({ spaceId }: { spaceId: string }) {
     }
   };
   useEffect(() => {
-    load();
+    void load().catch(e => setProviderError(e.message || 'Could not load AI providers.'));
   }, [spaceId]);
 
   const saveCaps = async () => {
@@ -507,29 +516,45 @@ function ProvidersTab({ spaceId }: { spaceId: string }) {
     try {
       await api.post(`/spaces/${spaceId}/providers/platform`, {});
       setPlatformMsg('SET Cloud enabled and set as default provider.');
-      load();
+      await load();
+      window.dispatchEvent(new Event(AI_CONNECTION_CHANGED));
     } catch (e: any) {
       setPlatformMsg(e.message);
     }
   };
 
   const create = async () => {
-    if (!form.name || !form.baseUrl) return;
-    await api.post(`/spaces/${spaceId}/providers`, {
-      ...form,
-      apiKey: form.apiKey || null,
-      chatModel: form.chatModel || null,
-      embedModel: form.embedModel || null,
-    });
-    setForm({ name: '', baseUrl: '', apiKey: '', chatModel: '', embedModel: '', isDefault: false });
-    load();
+    if (savingProvider) return;
+    setProviderError('');
+    if (!form.name.trim() || !form.baseUrl.trim() || !form.chatModel.trim()) {
+      setProviderError('Enter a provider name, base URL, and chat model.'); return;
+    }
+    try {
+      const url = new URL(form.baseUrl.trim());
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error();
+    } catch { setProviderError('Use an http:// or https:// base URL without credentials in the URL.'); return; }
+    setSavingProvider(true);
+    try {
+      await api.post(`/spaces/${spaceId}/providers`, {
+        ...form, name: form.name.trim(), baseUrl: form.baseUrl.trim().replace(/\/$/, ''),
+        apiKey: form.apiKey || null, chatModel: form.chatModel.trim(), embedModel: form.embedModel.trim() || null,
+        isDefault: providers.length === 0 || form.isDefault,
+      });
+      setForm({ name: '', baseUrl: '', apiKey: '', chatModel: '', embedModel: '', isDefault: false });
+      await load();
+      window.dispatchEvent(new Event(AI_CONNECTION_CHANGED));
+    } catch (e: any) { setProviderError(e.message || 'Could not save the provider.'); }
+    finally { setSavingProvider(false); }
   };
 
   const test = async (id: string) => {
-    setTestResults((t) => ({ ...t, [id]: 'testing…' }));
-    const res = await api.post(`/providers/${id}/test`);
-    setTestResults((t) => ({ ...t, [id]: res }));
+    setTestResults(t => ({ ...t, [id]: 'testing…' }));
+    try {
+      const res = await api.post(`/providers/${id}/test`);
+      setTestResults(t => ({ ...t, [id]: res }));
+    } catch (e: any) { setTestResults(t => ({ ...t, [id]: { ok: false, detail: e.message || 'Connection test failed.' } })); }
   };
+
 
   const hasCloud = providers.some((p) => p.name === 'SET Cloud (managed)');
   const monthTokens = usage?.totals?.reduce((s: number, t: any) => s + t.total_tokens, 0) ?? 0;
@@ -538,9 +563,76 @@ function ProvidersTab({ spaceId }: { spaceId: string }) {
   return (
     <div>
       <p className="text-sm text-set-dim mb-3">
-        Bring Your Own LLM — any OpenAI-compatible endpoint works. Ollama users: start ollama and use <code className="text-violet-300">http://host.docker.internal:11434/v1</code>.
+        Connect Ollama or another OpenAI-compatible chat endpoint. SET’s server—not your iPhone—connects to this address.
+        For an LLM on another LAN machine use its address, for example <code className="break-all">http://192.168.1.50:11434/v1</code>.
+        In Docker, localhost means the container; host.docker.internal only works when configured. A chat model does not supply speech transcription.
       </p>
 
+      {providerError && <p role="alert" className="text-sm text-red-300 mb-3">{providerError}</p>}
+      {/* managed platform provider — only offered when the server has a gateway configured */}
+      {gatewayEnabled && !hasCloud && (
+        <div className="set-card p-4 mb-4 flex flex-wrap items-center gap-3">
+          <Cloud size={18} className="text-blue-300 shrink-0" />
+          <div className="flex-1 min-w-[220px]">
+            <div className="text-sm text-white">SET Cloud <span className="set-chip border-set-accent/40 bg-set-accent/10 text-blue-200">managed</span></div>
+            <div className="text-xs text-set-dim">Models served by this deployment&apos;s gateway — metered per workspace, capped below, no keys to manage. Your own providers keep working and can take over as default any time.</div>
+            {platformMsg && <p className="text-xs mt-1 text-amber-300">{platformMsg}</p>}
+          </div>
+          <button className="set-btn-primary text-xs" onClick={enablePlatform}>Enable SET Cloud</button>
+        </div>
+      )}
+
+      <div className="set-card p-4 mb-4">
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {presets.map((p) => (
+            <button key={p.name} className="set-chip border-set-border bg-set-panel2 hover:border-set-accent/50"
+              onClick={() => setForm((f) => ({ ...f, name: p.name, baseUrl: p.baseUrl, chatModel: p.chatModel ?? '', embedModel: p.embedModel ?? '' }))}>
+               {p.name}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <input className="set-input" aria-label="Provider name" placeholder="Name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          <input className="set-input" aria-label="Provider base URL" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Base URL (https://…/v1)" value={form.baseUrl} onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))} />
+          <input className="set-input" aria-label="Provider API key" type="password" autoComplete="new-password" placeholder="API key (optional for local)" value={form.apiKey} onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))} />
+          <input className="set-input" aria-label="Chat model" autoCapitalize="none" spellCheck={false} placeholder="Exact chat model name" value={form.chatModel} onChange={(e) => setForm((f) => ({ ...f, chatModel: e.target.value }))} />
+          <input className="set-input" aria-label="Embedding model" placeholder="Embedding model (optional)" value={form.embedModel} onChange={(e) => setForm((f) => ({ ...f, embedModel: e.target.value }))} />
+          <label className="flex items-center gap-2 text-sm text-set-dim">
+            <input type="checkbox" className="accent-set-accent" checked={form.isDefault} onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))} />
+            Set as default
+          </label>
+        </div>
+        <button className="set-btn-primary mt-3 flex items-center gap-1" disabled={savingProvider} onClick={() => void create()}><Plus size={14} /> {savingProvider ? 'Saving…' : 'Add provider'}</button>
+      </div>
+
+      <div className="space-y-2">
+        {providers.map((p) => {
+          const t = testResults[p.id];
+          return (
+            <div key={p.id} className="set-card p-3 flex flex-wrap items-center gap-3">
+              <Cpu size={16} className="text-set-dim" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-white flex items-center gap-2">
+                  {p.name}
+                  {p.is_default && <span className="set-chip border-green-500/40 bg-green-500/10 text-green-300">default</span>}
+                </div>
+                <div className="text-xs text-set-dim truncate">{p.base_url} · {p.chat_model ?? '—'} · embed: {p.embed_model ?? 'builtin hash'}</div>
+                {t && (
+                  <div className={`text-xs mt-1 ${t.ok ? 'text-green-400' : typeof t === 'string' ? 'text-amber-300' : 'text-red-400'}`}>
+                    {typeof t === 'string' ? t : t.ok ? ` ${t.detail}` : ` ${t.detail}`}
+                  </div>
+                )}
+              </div>
+              <button className="set-btn text-xs flex items-center gap-1" onClick={() => test(p.id)}><Zap size={12} /> Test</button>
+              {!p.is_default && (
+                <button className="set-btn text-xs flex items-center gap-1" onClick={async () => { try { await api.patch(`/providers/${p.id}`, { isDefault: true }); await load(); window.dispatchEvent(new Event(AI_CONNECTION_CHANGED)); } catch (e: any) { setProviderError(e.message); } }}><Check size={12} /> Default</button>
+              )}
+              <button aria-label={`Remove ${p.name}`} className="set-btn-ghost hover:text-red-400 text-xs" onClick={async () => { if (await confirmDialog({ title: 'Remove provider?', danger: true, confirmLabel: 'Remove' })) { try { await api.del(`/providers/${p.id}`); await load(); window.dispatchEvent(new Event(AI_CONNECTION_CHANGED)); } catch (e: any) { setProviderError(e.message); } } }}><Trash2 size={14} /></button>
+            </div>
+          );
+        })}
+        {providers.length === 0 && <p className="text-sm text-set-dim">No providers — search and RAG embeddings run on built-in hashing (no LLM needed), but chat requires a provider.</p>}
+      </div>
       {/* usage & spend — metered by the LLM gateway (SET Cloud); caps are enforced per calendar month */}
       <div className="set-card p-4 mb-4">
         <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -576,70 +668,7 @@ function ProvidersTab({ spaceId }: { spaceId: string }) {
         </div>
       </div>
 
-      {/* managed platform provider — only offered when the server has a gateway configured */}
-      {gatewayEnabled && !hasCloud && (
-        <div className="set-card p-4 mb-4 flex flex-wrap items-center gap-3">
-          <Cloud size={18} className="text-blue-300 shrink-0" />
-          <div className="flex-1 min-w-[220px]">
-            <div className="text-sm text-white">SET Cloud <span className="set-chip border-set-accent/40 bg-set-accent/10 text-blue-200">managed</span></div>
-            <div className="text-xs text-set-dim">Models served by this deployment&apos;s gateway — metered per workspace, capped above, no keys to manage. Your own providers keep working and can take over as default any time.</div>
-            {platformMsg && <p className="text-xs mt-1 text-amber-300">{platformMsg}</p>}
-          </div>
-          <button className="set-btn-primary text-xs" onClick={enablePlatform}>Enable SET Cloud</button>
-        </div>
-      )}
 
-      <div className="set-card p-4 mb-4">
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {presets.map((p) => (
-            <button key={p.name} className="set-chip border-set-border bg-set-panel2 hover:border-set-accent/50"
-              onClick={() => setForm((f) => ({ ...f, name: p.name, baseUrl: p.baseUrl, chatModel: p.chatModel ?? '', embedModel: p.embedModel ?? '' }))}>
-               {p.name}
-            </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <input className="set-input" placeholder="Name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-          <input className="set-input" placeholder="Base URL (https://…/v1)" value={form.baseUrl} onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))} />
-          <input className="set-input" placeholder="API key (optional for local)" value={form.apiKey} onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))} />
-          <input className="set-input" placeholder="Chat model (e.g. llama3.1)" value={form.chatModel} onChange={(e) => setForm((f) => ({ ...f, chatModel: e.target.value }))} />
-          <input className="set-input" placeholder="Embedding model (e.g. nomic-embed-text)" value={form.embedModel} onChange={(e) => setForm((f) => ({ ...f, embedModel: e.target.value }))} />
-          <label className="flex items-center gap-2 text-sm text-set-dim">
-            <input type="checkbox" className="accent-set-accent" checked={form.isDefault} onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))} />
-            Set as default
-          </label>
-        </div>
-        <button className="set-btn-primary mt-3 flex items-center gap-1" onClick={create}><Plus size={14} /> Add provider</button>
-      </div>
-
-      <div className="space-y-2">
-        {providers.map((p) => {
-          const t = testResults[p.id];
-          return (
-            <div key={p.id} className="set-card p-3 flex items-center gap-3">
-              <Cpu size={16} className="text-set-dim" />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm text-white flex items-center gap-2">
-                  {p.name}
-                  {p.is_default && <span className="set-chip border-green-500/40 bg-green-500/10 text-green-300">default</span>}
-                </div>
-                <div className="text-xs text-set-dim truncate">{p.base_url} · {p.chat_model ?? '—'} · embed: {p.embed_model ?? 'builtin hash'}</div>
-                {t && (
-                  <div className={`text-xs mt-1 ${t.ok ? 'text-green-400' : typeof t === 'string' ? 'text-amber-300' : 'text-red-400'}`}>
-                    {typeof t === 'string' ? t : t.ok ? ` ${t.detail}` : ` ${t.detail}`}
-                  </div>
-                )}
-              </div>
-              <button className="set-btn text-xs flex items-center gap-1" onClick={() => test(p.id)}><Zap size={12} /> Test</button>
-              {!p.is_default && (
-                <button className="set-btn text-xs flex items-center gap-1" onClick={async () => { await api.patch(`/providers/${p.id}`, { isDefault: true }); load(); }}><Check size={12} /> Default</button>
-              )}
-              <button className="set-btn-ghost hover:text-red-400 text-xs" onClick={async () => { if (await confirmDialog({ title: 'Remove provider?', danger: true, confirmLabel: 'Remove' })) { await api.del(`/providers/${p.id}`); load(); } }}></button>
-            </div>
-          );
-        })}
-        {providers.length === 0 && <p className="text-sm text-set-dim">No providers — search and RAG embeddings run on built-in hashing (no LLM needed), but chat requires a provider.</p>}
-      </div>
     </div>
   );
 }
