@@ -42,7 +42,11 @@ with sync_playwright() as p:
         attempts.append(report)
         print('Uninstrumented device probe:', json.dumps({k:v for k,v in report.items() if k != 'gpu'}), flush=True)
         if probe.get('available'):
-            browser, page = candidate, candidate_page
+            candidate.close()
+            # The availability probe owns and destroys its device; keep that
+            # document/context out of the renderer lifecycle under test.
+            browser = p.chromium.launch(channel=channel, executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args)
+            page = browser.new_page(viewport={'width': 440, 'height': 560})
             break
         candidate.close()
     (artifacts / 'environment.json').write_text(json.dumps(attempts, indent=2))
@@ -50,6 +54,29 @@ with sync_playwright() as p:
         raise AssertionError('No healthy real WebGPU adapter; see environment.json. Renderer test was not skipped.')
     errors = []; page.on('pageerror', lambda error: errors.append(str(error)))
     console = []; page.on('console', lambda message: console.append({'type': message.type, 'text': message.text}))
+    # Prove a real frame without patching any GPU API before lifecycle tracing.
+    page.goto(base + '/scripts/fixtures/voice-orb.html', wait_until='domcontentloaded')
+    uninstrumented = page.locator('[data-set-voice-orb]')
+    try:
+        page.wait_for_function("() => { const orb = document.querySelector('[data-set-voice-orb]'); return orb && orb.dataset.renderer !== 'loading'; }", timeout=90000)
+        expect(uninstrumented).to_have_attribute('data-renderer', 'webgpu', timeout=10000)
+        page.wait_for_timeout(600)
+        expect(uninstrumented).to_have_attribute('data-renderer', 'webgpu')
+        expect(uninstrumented.locator('img')).to_be_hidden()
+        uninstrumented.screenshot(path=str(artifacts / 'uninstrumented.png'))
+    except Exception:
+        page.screenshot(path=str(artifacts / 'failure.png'))
+        diagnostic = {'phase':'uninstrumented', 'console':console, 'errors':errors,
+                      'renderer':uninstrumented.get_attribute('data-renderer'),
+                      'rendererError':uninstrumented.get_attribute('data-renderer-error')}
+        (artifacts / 'errors.json').write_text(json.dumps(diagnostic, indent=2))
+        print(json.dumps(diagnostic, indent=2), flush=True)
+        browser.close()
+        raise
+    page.close()
+    page = browser.new_page(viewport={'width':440, 'height':560})
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.on('console', lambda message: console.append({'type':message.type, 'text':message.text}))
     # Observe actual device creation/destruction; no fake GPU, shader or renderer.
     page.add_init_script("""window.gpuLifecycle = {created:0, destroyed:0, events:[]};
       if (typeof GPUAdapter !== 'undefined') {
@@ -74,10 +101,15 @@ with sync_playwright() as p:
         expect(orb).to_have_attribute('data-renderer', 'webgpu', timeout=10000)
         assert page.evaluate('window.gpuLifecycle.created > 0'), 'Must exercise the real WebGPU renderer'
         page.wait_for_timeout(600)
+        expect(orb).to_have_attribute('data-renderer', 'webgpu')
+        expect(orb.locator('img')).to_be_hidden()
         orb.screenshot(path=str(artifacts / 'listening.png'))
         page.evaluate("window.orbFixture.setState('speaking'); window.orbFixture.setLevel(.5)")
         page.wait_for_timeout(600)
+        expect(orb).to_have_attribute('data-renderer', 'webgpu')
+        expect(orb.locator('img')).to_be_hidden()
         orb.screenshot(path=str(artifacts / 'speaking.png'))
+        assert page.evaluate("!window.gpuLifecycle.events.some(event => event.type === 'validation')"), 'Unexpected WebGPU validation errors'
         page.emulate_media(reduced_motion='reduce')
         expect(orb).to_have_attribute('data-renderer', 'reduced-motion')
         page.wait_for_function('window.gpuLifecycle.created === window.gpuLifecycle.destroyed')
