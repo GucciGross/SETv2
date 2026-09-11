@@ -1,0 +1,46 @@
+name: Import pinned voice orb (temporary)
+on:
+  pull_request:
+    types: [opened, synchronize]
+permissions:
+  contents: read
+jobs:
+  import:
+    if: github.repository == 'GucciGross/SETv2' && github.head_ref == 'feat/copilot-voice-orb-20260911' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/copilot-voice-orb-20260911
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Import hash-pinned upstream sources and WebGPU declarations
+        run: |
+          set -euo pipefail
+          node web/scripts/sync-orb.mjs --write
+          cd web
+          npm install --save-dev --save-exact @webgpu/types@0.1.66 --ignore-scripts
+          printf '/// <reference types="@webgpu/types" />\n' > src/vendor/webgpu.d.ts
+      - name: Commit only the vendor import to this feature branch
+        run: |
+          set -euo pipefail
+          git add web/src/vendor/lersent-orb web/src/vendor/webgpu.d.ts web/package.json web/package-lock.json
+          if ! git diff --cached --quiet; then
+            git -c user.name='SET dependency importer' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'vendor: pin LerSent001/orb renderer, shader, presets and MIT notice'
+            git push origin HEAD:refs/heads/feat/copilot-voice-orb-20260911
+          fi
+      - name: Package imported source and dependencies for isolated review
+        run: |
+          mkdir -p /tmp/set-orb-review
+          git archive --format=tar.gz --output=/tmp/set-orb-review/source.tar.gz HEAD
+          tar -czf /tmp/set-orb-review/web-dependencies.tar.gz -C web node_modules
+          git rev-parse HEAD > /tmp/set-orb-review/COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voice-orb-review
+          path: /tmp/set-orb-review
+          retention-days: 3
