@@ -69,6 +69,8 @@ jobs:
         run: |
           python3 -m pip install playwright==1.57.0
           python3 -m playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y xvfb
       - name: Exercise approvals and input controls in the actual Copilot shell
         working-directory: web
         run: |
@@ -83,7 +85,9 @@ jobs:
           curl --fail --silent http://127.0.0.1:5173/ > /dev/null
           python3 scripts/copilot-approval-smoke.py
           python3 scripts/copilot-controls-smoke.py
-          python3 scripts/voice-orb-smoke.py
+          # Headless Chrome destroys WebGPU devices when a canvas presents, so
+          # the orb shader test needs a real (virtual) display to render into.
+          xvfb-run -a env SET_BROWSER_HEADED=1 python3 scripts/voice-orb-smoke.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

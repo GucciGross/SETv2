@@ -1,4 +1,6 @@
-"""Real pinned WGSL compilation/drawing + disposal. Software GPU is deliberate CI coverage."""
+"""Real pinned WGSL compilation/drawing + disposal. Software GPU is deliberate CI coverage.
+Run with SET_BROWSER_HEADED=1 under xvfb-run: Chrome headless loses the device
+when a canvas presents, so honest backend selection needs a headed display."""
 import json
 import os
 import sys
@@ -8,6 +10,7 @@ from playwright.sync_api import sync_playwright, expect
 base = os.environ.get('SET_WEB_TEST_BASE', 'http://127.0.0.1:5173')
 assert urlparse(base).hostname in {'localhost', '127.0.0.1'}
 artifacts = Path('/tmp/voice-orb'); artifacts.mkdir(parents=True, exist_ok=True)
+headless = os.environ.get('SET_BROWSER_HEADED') != '1'
 with sync_playwright() as p:
     # Select a healthy software device before testing the renderer. Chrome builds
     # differ in whether SwiftShader is exposed through ANGLE or native Vulkan.
@@ -21,7 +24,7 @@ with sync_playwright() as p:
     attempts = []
     browser = page = None
     for backend, args in candidates:
-        candidate = p.chromium.launch(channel=channel, executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args)
+        candidate = p.chromium.launch(channel=channel, headless=headless, executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args)
         candidate_page = candidate.new_page(viewport={'width': 440, 'height': 560})
         candidate_page.route('**/voice-gpu-probe.html', lambda route: route.fulfill(content_type='text/html', body='<!doctype html><title>GPU probe</title>'))
         candidate_page.goto(base + '/voice-gpu-probe.html')
@@ -30,11 +33,23 @@ with sync_playwright() as p:
           if (!adapter) return {available:false, reason:'No adapter'};
           const device = await adapter.requestDevice();
           window.probeDevice = device;
+          const canvas = document.createElement('canvas');
+          canvas.width = 64; canvas.height = 64;
+          document.body.appendChild(canvas);
+          const context = canvas.getContext('webgpu');
+          if (!context) { device.destroy(); canvas.remove(); return {available:false, reason:'No webgpu canvas context'}; }
+          context.configure({device, format: navigator.gpu.getPreferredCanvasFormat(), alphaMode:'premultiplied'});
+          // Present composited frames: Chrome destroys software devices only
+          // once a visible canvas actually presents, so a detached or
+          // never-presented canvas hides the loss the renderer will hit.
+          context.getCurrentTexture();
+          const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+          await nextFrame(); await nextFrame(); await nextFrame();
           const result = await Promise.race([
             device.lost.then(info => ({available:false, reason:info.reason, message:info.message})),
-            new Promise(resolve => setTimeout(() => resolve({available:true}), 300)),
+            new Promise(resolve => setTimeout(() => resolve({available:true}), 500)),
           ]);
-          device.destroy(); window.probeDevice = null;
+          device.destroy(); canvas.remove(); window.probeDevice = null;
           return result;
         }''')
         report = {'browser': candidate.version, 'channel':channel, 'backend':backend, 'probe':probe,
@@ -45,7 +60,7 @@ with sync_playwright() as p:
             candidate.close()
             # The availability probe owns and destroys its device; keep that
             # document/context out of the renderer lifecycle under test.
-            browser = p.chromium.launch(channel=channel, executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args)
+            browser = p.chromium.launch(channel=channel, headless=headless, executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args)
             page = browser.new_page(viewport={'width': 440, 'height': 560})
             break
         candidate.close()
