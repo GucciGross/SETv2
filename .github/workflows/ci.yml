@@ -86,8 +86,10 @@ jobs:
           python3 scripts/copilot-approval-smoke.py
           python3 scripts/copilot-controls-smoke.py
           # Headless Chrome destroys WebGPU devices when a canvas presents, so
-          # the orb shader test needs a real (virtual) display to render into.
-          xvfb-run -a env SET_BROWSER_HEADED=1 python3 scripts/voice-orb-smoke.py
+          # the orb shader test needs a real (virtual) display to render into,
+          # and its software Vulkan adapter lives in the Playwright chromium
+          # build rather than stable Chrome.
+          xvfb-run -a env SET_BROWSER_HEADED=1 SET_BROWSER_CHANNEL=chromium python3 scripts/voice-orb-smoke.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
