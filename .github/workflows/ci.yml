@@ -59,6 +59,8 @@ jobs:
         with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
       - run: npm ci
         working-directory: web
+      - run: node scripts/sync-orb.mjs
+        working-directory: web
       - run: npm test
         working-directory: web
       - run: npm run build
@@ -81,6 +83,7 @@ jobs:
           curl --fail --silent http://127.0.0.1:5173/ > /dev/null
           python3 scripts/copilot-approval-smoke.py
           python3 scripts/copilot-controls-smoke.py
+          python3 scripts/voice-orb-smoke.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -93,6 +96,13 @@ jobs:
         with:
           name: copilot-controls-browser
           path: /tmp/copilot-controls
+          if-no-files-found: ignore
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: voice-orb-browser
+          path: /tmp/voice-orb
           if-no-files-found: ignore
           retention-days: 3
 
