@@ -11,9 +11,10 @@ artifacts = Path('/tmp/voice-orb'); artifacts.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as p:
     # Use full Chromium's modern headless compositor; ANGLE's WebGL SwiftShader
     # switch alone does not select a WebGPU Vulkan adapter on GPU-less Linux CI.
+    # A slow software shader compiler must not be killed by the hardware watchdog.
     # https://developer.chrome.com/blog/supercharge-web-ai-testing
     # https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/swiftshader.md
-    args = ['--enable-unsafe-webgpu']
+    args = ['--enable-unsafe-webgpu', '--disable-gpu-watchdog']
     if sys.platform.startswith('linux'):
         args += ['--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
                  '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface']
@@ -22,13 +23,19 @@ with sync_playwright() as p:
     errors = []; page.on('pageerror', lambda error: errors.append(str(error)))
     console = []; page.on('console', lambda message: console.append({'type': message.type, 'text': message.text}))
     # Observe actual device creation/destruction; no fake GPU, shader or renderer.
-    page.add_init_script("""window.gpuLifecycle = {created:0, destroyed:0};
+    page.add_init_script("""window.gpuLifecycle = {created:0, destroyed:0, events:[]};
       if (typeof GPUAdapter !== 'undefined') {
         const request = GPUAdapter.prototype.requestDevice;
         GPUAdapter.prototype.requestDevice = async function (...args) {
           const device = await request.apply(this, args); window.gpuLifecycle.created++;
+          window.gpuLifecycle.events.push({type:'created',at:performance.now()});
+          device.lost.then(info => window.gpuLifecycle.events.push({type:'lost',reason:info.reason,message:info.message,at:performance.now()}));
+          device.addEventListener('uncapturederror', event => window.gpuLifecycle.events.push({type:'validation',message:event.error.message,at:performance.now()}));
           const destroy = device.destroy.bind(device); let done = false;
-          device.destroy = () => { if (!done) { done = true; window.gpuLifecycle.destroyed++; } destroy(); };
+          device.destroy = () => {
+            window.gpuLifecycle.events.push({type:'destroy',stack:new Error().stack,at:performance.now()});
+            if (!done) { done = true; window.gpuLifecycle.destroyed++; } destroy();
+          };
           return device;
         };
       }""")
