@@ -8,21 +8,25 @@ export function useCodexVoice(onRequest: (text: string, signal: AbortSignal) => 
   const [error, setError] = useState('');
   const [interim, setInterim] = useState('');
   const [selected, setSelected] = useState(false);
+  const [inputStream, setInputStream] = useState<MediaStream | null>(null);
+  const [outputStream, setOutputStream] = useState<MediaStream | null>(null);
   const client = useRef<CodexVoiceClient | undefined>(undefined);
   const generation = useRef(0);
   const request = useRef(onRequest); request.current = onRequest;
   const muted = useRef(!spoken); muted.current = !spoken;
   const cancel = useCallback(() => {
     generation.current++; client.current?.stop(); client.current = undefined;
-    setState('idle'); setInterim('');
+    setState('idle'); setInterim(''); setInputStream(null); setOutputStream(null);
   }, []);
   useEffect(() => cancel, [cancel]);
   useEffect(() => { client.current?.setMuted(!spoken); }, [spoken]);
   const start = useCallback(async () => {
-    cancel(); setError(''); setSelected(true); setState('idle');
+    cancel(); setError(''); setSelected(true); setState('requesting');
     const current = generation.current;
     const c = new CodexVoiceClient(getToken(), useApp.getState().currentSpaceId ?? '', {
       onConnecting: () => { if (current === generation.current) setState('requesting'); },
+      onInputStream: stream => { if (current === generation.current) setInputStream(stream); },
+      onOutputStream: stream => { if (current === generation.current) setOutputStream(stream); },
       onLive: () => { if (current === generation.current) setState('live'); },
       onTranscript: text => { if (current === generation.current) setInterim(text); },
       onError: message => { if (current === generation.current) { setError(message); setState('idle'); } },
@@ -34,5 +38,5 @@ export function useCodexVoice(onRequest: (text: string, signal: AbortSignal) => 
     if (!handled) { cancel(); setSelected(false); }
     return handled;
   }, [cancel]);
-  return { state, error, interim, selected, start, cancel };
+  return { state, error, interim, selected, inputStream, outputStream, start, cancel };
 }

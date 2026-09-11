@@ -99,6 +99,19 @@ export function SetToolCallsView({ message, messages }: CopilotChatToolCallsView
   </div>;
 }
 
+/** Required decisions stay in the voice body even though the transcript is absent.
+ * No new approval endpoint, optimistic decision, or second tool executor. */
+export function VoiceApprovals() {
+  const context = useContext(ApprovalContext);
+  const { agent } = useAgent({ agentId: GUIDE_AGENT });
+  const spaceId = useApp(s => s.currentSpaceId);
+  const pending = context?.approvals.filter(a => a.threadId === agent.threadId && a.spaceId === spaceId && a.status === 'pending') ?? [];
+  if (!pending.length) return null;
+  return <div className="set-voice-approvals" role="region" aria-label="Voice action approvals">
+    {pending.map(a => <ApprovalCard key={approvalKey(a)} approval={a} onDecision={context!.decide} />)}
+  </div>;
+}
+
 const labels: Record<string, string> = {
   h5p_create_draft: 'Create an H5P draft', h5p_save_draft: 'Save the H5P draft',
   h5p_publish_activity: 'Publish this learning activity', h5p_attach_activity: 'Attach this learning activity',

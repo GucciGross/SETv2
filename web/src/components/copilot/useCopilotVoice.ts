@@ -109,5 +109,5 @@ export function useCopilotVoice(onText: (text: string) => void) {
     if (dictation.current) dictation.current.stop();
     else if (recorder.current?.state === 'recording') recorder.current.stop();
   };
-  return { state, error, interim, start, stop, cancel, ready: serverStt !== null };
+  return { state, error, interim, inputStream: stream.current, start, stop, cancel, ready: serverStt !== null };
 }

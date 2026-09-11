@@ -1,6 +1,9 @@
 export interface CopilotVoiceResult { success: boolean; text: string }
 export interface CodexVoiceCallbacks {
   onConnecting?: () => void;
+  /** Read-only visualization taps. The client remains the sole microphone owner. */
+  onInputStream?: (stream: MediaStream | null) => void;
+  onOutputStream?: (stream: MediaStream | null) => void;
   onLive: () => void;
   onTranscript: (text: string) => void;
   onError: (message: string) => void;
@@ -49,12 +52,15 @@ export class CodexVoiceClient {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
       if (this.stopped) { stream.getTracks().forEach(t => t.stop()); return true; }
       this.stream = stream;
+      this.callbacks.onInputStream?.(stream);
       const peer = this.peer = new RTCPeerConnection();
       const output = this.output = new Audio();
       output.autoplay = true; output.muted = this.muted; output.setAttribute('playsinline', '');
       peer.ontrack = event => {
         if (this.stopped) return;
-        output.srcObject = event.streams[0] ?? new MediaStream([event.track]);
+        const remote = event.streams[0] ?? new MediaStream([event.track]);
+        output.srcObject = remote;
+        this.callbacks.onOutputStream?.(remote);
         void output.play().catch(() => this.fail('Browser audio playback was blocked. End voice, allow audio playback, then retry.'));
       };
       peer.onconnectionstatechange = () => {
@@ -157,6 +163,7 @@ export class CodexVoiceClient {
     this.stream?.getTracks().forEach(t => t.stop()); this.stream = undefined;
     if (this.peer) { this.peer.ontrack = null; this.peer.onconnectionstatechange = null; this.peer.close(); this.peer = undefined; }
     if (this.output) { this.output.pause(); this.output.srcObject = null; this.output = undefined; }
+    this.callbacks.onInputStream?.(null); this.callbacks.onOutputStream?.(null);
     this.deleteSession();
   }
 }

@@ -16,13 +16,16 @@ artifacts = Path(os.environ.get("COPILOT_BROWSER_ARTIFACTS", "/tmp/copilot-appro
 artifacts.mkdir(parents=True, exist_ok=True)
 
 with sync_playwright() as playwright:
-    browser = playwright.chromium.launch()
+    browser = playwright.chromium.launch(executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'))
     for name, viewport, outcome in [
         ("mobile-approve", {"width": 390, "height": 844}, "approve"),
         ("desktop-deny", {"width": 1440, "height": 1000}, "reject"),
         ("mobile-retry", {"width": 390, "height": 844}, "retry"),
         ("mobile-expire", {"width": 390, "height": 844}, "expired"),
         ("mobile-stop", {"width": 390, "height": 844}, "cancelled"),
+        ("voice-mobile-approve", {"width": 390, "height": 844}, "approve"),
+        ("voice-desktop-deny", {"width": 1440, "height": 1000}, "reject"),
+        ("voice-mobile-stop", {"width": 390, "height": 844}, "cancelled"),
     ]:
         page = browser.new_page(viewport=viewport)
         errors = []
@@ -65,6 +68,12 @@ with sync_playwright() as playwright:
             expect(card).to_be_visible(timeout=20000)
             expect(card).to_have_attribute("data-status", "pending")
             assert card.evaluate("el => !!el.closest('.set-chat-assistant')"), "Card is outside the chat message"
+            if name.startswith('voice-'):
+                popup.get_by_role('button', name='Talk to Copilot', exact=True).click()
+                expect(popup.locator('[data-set-voice-orb]')).to_be_visible()
+                expect(popup.locator('textarea')).to_have_count(0)
+                expect(popup.get_by_role('region', name='Voice action approvals')).to_be_visible()
+                expect(card).to_have_attribute('data-status', 'pending')
             assert page.locator("[data-set-approval]").count() == 1, "Duplicate/outside approval card"
             expect(card.get_by_text("Create an H5P draft", exact=True)).to_be_visible()
             for label in ["Approve", "Deny"]:
@@ -85,13 +94,16 @@ with sync_playwright() as playwright:
                 assert not decisions, "An expired card submitted a decision"
             elif outcome == "cancelled":
                 # Cancel via the real Copilot input's stop button, not by resolving the fixture.
-                stop = popup.locator("[data-testid='copilot-send-button']").first
+                stop = popup.get_by_role('button', name='Stop Copilot work', exact=True) if name.startswith('voice-') else popup.locator("[data-testid='copilot-send-button']").first
                 expect(stop).to_be_visible()
                 stop.click()
+                if name.startswith('voice-'):
+                    expect(popup.get_by_role('region', name='Voice action approvals')).to_have_count(0)
+                    popup.get_by_role('button', name='Type to Copilot', exact=True).click()
                 expect(card).to_have_attribute("data-status", "cancelled", timeout=10000)
                 assert not decisions, "Stop must not imply a human approval/rejection"
             else:
-                if outcome == "approve":
+                if outcome == "approve" and not name.startswith("voice-"):
                     # Closing the panel must not render approvals behind it or discard them.
                     # On mobile the popup is fullscreen and covers the FAB; close via the popup's own control.
                     popup.get_by_role("button", name="Close", exact=True).click()
@@ -106,6 +118,10 @@ with sync_playwright() as playwright:
                     expect(card).to_have_attribute("data-status", "pending")
                     expect(card.get_by_role("button", name="Approve", exact=True)).to_be_enabled()
                     card.get_by_role("button", name="Approve", exact=True).click()
+                if name.startswith('voice-'):
+                    expect(popup.get_by_role('region', name='Voice action approvals')).to_have_count(0)
+                    expect(popup.locator('[data-set-voice-orb]')).to_be_visible()
+                    popup.get_by_role('button', name='Type to Copilot', exact=True).click()
                 status = "rejected" if outcome == "reject" else "approved"
                 expect(card).to_have_attribute("data-status", status)
                 assert len(decisions) == (2 if outcome == "retry" else 1), decisions
