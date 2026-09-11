@@ -9,44 +9,47 @@ base = os.environ.get('SET_WEB_TEST_BASE', 'http://127.0.0.1:5173')
 assert urlparse(base).hostname in {'localhost', '127.0.0.1'}
 artifacts = Path('/tmp/voice-orb'); artifacts.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as p:
-    # Use full Chromium's modern headless compositor; ANGLE's WebGL SwiftShader
-    # switch alone does not select a WebGPU Vulkan adapter on GPU-less Linux CI.
-    # A slow software shader compiler must not be killed by the hardware watchdog.
-    # https://developer.chrome.com/blog/supercharge-web-ai-testing
-    # https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/swiftshader.md
-    args = ['--enable-unsafe-webgpu', '--disable-gpu-watchdog']
-    if sys.platform.startswith('linux'):
-        args += ['--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
-                 '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface']
-    # ubuntu-latest ships current stable Chrome. Keep legacy Chromium for the
-    # shell suites, but exercise 2026 WebGPU on a current supported browser.
+    # Select a healthy software device before testing the renderer. Chrome builds
+    # differ in whether SwiftShader is exposed through ANGLE or native Vulkan.
+    # No WebGPU validation is disabled and lack of a device is a hard failure.
+    common = ['--enable-unsafe-webgpu', '--disable-gpu-watchdog']
+    angle = common + ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']
+    vulkan = common + ['--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
+                       '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface']
     channel = os.environ.get('SET_BROWSER_CHANNEL', 'chrome' if os.environ.get('GITHUB_ACTIONS') == 'true' else 'chromium')
-    browser = p.chromium.launch(channel=channel, executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args)
-    print('Real WebGPU browser:', browser.version, channel, flush=True)
-    page = browser.new_page(viewport={'width': 440, 'height': 560})
+    candidates = [('angle', angle), ('vulkan', vulkan)] if sys.platform.startswith('linux') else [('native', common)]
+    attempts = []
+    browser = page = None
+    for backend, args in candidates:
+        candidate = p.chromium.launch(channel=channel, executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'), args=args)
+        candidate_page = candidate.new_page(viewport={'width': 440, 'height': 560})
+        candidate_page.route('**/voice-gpu-probe.html', lambda route: route.fulfill(content_type='text/html', body='<!doctype html><title>GPU probe</title>'))
+        candidate_page.goto(base + '/voice-gpu-probe.html')
+        probe = candidate_page.evaluate('''async () => {
+          const adapter = await navigator.gpu?.requestAdapter();
+          if (!adapter) return {available:false, reason:'No adapter'};
+          const device = await adapter.requestDevice();
+          window.probeDevice = device;
+          const result = await Promise.race([
+            device.lost.then(info => ({available:false, reason:info.reason, message:info.message})),
+            new Promise(resolve => setTimeout(() => resolve({available:true}), 300)),
+          ]);
+          device.destroy(); window.probeDevice = null;
+          return result;
+        }''')
+        report = {'browser': candidate.version, 'channel':channel, 'backend':backend, 'probe':probe,
+                  'gpu':candidate.new_browser_cdp_session().send('SystemInfo.getInfo')['gpu']}
+        attempts.append(report)
+        print('Uninstrumented device probe:', json.dumps({k:v for k,v in report.items() if k != 'gpu'}), flush=True)
+        if probe.get('available'):
+            browser, page = candidate, candidate_page
+            break
+        candidate.close()
+    (artifacts / 'environment.json').write_text(json.dumps(attempts, indent=2))
+    if browser is None or page is None:
+        raise AssertionError('No healthy real WebGPU adapter; see environment.json. Renderer test was not skipped.')
     errors = []; page.on('pageerror', lambda error: errors.append(str(error)))
     console = []; page.on('console', lambda message: console.append({'type': message.type, 'text': message.text}))
-    # Isolate environment/device availability before loading React or adding
-    # lifecycle instrumentation; an unavailable GPU is a hard failure, not a skip.
-    page.route('**/voice-gpu-probe.html', lambda route: route.fulfill(content_type='text/html', body='<!doctype html><title>GPU probe</title>'))
-    page.goto(base + '/voice-gpu-probe.html')
-    probe = page.evaluate('''async () => {
-      const adapter = await navigator.gpu?.requestAdapter();
-      if (!adapter) return {available:false, reason:'No adapter'};
-      const device = await adapter.requestDevice();
-      window.probeDevice = device;
-      const result = await Promise.race([
-        device.lost.then(info => ({available:false, reason:info.reason, message:info.message})),
-        new Promise(resolve => setTimeout(() => resolve({available:true}), 300)),
-      ]);
-      device.destroy(); window.probeDevice = null;
-      return result;
-    }''')
-    print('Uninstrumented GPU device:', json.dumps(probe), flush=True)
-    if not probe.get('available'):
-        (artifacts / 'environment.json').write_text(json.dumps({'browser':browser.version, 'probe':probe, 'console':console}, indent=2))
-        browser.close()
-        raise AssertionError('Real GPU environment failed before renderer startup: ' + json.dumps(probe))
     # Observe actual device creation/destruction; no fake GPU, shader or renderer.
     page.add_init_script("""window.gpuLifecycle = {created:0, destroyed:0, events:[]};
       if (typeof GPUAdapter !== 'undefined') {
