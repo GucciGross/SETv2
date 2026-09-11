@@ -6,8 +6,8 @@ import { config } from '../config.js';
  * /audio/transcriptions endpoint (Groq Whisper, whisper.cpp server, OpenAI, …).
  *
  * Configured via TRANSCRIBE_BASE_URL / TRANSCRIBE_API_KEY / TRANSCRIBE_MODEL,
- * falling back to the bootstrap LLM env. When neither is set the service is
- * not registered at all — /info then reports transcription as unavailable and
+ * independently of the chat provider. Without an explicit speech URL the
+ * service is not registered at all — /info then reports transcription as unavailable and
  * the web client falls back to the browser's Web Speech API.
  */
 
@@ -18,7 +18,7 @@ export function transcriptionConfigured(): boolean {
 /** One-shot STT for uploaded recordings (recorder mode). Throws on failure. */
 export async function transcribeBuffer(buf: Buffer, filename: string, signal?: AbortSignal): Promise<string> {
   const { baseUrl, apiKey, model } = config.transcribe;
-  if (!baseUrl) throw new Error('No transcription provider configured (api key missing): set TRANSCRIBE_BASE_URL or LLM_BASE_URL');
+  if (!baseUrl) throw new Error('No transcription provider configured (api key missing): set TRANSCRIBE_BASE_URL');
   const form = new FormData();
   form.append('file', new Blob([buf as unknown as BlobPart]), filename || 'audio.webm');
   form.append('model', model);
@@ -45,7 +45,7 @@ export class SetTranscriptionService extends TranscriptionService {
     if (!baseUrl) {
       // Wording matters: the runtime maps errors containing "api key" to a 401
       // instead of an opaque 500, so the client can fall back cleanly.
-      throw new Error('No transcription provider configured (api key missing): set TRANSCRIBE_BASE_URL or LLM_BASE_URL');
+      throw new Error('No transcription provider configured (api key missing): set TRANSCRIBE_BASE_URL');
     }
     const form = new FormData();
     form.append('file', options.audioFile, options.audioFile.name || 'audio.webm');
