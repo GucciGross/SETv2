@@ -9,6 +9,10 @@ base = os.environ.get('SET_WEB_TEST_BASE', 'http://127.0.0.1:5173')
 assert urlparse(base).hostname in {'localhost', '127.0.0.1'}
 artifacts = Path('/tmp/copilot-controls'); artifacts.mkdir(parents=True, exist_ok=True)
 viewport_shim = """(() => {
+  // Match an installed iOS Home Screen app. There is no Safari toolbar, so an
+  // idle visualViewport shorter than innerHeight is stale WebKit state, not
+  // usable screen geometry.
+  Object.defineProperty(navigator, 'standalone', { configurable: true, value: true });
   const viewport = new EventTarget(); Object.assign(viewport, { height: innerHeight, offsetTop: 0, scale: 1 });
   Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
   window.resizeVisibleViewport = (height, top = 0, scale = 1) => {
@@ -28,7 +32,10 @@ viewport_shim = """(() => {
 })();"""
 with sync_playwright() as p:
     browser = p.chromium.launch(executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'))
-    for width, height in [(320, 667), (390, 844), (430, 932)]:
+    # Includes compact phones, the 402x874 class from the physical iPhone QA,
+    # and Pro Max-sized viewports. Layout is dimension-driven; these are only
+    # regression probes, not device-specific branches in production code.
+    for width, height in [(320, 568), (375, 667), (390, 844), (402, 874), (430, 932)]:
         page = browser.new_page(viewport={'width': width, 'height': height}, reduced_motion='reduce')
         page.add_init_script(viewport_shim)
         errors, providers, created, cap_calls = [], [], [], []
@@ -63,6 +70,19 @@ with sync_playwright() as p:
             shell_box = shell.bounding_box(); dock_box = dock.bounding_box()
             assert abs(shell_box['height'] - height) < 2
             assert abs((dock_box['y'] + dock_box['height']) - (shell_box['y'] + shell_box['height'])) < 2, 'Mobile dock must meet the shell bottom without an artificial gap'
+
+            # Reproduce WebKit's installed-app regression: after keyboard /
+            # orientation churn visualViewport can remain much shorter even
+            # though the layout viewport has recovered. The old implementation
+            # trusted this value and created the physical-iPhone blank band.
+            stale_height = max(320, height - 100)
+            page.evaluate('(h) => resizeVisibleViewport(h)', stale_height)
+            page.wait_for_timeout(50)
+            assert abs(shell.bounding_box()['height'] - height) < 2, 'Idle standalone app must ignore stale short visualViewport.height'
+            dock_box = dock.bounding_box(); shell_box = shell.bounding_box()
+            assert abs((dock_box['y'] + dock_box['height']) - (shell_box['y'] + shell_box['height'])) < 2, 'Stale iOS VisualViewport must not create a bottom band'
+            page.evaluate('(h) => resizeVisibleViewport(h)', height)
+
             # Chromium reports env(safe-area-inset-bottom) as zero. Reproduce a
             # physical iPhone home-indicator inset so CI catches the real device
             # failure: shell reserves 34px, while the dock surface must extend
@@ -79,12 +99,17 @@ with sync_playwright() as p:
               document.querySelector('.app-shell').style.removeProperty('padding-bottom');
             }""")
             expect(page.get_by_role('button', name='AI connection settings')).to_be_visible()
+
             # Full height from the first welcome frame, before a message is sent.
             dock.get_by_role('button', name='Type to Copilot', exact=True).click()
             popup = page.locator('[data-copilot-popup]'); expect(popup).to_be_visible()
             page.wait_for_function('(height) => Math.abs(document.querySelector("[data-copilot-popup]").getBoundingClientRect().height-height)<2', arg=height)
             assert abs(popup.bounding_box()['y']) < 2
-            # Simulated Safari keyboard pan and resize use one shared geometry.
+
+            # In an installed app, the VisualViewport is authoritative only while
+            # a text editor is actually focused (the on-screen keyboard case).
+            text_input = popup.locator('textarea').last
+            expect(text_input).to_be_visible(); text_input.focus()
             page.evaluate('resizeVisibleViewport(410, 45)')
             page.wait_for_function('document.querySelector(".app-shell").getBoundingClientRect().height === 410')
             assert abs(shell.bounding_box()['y'] - 45) < 2
@@ -93,7 +118,14 @@ with sync_playwright() as p:
             page.evaluate('resizeVisibleViewport(205, 90, 2)')
             page.wait_for_timeout(50)
             assert abs(shell.bounding_box()['height'] - 410) < 2, 'Pinch zoom must not reflow the app'
+
+            # If WebKit fails to restore visualViewport after the keyboard closes,
+            # blur/focusout must immediately restore the full layout viewport.
+            page.evaluate("document.activeElement?.blur()")
+            page.wait_for_function('(height) => Math.abs(document.querySelector(".app-shell").getBoundingClientRect().height-height)<2', arg=height)
+            assert abs(shell.bounding_box()['y']) < 2
             page.evaluate('(h) => resizeVisibleViewport(h)', height)
+
             # No capability request between tap and speech recognition startup.
             before = len(cap_calls)
             popup.locator('.set-copilot-mode--compact').get_by_role('button', name='Talk to Copilot', exact=True).click()
@@ -103,6 +135,7 @@ with sync_playwright() as p:
             expect(popup.locator('[data-set-voice-orb]')).to_be_visible()
             popup.locator('.set-copilot-mode--compact').get_by_role('button', name='Stop recording and send to Copilot').click()
             expect(popup.get_by_role('alert')).to_contain_text('No speech was heard')
+
             # Direct recovery path closes capture/popup and opens AI Providers.
             popup.get_by_role('button', name='AI connection settings').first.click()
             expect(popup).not_to_be_visible()
@@ -111,6 +144,7 @@ with sync_playwright() as p:
             expect(setup).to_be_visible(); expect(setup).to_contain_text('SET_CODEX_OAUTH_ENABLED=1')
             expect(setup).to_contain_text('docker compose up -d --build')
             page.screenshot(path=str(artifacts / f'mobile-setup-{width}.png'))
+
             # Enabling/rechecking the deployment reveals existing official sign-in.
             mode['codex'] = 'enabled'
             setup.get_by_role('button', name='Recheck Codex').click()
@@ -119,6 +153,7 @@ with sync_playwright() as p:
             expect(checkbox).to_be_visible(); checkbox.click()
             expect(card.get_by_role('alert')).to_contain_text('Selection failed')
             expect(checkbox).not_to_be_checked()
+
             # Reachable LLM form, first provider default, masked/cleared key, visible errors.
             page.get_by_role('button', name='Add provider', exact=True).click()
             expect(page.get_by_role('alert').filter(has_text='Enter a provider name')).to_be_visible()
@@ -138,12 +173,13 @@ with sync_playwright() as p:
             mode['fail_voice'] = True
             voice.get_by_role('button', name='Recheck voice setup').click()
             expect(voice).to_contain_text('could not be checked')
-            # Keyboard/landscape restore without leaving a gap in the shell.
+
+            # Landscape restore without leaving a gap in the shell.
             page.set_viewport_size({'width': 844, 'height': 390})
             page.evaluate('resizeVisibleViewport(390)')
             page.wait_for_function('document.querySelector(".app-shell").getBoundingClientRect().height === 390')
             assert not errors, errors
-            print('PASS mobile setup', width, height, 'viewport/physical-safe-area/keyboard/zoom, gesture, no-speech, setup, provider save/test, selection rollback')
+            print('PASS mobile setup', width, height, 'standalone stale-viewport/safe-area/keyboard/zoom, gesture, no-speech, setup, provider save/test, selection rollback')
         except Exception:
             page.screenshot(path=str(artifacts / f'mobile-setup-{width}-failure.png'), full_page=True)
             (artifacts / f'mobile-setup-{width}-errors.json').write_text(json.dumps(errors))
