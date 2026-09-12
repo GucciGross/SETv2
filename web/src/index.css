@@ -2,7 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* One CSS viewport and one set of device insets. JavaScript may temporarily
+   override the visible height for browser chrome/the keyboard, never screen.height. */
 :root {
+  --set-layout-height: 100vh;
+  --set-safe-top: env(safe-area-inset-top, 0px);
+  --set-safe-right: env(safe-area-inset-right, 0px);
+  --set-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --set-safe-left: env(safe-area-inset-left, 0px);
   color-scheme: dark;
   /* dark palette (default) — RGB triplets for Tailwind alpha support */
   --set-bg: 10 12 17;
@@ -17,11 +24,6 @@
   --set-warn: 251 191 36;
   --set-err: 248 113 113;
   --set-live: 34 211 238;
-  /* One inset owner per edge; overrides also let browser tests exercise notches. */
-  --set-safe-top: env(safe-area-inset-top, 0px);
-  --set-safe-right: env(safe-area-inset-right, 0px);
-  --set-safe-bottom: env(safe-area-inset-bottom, 0px);
-  --set-safe-left: env(safe-area-inset-left, 0px);
 }
 
 /* Light mode: applied by toggling the class on <html> (Settings → Appearance,
@@ -52,17 +54,23 @@ html.light .shadow-pop { box-shadow: 0 18px 50px -16px rgb(20 26 40 / 0.28); }
 html,
 body,
 #root {
-  height: var(--set-document-height, 100%);
+  height: 100%;
 }
-/* Home Screen launches must not inherit a short percentage-height document.
-   There is no browser toolbar in installed mode: use the CSS viewport, not
-   an innerHeight/VisualViewport pixel snapshot that can be stale at launch.
-   Browser tabs deliberately keep their existing dynamic/visual viewport. */
-@media (display-mode: standalone), (display-mode: fullscreen) {
-  :root { --set-document-height: 100vh; --set-viewport-height: 100vh; }
+@supports (height: 100dvh) {
+  :root { --set-layout-height: 100dvh; }
 }
-/* navigator.standalone is needed by older iOS Home Screen containers. */
-html[data-set-installed] { --set-document-height: 100vh; }
+/* Only the workspace owns a locked root. Landing/login/share pages keep their
+   normal document scrolling. Explicit viewport units avoid the installed iOS
+   percentage-height containing-block chain. The class is removed on unmount. */
+html.set-app-viewport,
+html.set-app-viewport body,
+html.set-app-viewport #root {
+  height: var(--set-layout-height);
+  min-height: 0;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+}
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -77,25 +85,28 @@ body,
   overflow-x: hidden;
   overflow-x: clip;
 }
-/* The shell owns the top/side insets. On phones the footer owns the bottom
-   inset INSIDE its flex row. Never extend it outside an overflow-clipped main. */
+/* Installed apps use CSS viewport sizing at rest, not a cached innerHeight.
+   Shell, drawer and portalled chat share this same fallback/keyboard override. */
 .app-shell {
   position: fixed;
   inset: 0 0 auto;
   top: var(--set-viewport-top, 0px);
   height: 100vh;
-  height: var(--set-viewport-height, 100dvh);
+  height: var(--set-viewport-height, var(--set-layout-height));
   min-height: 0;
   box-sizing: border-box;
-  padding: var(--set-safe-top) var(--set-safe-right) 0 var(--set-safe-left);
+  padding: var(--set-safe-top) var(--set-safe-right) var(--set-safe-bottom) var(--set-safe-left);
+  background: rgb(var(--set-bg));
 }
-@media (min-width: 768px) {
-  /* Desktop/tablet has a floating dock, not the phone's full-width footer. */
-  .app-shell { padding-bottom: var(--set-safe-bottom); }
+/* Keep the mobile dock INSIDE main's clipping rectangle. The dock owns the
+   bottom inset exactly once; no negative margins can escape overflow:hidden. */
+@media (max-width: 767px) {
+  .app-shell { padding-bottom: 0; }
 }
 .app-shell > main > [data-scroll-root] {
+  min-width: 0;
   overflow-x: hidden;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: none;
 }
 
 body {
@@ -814,8 +825,8 @@ html:has(body.set-sheet-dragging) { transition: none !important; }
     position: fixed !important;
     inset: auto 0 auto !important;
     top: var(--set-viewport-top, 0px) !important;
-    height: var(--set-viewport-height, 100dvh) !important;
-    max-height: var(--set-viewport-height, 100dvh) !important;
+    height: var(--set-viewport-height, var(--set-layout-height)) !important;
+    max-height: var(--set-viewport-height, var(--set-layout-height)) !important;
     padding: 0 !important;
     box-sizing: border-box;
     transition: none !important;
@@ -1129,9 +1140,7 @@ button, [role='button'], .set-btn, .set-btn-ghost, .set-btn-primary {
   .app-shell > aside[data-tour-sidebar] {
     top: var(--set-viewport-top, 0px);
     bottom: auto;
-    height: var(--set-viewport-height, 100dvh);
-    padding-top: var(--set-safe-top);
-    padding-bottom: var(--set-safe-bottom);
+    height: var(--set-viewport-height, var(--set-layout-height));
   }
   /* Prevent focus-triggered iOS text-field zoom without disabling user zoom. */
   .app-shell input, .app-shell textarea, .app-shell select,

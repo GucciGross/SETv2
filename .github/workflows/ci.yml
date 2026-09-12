@@ -85,7 +85,7 @@ jobs:
           curl --fail --silent http://127.0.0.1:5173/ > /dev/null
           python3 scripts/copilot-approval-smoke.py
           python3 scripts/copilot-controls-smoke.py
-          python3 scripts/pwa-viewport-smoke.py
+          python3 scripts/viewport-layout-smoke.py
           # Headless Chrome destroys WebGPU devices when a canvas presents, so
           # the orb shader test needs a real (virtual) display to render into,
           # and its software Vulkan adapter lives in the Playwright chromium
@@ -112,6 +112,14 @@ jobs:
           path: /tmp/voice-orb
           if-no-files-found: ignore
           retention-days: 3
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: viewport-layout-browser
+          path: /tmp/viewport-layout
+          if-no-files-found: error
+          retention-days: 7
 
   docker:
     runs-on: ubuntu-latest

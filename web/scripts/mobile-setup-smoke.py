@@ -65,7 +65,7 @@ with sync_playwright() as p:
         try:
             page.goto(base + '/scripts/fixtures/copilot-controls.html', wait_until='domcontentloaded')
             dock = page.locator('.set-copilot-command-dock'); expect(dock).to_be_visible(timeout=60000)
-            page.wait_for_function("document.documentElement.style.getPropertyValue('--set-viewport-height') !== ''")
+            page.wait_for_function("document.documentElement.dataset.setViewport === 'standalone-css'")
             shell = page.locator('.app-shell')
             shell_box = shell.bounding_box(); dock_box = dock.bounding_box()
             assert abs(shell_box['height'] - height) < 2
@@ -83,23 +83,18 @@ with sync_playwright() as p:
             assert abs((dock_box['y'] + dock_box['height']) - (shell_box['y'] + shell_box['height'])) < 2, 'Stale iOS VisualViewport must not create a bottom band'
             page.evaluate('(h) => resizeVisibleViewport(h)', height)
 
-            # Drive the same inset used by production CSS, never patch shell
-            # padding directly. Check paint/hit testing, not just a bounding box.
-            page.evaluate("""() => {
-              document.documentElement.style.setProperty('--set-safe-bottom', '34px');
-            }""")
-            page.wait_for_timeout(50)
+            # Inject only the environmental inset. Do not rewrite the shell's
+            # padding: that would encode the old broken implementation in the test.
+            page.evaluate("document.documentElement.style.setProperty('--set-safe-bottom', '34px')")
+            page.wait_for_function("getComputedStyle(document.querySelector('.set-copilot-command-dock')).paddingBottom === '34px'")
             shell_box = shell.bounding_box(); dock_box = dock.bounding_box()
-            assert abs((dock_box['y'] + dock_box['height']) - (shell_box['y'] + shell_box['height'])) < 2, 'Dock surface must paint through a physical iPhone bottom safe area'
+            assert abs((dock_box['y'] + dock_box['height']) - (shell_box['y'] + shell_box['height'])) < 2
             assert page.evaluate("""() => {
               const dock = document.querySelector('.set-copilot-command-dock');
-              const r = dock.getBoundingClientRect();
-              return [0.25, 0.5, 0.75].every(x =>
-                dock.contains(document.elementFromPoint(r.left + r.width * x, r.bottom - 2)));
-            }"""), 'The bottom safe-area surface must actually be painted, not clipped by main'
-            page.evaluate("""() => {
-              document.documentElement.style.removeProperty('--set-safe-bottom');
-            }""")
+              const shell = document.querySelector('.app-shell').getBoundingClientRect();
+              return dock.contains(document.elementFromPoint(shell.width / 2, shell.bottom - 1));
+            }"""), 'A bounding box at the bottom is insufficient: the dock must not be clipped'
+            page.evaluate("document.documentElement.style.removeProperty('--set-safe-bottom')")
             expect(page.get_by_role('button', name='AI connection settings')).to_be_visible()
 
             # Full height from the first welcome frame, before a message is sent.
