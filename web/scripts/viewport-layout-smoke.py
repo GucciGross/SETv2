@@ -1,4 +1,4 @@
-"""Real shell/CSS in Chromium and WebKit; synthetic OS metrics, not an iOS simulator."""
+"""Real shell/dashboard in Chromium and WebKit; synthetic OS metrics, not an iOS simulator."""
 import json
 import os
 from html.parser import HTMLParser
@@ -87,22 +87,57 @@ with sync_playwright() as p:
                 context = browser.new_context(viewport={'width':width,'height':height}, reduced_motion='reduce', has_touch=width<768)
                 page = context.new_page(); errors = []
                 page.on('pageerror', lambda e: errors.append(str(e)))
-                page.add_init_script(SHIM)
-                page.add_init_script(f"Object.defineProperty(navigator,'standalone',{{configurable:true,value:{str(installed).lower()}}})")
+                # Keep dependent setup in ONE script: init-script ordering is unspecified.
+                cold_start = f"setTestViewport({height-62},{height-96});" if installed else ""
+                page.add_init_script(SHIM + f"\nObject.defineProperty(navigator,'standalone',{{configurable:true,value:{str(installed).lower()}}});" + cold_start)
                 def transport(route):
-                    if urlparse(route.request.url).path.endswith('/voice/capabilities'):
+                    path = urlparse(route.request.url).path
+                    if path.endswith('/voice/capabilities'):
                         route.fulfill(json={'serverTranscription':True})
+                    elif path.endswith('/terminal/exec'):
+                        route.fulfill(json={'output':'pages: 37 notebooks: 15 databases: 3'})
+                    elif path.endswith('/brief'):
+                        route.fulfill(json={'brief':{'reviews':{'dueNow':0},'decaying':[],'builds':[],'next':[]}})
                     else:
-                        route.fulfill(json={'settings':{},'pages':[],'notebooks':[],'databases':[],'subjects':[],'notifications':[],'providers':[],'presets':[],'members':[],'available':False})
+                        route.fulfill(json={'tasks':[],'paths':[],'activities':[],'checklist':[],'settings':{},'pages':[],'notebooks':[],'databases':[],'subjects':[],'notifications':[],'providers':[],'presets':[],'members':[],'available':False})
                 page.route('**/api/**', transport)
                 try:
-                    page.goto(BASE + '/scripts/fixtures/copilot-controls.html', wait_until='domcontentloaded')
+                    page.goto(BASE + '/scripts/fixtures/copilot-controls.html?dashboard=1', wait_until='domcontentloaded')
                     expect(page.locator('.set-copilot-command-dock')).to_be_visible(timeout=60000)
+                    expect(page.get_by_role('heading', name='Good', exact=False)).to_be_visible()
+                    expect(page.get_by_text('37', exact=True)).to_be_visible()
                     page.wait_for_function("document.documentElement.hasAttribute('data-set-viewport')")
                     safe = 34 if width < 768 else 0
                     page.evaluate("([top,bottom]) => {document.documentElement.style.setProperty('--set-safe-top',top+'px');document.documentElement.style.setProperty('--set-safe-bottom',bottom+'px')}", [62 if width<768 else 0, safe])
                     result = verify(page, height, safe=safe)
                     assert result['source'] == ('standalone-css' if installed else 'visual')
+                    if installed:
+                        # Cold start: both JavaScript readings were short before mount.
+                        assert page.evaluate('innerHeight') == height - 62
+                        assert page.evaluate('visualViewport.height') == height - 96
+                        # WebKit rounds viewport units to fractional CSS pixels.
+                        body_height = page.evaluate('parseFloat(getComputedStyle(document.body).height)')
+                        assert abs(body_height - height) < 1, {'bodyHeight': body_height, 'viewportHeight': height}
+                    scroll = page.locator('main > [data-scroll-root]')
+                    scroll.evaluate('el => el.scrollTop = el.scrollHeight')
+                    verify(page, height, safe=safe)
+                    scroll.evaluate('el => el.scrollTop = 0')
+                    if width < 768:
+                        # Negative control: the old bounding-box assertion passes
+                        # even when main clips the dock's negative-margin extension.
+                        page.evaluate("""() => {
+                          document.querySelector('.app-shell').style.paddingBottom = '34px';
+                          document.querySelector('.set-copilot-command-dock').style.marginBottom = '-34px';
+                        }""")
+                        clipped = page.evaluate(GEOMETRY)
+                        assert abs(clipped['dock']['bottom'] - clipped['shell']['bottom']) < 1, clipped
+                        assert not clipped['bottomPainted'], 'Hit-test must reject deliberately restored clipping'
+                        page.evaluate("""() => {
+                          document.querySelector('.app-shell').style.removeProperty('padding-bottom');
+                          document.querySelector('.set-copilot-command-dock').style.removeProperty('margin-bottom');
+                        }""")
+                        verify(page, height, safe=safe)
+
                     # Both JS heights stuck short: PR 16 still freezes the shell to innerHeight.
                     page.evaluate('h => setTestViewport(h-100,h-100)', height)
                     expected = height if installed else height-100
@@ -124,7 +159,7 @@ with sync_playwright() as p:
                     page.evaluate('h => setTestViewport(null,h)', height)
                     if installed and width < 768:
                         page.set_viewport_size({'width':667,'height':375})
-                        page.evaluate("document.documentElement.style.setProperty('--set-safe-top','0px');document.documentElement.style.setProperty('--set-safe-bottom','21px');document.documentElement.style.setProperty('--set-safe-left','34px');document.documentElement.style.setProperty('--set-safe-right','34px')")
+                        page.evaluate("document.documentElement.style.setProperty('--set-safe-top','0px');document.documentElement.style.setProperty('--set-safe-bottom','21px');document.documentElement.style.setProperty('--set-safe-left','34px');document.documentElement.style.setProperty('--set-safe-right','34px','')")
                         verify(page,375,safe=21)
                         page.screenshot(path=str(OUT / f'{name}-landscape.png'))
                     # The workspace scroller cannot pan the entire UI sideways.
