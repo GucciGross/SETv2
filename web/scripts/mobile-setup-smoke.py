@@ -118,6 +118,7 @@ with sync_playwright() as p:
             page.evaluate('resizeVisibleViewport(205, 90, 2)')
             page.wait_for_timeout(50)
             assert abs(shell.bounding_box()['height'] - 410) < 2, 'Pinch zoom must not reflow the app'
+            page.evaluate('resizeVisibleViewport(410, 45, 1)')
 
             # If WebKit fails to restore visualViewport after the keyboard closes,
             # blur/focusout must immediately restore the full layout viewport.
