@@ -4,16 +4,38 @@ on:
     branches: [fix/home-screen-css-viewport-unclipped-dock]
     paths: [.github/workflows/verify-home-screen-transfer.yml]
 permissions:
-  contents: read
+  contents: write
 jobs:
   verify:
+    if: github.repository == 'GucciGross/SETv2' && github.ref == 'refs/heads/fix/home-screen-css-viewport-unclipped-dock'
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/upload-artifact@v4
         with:
-          name: source-transfer-inspection
-          path: .github/workflows/apply-home-screen-source.yml
-          include-hidden-files: true
-          retention-days: 1
+          ref: ${{ github.sha }}
+      - name: Restore exact source bytes and apply only after checksum verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, gzip, hashlib, re
+          from pathlib import Path
+          text = Path('.github/workflows/apply-home-screen-source.yml').read_text()
+          encoded = max(re.findall(r'[A-Za-z0-9+/=]+', text), key=len)
+          assert hashlib.sha256(encoded.encode()).hexdigest() == '8661ceec8e178e62328a1e12ee5114833aae92f87d49980494909024666933df'
+          assert encoded[6250] == 'V' and encoded[5389] == 'W'
+          encoded = encoded[:6250] + encoded[6251:]
+          encoded = encoded[:5389] + 'X' + encoded[5390:]
+          patch = gzip.decompress(base64.b64decode(encoded, validate=True))
+          assert hashlib.sha256(patch).hexdigest() == '3a3108bd71f6ca33961d7ba390d776aa7b0da7807101ddfc159465f9e04bff00'
+          Path('/tmp/source.patch').write_bytes(patch)
+          PY
+          git apply --check /tmp/source.patch
+          git apply --index /tmp/source.patch
+          if git diff --cached --name-only | grep -vE '^(web/|docs/)'; then exit 1; fi
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: use native Home Screen sizing and keep dock inside its clipping parent'
+          git push origin HEAD:refs/heads/fix/home-screen-css-viewport-unclipped-dock
