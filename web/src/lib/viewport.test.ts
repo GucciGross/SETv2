@@ -8,14 +8,25 @@ describe('visible viewport', () => {
     }
   });
 
-  it('does not let a stale standalone VisualViewport shorten the app', () => {
-    // Reproduces the real iOS Home Screen failure mode: the DOM layout
-    // viewport has recovered, but visualViewport.height remains ~100px short.
+  it('does not clamp an installed app to either stale JavaScript height', () => {
+    // Both readings can be short. CSS, not another pixel estimate, owns the idle height.
     expect(measureViewport(
       812,
       { height: 712, offsetTop: 0, scale: 1 },
       { standalone: true, editing: false },
-    )).toEqual({ height: 812, top: 0 });
+    )).toEqual({ height: '100vh', top: 0 });
+  });
+
+  it('restores the CSS viewport on blur without waiting for WebKit to repair either reading', () => {
+    expect(measureViewport(420, { height: 410, offsetTop: 45, scale: 1 }, { standalone: true }))
+      .toEqual({ height: '100vh', top: 0 });
+  });
+
+  it('uses a live CSS length without a device-height list', () => {
+    for (const height of [320, 568, 777, 874, 956, 1024, 1366]) {
+      expect(measureViewport(height - 100, null, { standalone: true, editing: false }))
+        .toEqual({ height: '100vh', top: 0 });
+    }
   });
 
   it('still follows the standalone keyboard while text is being edited', () => {

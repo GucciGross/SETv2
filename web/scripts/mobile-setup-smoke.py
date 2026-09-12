@@ -83,20 +83,22 @@ with sync_playwright() as p:
             assert abs((dock_box['y'] + dock_box['height']) - (shell_box['y'] + shell_box['height'])) < 2, 'Stale iOS VisualViewport must not create a bottom band'
             page.evaluate('(h) => resizeVisibleViewport(h)', height)
 
-            # Chromium reports env(safe-area-inset-bottom) as zero. Reproduce a
-            # physical iPhone home-indicator inset so CI catches the real device
-            # failure: shell reserves 34px, while the dock surface must extend
-            # through that strip rather than leaving it black.
+            # Drive the same inset used by production CSS, never patch shell
+            # padding directly. Check paint/hit testing, not just a bounding box.
             page.evaluate("""() => {
-              document.documentElement.style.setProperty('--set-mobile-safe-bottom', '34px');
-              document.querySelector('.app-shell').style.paddingBottom = '34px';
+              document.documentElement.style.setProperty('--set-safe-bottom', '34px');
             }""")
             page.wait_for_timeout(50)
             shell_box = shell.bounding_box(); dock_box = dock.bounding_box()
             assert abs((dock_box['y'] + dock_box['height']) - (shell_box['y'] + shell_box['height'])) < 2, 'Dock surface must paint through a physical iPhone bottom safe area'
+            assert page.evaluate("""() => {
+              const dock = document.querySelector('.set-copilot-command-dock');
+              const r = dock.getBoundingClientRect();
+              return [0.25, 0.5, 0.75].every(x =>
+                dock.contains(document.elementFromPoint(r.left + r.width * x, r.bottom - 2)));
+            }"""), 'The bottom safe-area surface must actually be painted, not clipped by main'
             page.evaluate("""() => {
-              document.documentElement.style.removeProperty('--set-mobile-safe-bottom');
-              document.querySelector('.app-shell').style.removeProperty('padding-bottom');
+              document.documentElement.style.removeProperty('--set-safe-bottom');
             }""")
             expect(page.get_by_role('button', name='AI connection settings')).to_be_visible()
 

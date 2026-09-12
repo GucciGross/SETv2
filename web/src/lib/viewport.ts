@@ -1,15 +1,8 @@
-/** A single viewport authority for the shell and portalled Copilot.
- *
- * In a normal browser tab the VisualViewport is useful because browser chrome,
- * keyboard panning and the OSK can make the visible area smaller than the
- * layout viewport. Installed iOS web apps are different: WebKit can leave
- * visualViewport.height stuck too small after keyboard/orientation changes.
- * With no browser chrome to avoid, window.innerHeight is the safer authority at
- * rest. We only trust the smaller VisualViewport in an installed app while a
- * text-editing control is actually focused.
- *
- * Pinch zoom is intentionally ignored: accessibility zoom must not reflow the
- * application.
+/** Shared geometry for the app shell, drawer and portalled Copilot.
+ * Browser tabs follow the visible area so their toolbars/keyboard stay clear.
+ * Installed apps at rest use a live CSS viewport length, NOT a pixel snapshot:
+ * iOS can leave both innerHeight and VisualViewport shorter than its CSS canvas.
+ * The footer owns its safe-area padding separately; never subtract it here.
  */
 export type ViewportMeasureOptions = {
   standalone?: boolean;
@@ -24,33 +17,21 @@ export function measureViewport(
   viewport?: Pick<VisualViewport, 'height' | 'offsetTop' | 'scale'> | null,
   options: ViewportMeasureOptions = {},
 ) {
+  // Do not reflow accessible pinch zoom or replace the last keyboard geometry.
   if (viewport && Math.abs(viewport.scale - 1) > 0.01) return null;
+
+  // No browser toolbar exists in standalone/fullscreen mode. Keeping this as
+  // CSS also lets rotation/window resizing recover without a JS resize event.
+  // Never use screen.height: that includes pixels the OS may not give the app.
+  if (options.standalone && !options.editing) return { height: '100vh' as const, top: 0 };
 
   const layoutHeight = finitePositive(innerHeight) ? innerHeight : undefined;
   const visualHeight = viewport && finitePositive(viewport.height) ? viewport.height : undefined;
-
-  // Home-screen iOS apps have no Safari toolbar. When idle, sizing the shell to
-  // a stale, shorter visualViewport creates the exact blank band seen on real
-  // devices. Do not use screen.height here: iOS may reserve system-owned pixels
-  // that web content cannot render into. innerHeight/100dvh describes the DOM's
-  // actual layout viewport.
-  const useLayoutViewport = options.standalone && !options.editing && layoutHeight !== undefined;
-  const height = useLayoutViewport ? layoutHeight : (visualHeight ?? layoutHeight);
+  const height = visualHeight ?? layoutHeight;
   if (height === undefined) return null;
-
-  const rawTop = useLayoutViewport ? 0 : (viewport?.offsetTop ?? 0);
+  const rawTop = viewport?.offsetTop ?? 0;
   const top = Number.isFinite(rawTop) ? Math.max(0, rawTop) : 0;
-  return {
-    height: Math.round(height * 100) / 100,
-    top: Math.round(top * 100) / 100,
-  };
-}
-
-function isInstalledDisplayMode() {
-  const iosStandalone = (navigator as Navigator & { standalone?: boolean }).standalone === true;
-  return iosStandalone
-    || window.matchMedia?.('(display-mode: standalone)').matches === true
-    || window.matchMedia?.('(display-mode: fullscreen)').matches === true;
+  return { height: Math.round(height * 100) / 100, top: Math.round(top * 100) / 100 };
 }
 
 function isTextEditingTarget(element: Element | null) {
@@ -58,28 +39,31 @@ function isTextEditingTarget(element: Element | null) {
   if (element.isContentEditable) return true;
   if (element instanceof HTMLTextAreaElement) return !element.disabled && !element.readOnly;
   if (!(element instanceof HTMLInputElement) || element.disabled || element.readOnly) return false;
-
-  const nonKeyboardTypes = new Set([
-    'button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit',
-  ]);
-  return !nonKeyboardTypes.has((element.type || 'text').toLowerCase());
+  return !['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit']
+    .includes((element.type || 'text').toLowerCase());
 }
 
 export function installViewport(): () => void {
   const root = document.documentElement;
   const viewport = window.visualViewport;
+  const modes = ['standalone', 'fullscreen'].map(mode => window.matchMedia(`(display-mode: ${mode})`));
   const keys = ['--set-viewport-height', '--set-viewport-top'] as const;
   const previous = keys.map(key => root.style.getPropertyValue(key));
+  const previousInstalled = root.getAttribute('data-set-installed');
   let frame = 0;
 
   const update = () => {
     frame = 0;
+    if (document.hidden) return;
+    const standalone = (navigator as Navigator & { standalone?: boolean }).standalone === true
+      || modes.some(mode => mode.matches);
+    root.toggleAttribute('data-set-installed', standalone);
     const size = measureViewport(window.innerHeight, viewport, {
-      standalone: isInstalledDisplayMode(),
+      standalone,
       editing: isTextEditingTarget(document.activeElement),
     });
-    if (!size || document.hidden) return;
-    root.style.setProperty(keys[0], `${size.height}px`);
+    if (!size) return;
+    root.style.setProperty(keys[0], typeof size.height === 'number' ? `${size.height}px` : size.height);
     root.style.setProperty(keys[1], `${size.top}px`);
   };
   const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
@@ -93,6 +77,7 @@ export function installViewport(): () => void {
   document.addEventListener('visibilitychange', schedule);
   document.addEventListener('focusin', schedule);
   document.addEventListener('focusout', schedule);
+  modes.forEach(mode => mode.addEventListener?.('change', schedule));
 
   return () => {
     cancelAnimationFrame(frame);
@@ -104,6 +89,9 @@ export function installViewport(): () => void {
     document.removeEventListener('visibilitychange', schedule);
     document.removeEventListener('focusin', schedule);
     document.removeEventListener('focusout', schedule);
+    modes.forEach(mode => mode.removeEventListener?.('change', schedule));
     keys.forEach((key, i) => previous[i] ? root.style.setProperty(key, previous[i]) : root.style.removeProperty(key));
+    if (previousInstalled === null) root.removeAttribute('data-set-installed');
+    else root.setAttribute('data-set-installed', previousInstalled);
   };
 }

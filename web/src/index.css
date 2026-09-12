@@ -17,6 +17,11 @@
   --set-warn: 251 191 36;
   --set-err: 248 113 113;
   --set-live: 34 211 238;
+  /* One inset owner per edge; overrides also let browser tests exercise notches. */
+  --set-safe-top: env(safe-area-inset-top, 0px);
+  --set-safe-right: env(safe-area-inset-right, 0px);
+  --set-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --set-safe-left: env(safe-area-inset-left, 0px);
 }
 
 /* Light mode: applied by toggling the class on <html> (Settings → Appearance,
@@ -47,8 +52,17 @@ html.light .shadow-pop { box-shadow: 0 18px 50px -16px rgb(20 26 40 / 0.28); }
 html,
 body,
 #root {
-  height: 100%;
+  height: var(--set-document-height, 100%);
 }
+/* Home Screen launches must not inherit a short percentage-height document.
+   There is no browser toolbar in installed mode: use the CSS viewport, not
+   an innerHeight/VisualViewport pixel snapshot that can be stale at launch.
+   Browser tabs deliberately keep their existing dynamic/visual viewport. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  :root { --set-document-height: 100vh; --set-viewport-height: 100vh; }
+}
+/* navigator.standalone is needed by older iOS Home Screen containers. */
+html[data-set-installed] { --set-document-height: 100vh; }
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -63,8 +77,8 @@ body,
   overflow-x: hidden;
   overflow-x: clip;
 }
-/* Fill the visible browser area, including toolbar/keyboard/orientation changes.
-   Insets are padding inside this height, never extra height under the dock. */
+/* The shell owns the top/side insets. On phones the footer owns the bottom
+   inset INSIDE its flex row. Never extend it outside an overflow-clipped main. */
 .app-shell {
   position: fixed;
   inset: 0 0 auto;
@@ -73,7 +87,15 @@ body,
   height: var(--set-viewport-height, 100dvh);
   min-height: 0;
   box-sizing: border-box;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  padding: var(--set-safe-top) var(--set-safe-right) 0 var(--set-safe-left);
+}
+@media (min-width: 768px) {
+  /* Desktop/tablet has a floating dock, not the phone's full-width footer. */
+  .app-shell { padding-bottom: var(--set-safe-bottom); }
+}
+.app-shell > main > [data-scroll-root] {
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 body {
@@ -808,7 +830,7 @@ html:has(body.set-sheet-dragging) { transition: none !important; }
     border-radius: 0 !important;
     border: 0 !important;
     box-shadow: none !important;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) !important;
+    padding: var(--set-safe-top) var(--set-safe-right) var(--set-safe-bottom) var(--set-safe-left) !important;
     box-sizing: border-box;
     transform: translateY(var(--set-dy, 0px));
     transition: transform 0.45s cubic-bezier(0.22, 1.35, 0.36, 1), translate 0.2s ease-out, opacity 0.2s ease-out;
@@ -1108,6 +1130,8 @@ button, [role='button'], .set-btn, .set-btn-ghost, .set-btn-primary {
     top: var(--set-viewport-top, 0px);
     bottom: auto;
     height: var(--set-viewport-height, 100dvh);
+    padding-top: var(--set-safe-top);
+    padding-bottom: var(--set-safe-bottom);
   }
   /* Prevent focus-triggered iOS text-field zoom without disabling user zoom. */
   .app-shell input, .app-shell textarea, .app-shell select,

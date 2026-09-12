@@ -8,6 +8,7 @@ import type { BaseEvent } from '@ag-ui/core';
 import { Observable } from 'rxjs';
 import { AppShellInner } from '../../src/components/AppShell';
 import SettingsView from '../../src/views/SettingsView';
+import DashboardView from '../../src/views/DashboardView';
 import { CopilotCoreBridge } from '../../src/lib/copilot';
 import { CopilotInteractionProvider } from '../../src/components/copilot/CopilotDock';
 import { DEFAULT_MASCOT } from '../../src/components/Mascot';
@@ -67,7 +68,7 @@ createRoot(document.getElementById('root')!).render(
     <CopilotKit selfManagedAgents={{ set_guide: agent }} enableInspector={false}>
       <CopilotCoreBridge /><CopilotInteractionProvider>
         <Routes><Route path="/app/space/:spaceId" element={<AppShellInner />}>
-          <Route path="settings" element={<SettingsView />} /><Route path="*" element={<Surface />} /><Route index element={<Surface />} />
+          <Route path="settings" element={<SettingsView />} /><Route path="*" element={<Surface />} /><Route index element={location.search.includes('dashboard') ? <DashboardView /> : <Surface />} />
         </Route></Routes>
       </CopilotInteractionProvider>
     </CopilotKit>
