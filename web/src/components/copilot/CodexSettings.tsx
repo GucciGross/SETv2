@@ -79,14 +79,14 @@ export default function CodexSettings() {
     {loading ? <p role="status" className="mt-2 text-sm text-set-dim">Checking this deployment…</p> : <>
       {error ? <p role="alert" className="mt-2 text-sm text-red-300">{error}</p> : <>
         <p className="mt-2 text-sm text-set-dim">
-          This SET server is self-hosted, but its Codex service is not enabled yet. Enable it once on the server, then come back here and sign in with your ChatGPT account.
+          Codex is not enabled in the SET server that this app is currently using. Current Docker self-hosts include the official Codex CLI and personal ChatGPT sign-in by default after a rebuild.
         </p>
-        <pre className="mt-3 rounded-lg bg-set-panel2 p-3 text-xs overflow-x-auto whitespace-pre-wrap break-words">docker compose -f docker-compose.yml -f docker-compose.codex.yml up -d --build</pre>
+        <pre className="mt-3 rounded-lg bg-set-panel2 p-3 text-xs overflow-x-auto whitespace-pre-wrap break-words">git pull{`\n`}docker compose up -d --build</pre>
         <p className="mt-2 text-xs text-set-dim">
-          Non-Docker: install the supported Codex CLI, set SET_DEPLOYMENT_MODE=self-hosted and SET_CODEX_OAUTH_ENABLED=1, then restart SET.
+          Non-Docker: install the supported Codex CLI, set SET_DEPLOYMENT_MODE=self-hosted and SET_CODEX_OAUTH_ENABLED=1, then restart SET. This button only checks the server again; browser code cannot turn a server feature on.
         </p>
       </>}
-      <button type="button" className="set-btn-primary mt-3 min-h-11" onClick={() => setRetry(v => v + 1)}>Recheck and enable sign-in</button>
+      <button type="button" className="set-btn-primary mt-3 min-h-11" onClick={() => setRetry(v => v + 1)}>Recheck Codex</button>
     </>}
   </section>;
 
