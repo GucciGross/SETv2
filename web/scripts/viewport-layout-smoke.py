@@ -115,7 +115,9 @@ with sync_playwright() as p:
                         # Cold start: both JavaScript readings were short before mount.
                         assert page.evaluate('innerHeight') == height - 62
                         assert page.evaluate('visualViewport.height') == height - 96
-                        assert page.evaluate('parseFloat(getComputedStyle(document.body).height)') == height
+                        # WebKit rounds viewport units to fractional CSS pixels.
+                        body_height = page.evaluate('parseFloat(getComputedStyle(document.body).height)')
+                        assert abs(body_height - height) < 1, {'bodyHeight': body_height, 'viewportHeight': height}
                     scroll = page.locator('main > [data-scroll-root]')
                     scroll.evaluate('el => el.scrollTop = el.scrollHeight')
                     verify(page, height, safe=safe)
@@ -157,7 +159,7 @@ with sync_playwright() as p:
                     page.evaluate('h => setTestViewport(null,h)', height)
                     if installed and width < 768:
                         page.set_viewport_size({'width':667,'height':375})
-                        page.evaluate("document.documentElement.style.setProperty('--set-safe-top','0px');document.documentElement.style.setProperty('--set-safe-bottom','21px');document.documentElement.style.setProperty('--set-safe-left','34px');document.documentElement.style.setProperty('--set-safe-right','34px')")
+                        page.evaluate("document.documentElement.style.setProperty('--set-safe-top','0px');document.documentElement.style.setProperty('--set-safe-bottom','21px');document.documentElement.style.setProperty('--set-safe-left','34px');document.documentElement.style.setProperty('--set-safe-right','34px','')")
                         verify(page,375,safe=21)
                         page.screenshot(path=str(OUT / f'{name}-landscape.png'))
                     # The workspace scroller cannot pan the entire UI sideways.
