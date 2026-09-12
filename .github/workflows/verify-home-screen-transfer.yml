@@ -1,0 +1,19 @@
+name: Verify Home Screen transfer
+on:
+  push:
+    branches: [fix/home-screen-css-viewport-unclipped-dock]
+    paths: [.github/workflows/verify-home-screen-transfer.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-transfer-inspection
+          path: .github/workflows/apply-home-screen-source.yml
+          include-hidden-files: true
+          retention-days: 1
