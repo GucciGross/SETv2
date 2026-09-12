@@ -1,5 +1,4 @@
 /* Scoped to the new controls. The workspace and existing chat keep SET's design system. */
-:root { --set-mobile-safe-bottom: env(safe-area-inset-bottom, 0px); }
 
 .set-copilot-command-dock {
   flex: 0 0 auto;
@@ -66,21 +65,20 @@
 body.set-command-dock [data-slot='chat-toggle-button'] { display: none !important; }
 @media (max-width: 767px) {
   .set-copilot-command-dock {
-    /* The shell reserves the physical iPhone home-indicator inset. Extend this
-       surface through that reserved strip so the controls no longer float over
-       a dead black band, while keeping touch targets above the home indicator. */
-    margin: 4px auto calc(0px - var(--set-mobile-safe-bottom));
+    /* Own the home-indicator inset in normal flow. A negative margin appeared
+       correct in geometry tests but main's overflow:hidden clipped its paint. */
+    margin: 4px auto 0;
     width: 100%;
     border: 0;
     border-top: 1px solid rgb(150 165 200 / 12%);
     border-radius: 0;
-    padding: 7px 12px var(--set-mobile-safe-bottom);
+    padding: 7px 12px var(--set-safe-bottom, 0px);
     box-shadow: none;
   }
   .set-copilot-rocker { height: 52px; }
   .set-copilot-taskbar { gap: 1px; padding-top: 3px; padding-bottom: 0; }
   .set-copilot-taskbar > a, .set-copilot-taskbar > button {
-    min-height: 38px;
+    min-height: 44px;
     gap: 4px;
     border-radius: 10px;
     font-size: 10px;

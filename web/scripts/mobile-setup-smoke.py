@@ -65,7 +65,7 @@ with sync_playwright() as p:
         try:
             page.goto(base + '/scripts/fixtures/copilot-controls.html', wait_until='domcontentloaded')
             dock = page.locator('.set-copilot-command-dock'); expect(dock).to_be_visible(timeout=60000)
-            page.wait_for_function("document.documentElement.style.getPropertyValue('--set-viewport-height') !== ''")
+            page.wait_for_function("document.documentElement.dataset.setViewport === 'standalone-css'")
             shell = page.locator('.app-shell')
             shell_box = shell.bounding_box(); dock_box = dock.bounding_box()
             assert abs(shell_box['height'] - height) < 2
@@ -83,21 +83,18 @@ with sync_playwright() as p:
             assert abs((dock_box['y'] + dock_box['height']) - (shell_box['y'] + shell_box['height'])) < 2, 'Stale iOS VisualViewport must not create a bottom band'
             page.evaluate('(h) => resizeVisibleViewport(h)', height)
 
-            # Chromium reports env(safe-area-inset-bottom) as zero. Reproduce a
-            # physical iPhone home-indicator inset so CI catches the real device
-            # failure: shell reserves 34px, while the dock surface must extend
-            # through that strip rather than leaving it black.
-            page.evaluate("""() => {
-              document.documentElement.style.setProperty('--set-mobile-safe-bottom', '34px');
-              document.querySelector('.app-shell').style.paddingBottom = '34px';
-            }""")
-            page.wait_for_timeout(50)
+            # Inject only the environmental inset. Do not rewrite the shell's
+            # padding: that would encode the old broken implementation in the test.
+            page.evaluate("document.documentElement.style.setProperty('--set-safe-bottom', '34px')")
+            page.wait_for_function("getComputedStyle(document.querySelector('.set-copilot-command-dock')).paddingBottom === '34px'")
             shell_box = shell.bounding_box(); dock_box = dock.bounding_box()
-            assert abs((dock_box['y'] + dock_box['height']) - (shell_box['y'] + shell_box['height'])) < 2, 'Dock surface must paint through a physical iPhone bottom safe area'
-            page.evaluate("""() => {
-              document.documentElement.style.removeProperty('--set-mobile-safe-bottom');
-              document.querySelector('.app-shell').style.removeProperty('padding-bottom');
-            }""")
+            assert abs((dock_box['y'] + dock_box['height']) - (shell_box['y'] + shell_box['height'])) < 2
+            assert page.evaluate("""() => {
+              const dock = document.querySelector('.set-copilot-command-dock');
+              const shell = document.querySelector('.app-shell').getBoundingClientRect();
+              return dock.contains(document.elementFromPoint(shell.width / 2, shell.bottom - 1));
+            }"""), 'A bounding box at the bottom is insufficient: the dock must not be clipped'
+            page.evaluate("document.documentElement.style.removeProperty('--set-safe-bottom')")
             expect(page.get_by_role('button', name='AI connection settings')).to_be_visible()
 
             # Full height from the first welcome frame, before a message is sent.

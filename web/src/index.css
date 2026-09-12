@@ -2,7 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* One CSS viewport and one set of device insets. JavaScript may temporarily
+   override the visible height for browser chrome/the keyboard, never screen.height. */
 :root {
+  --set-layout-height: 100vh;
+  --set-safe-top: env(safe-area-inset-top, 0px);
+  --set-safe-right: env(safe-area-inset-right, 0px);
+  --set-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --set-safe-left: env(safe-area-inset-left, 0px);
   color-scheme: dark;
   /* dark palette (default) — RGB triplets for Tailwind alpha support */
   --set-bg: 10 12 17;
@@ -49,6 +56,21 @@ body,
 #root {
   height: 100%;
 }
+@supports (height: 100dvh) {
+  :root { --set-layout-height: 100dvh; }
+}
+/* Only the workspace owns a locked root. Landing/login/share pages keep their
+   normal document scrolling. Explicit viewport units avoid the installed iOS
+   percentage-height containing-block chain. The class is removed on unmount. */
+html.set-app-viewport,
+html.set-app-viewport body,
+html.set-app-viewport #root {
+  height: var(--set-layout-height);
+  min-height: 0;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+}
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -63,17 +85,28 @@ body,
   overflow-x: hidden;
   overflow-x: clip;
 }
-/* Fill the visible browser area, including toolbar/keyboard/orientation changes.
-   Insets are padding inside this height, never extra height under the dock. */
+/* Installed apps use CSS viewport sizing at rest, not a cached innerHeight.
+   Shell, drawer and portalled chat share this same fallback/keyboard override. */
 .app-shell {
   position: fixed;
   inset: 0 0 auto;
   top: var(--set-viewport-top, 0px);
   height: 100vh;
-  height: var(--set-viewport-height, 100dvh);
+  height: var(--set-viewport-height, var(--set-layout-height));
   min-height: 0;
   box-sizing: border-box;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  padding: var(--set-safe-top) var(--set-safe-right) var(--set-safe-bottom) var(--set-safe-left);
+  background: rgb(var(--set-bg));
+}
+/* Keep the mobile dock INSIDE main's clipping rectangle. The dock owns the
+   bottom inset exactly once; no negative margins can escape overflow:hidden. */
+@media (max-width: 767px) {
+  .app-shell { padding-bottom: 0; }
+}
+.app-shell > main > [data-scroll-root] {
+  min-width: 0;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 
 body {
@@ -792,8 +825,8 @@ html:has(body.set-sheet-dragging) { transition: none !important; }
     position: fixed !important;
     inset: auto 0 auto !important;
     top: var(--set-viewport-top, 0px) !important;
-    height: var(--set-viewport-height, 100dvh) !important;
-    max-height: var(--set-viewport-height, 100dvh) !important;
+    height: var(--set-viewport-height, var(--set-layout-height)) !important;
+    max-height: var(--set-viewport-height, var(--set-layout-height)) !important;
     padding: 0 !important;
     box-sizing: border-box;
     transition: none !important;
@@ -808,7 +841,7 @@ html:has(body.set-sheet-dragging) { transition: none !important; }
     border-radius: 0 !important;
     border: 0 !important;
     box-shadow: none !important;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) !important;
+    padding: var(--set-safe-top) var(--set-safe-right) var(--set-safe-bottom) var(--set-safe-left) !important;
     box-sizing: border-box;
     transform: translateY(var(--set-dy, 0px));
     transition: transform 0.45s cubic-bezier(0.22, 1.35, 0.36, 1), translate 0.2s ease-out, opacity 0.2s ease-out;
@@ -1107,7 +1140,7 @@ button, [role='button'], .set-btn, .set-btn-ghost, .set-btn-primary {
   .app-shell > aside[data-tour-sidebar] {
     top: var(--set-viewport-top, 0px);
     bottom: auto;
-    height: var(--set-viewport-height, 100dvh);
+    height: var(--set-viewport-height, var(--set-layout-height));
   }
   /* Prevent focus-triggered iOS text-field zoom without disabling user zoom. */
   .app-shell input, .app-shell textarea, .app-shell select,
