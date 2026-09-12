@@ -68,7 +68,7 @@ jobs:
       - name: Install Copilot browser regression dependencies
         run: |
           python3 -m pip install playwright==1.57.0
-          python3 -m playwright install --with-deps chromium
+          python3 -m playwright install --with-deps chromium webkit
           sudo apt-get update
           sudo apt-get install -y xvfb mesa-vulkan-drivers libvulkan1
       - name: Exercise approvals and input controls in the actual Copilot shell
@@ -85,6 +85,7 @@ jobs:
           curl --fail --silent http://127.0.0.1:5173/ > /dev/null
           python3 scripts/copilot-approval-smoke.py
           python3 scripts/copilot-controls-smoke.py
+          python3 scripts/pwa-viewport-smoke.py
           # Headless Chrome destroys WebGPU devices when a canvas presents, so
           # the orb shader test needs a real (virtual) display to render into,
           # and its software Vulkan adapter lives in the Playwright chromium
