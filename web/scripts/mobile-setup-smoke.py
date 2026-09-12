@@ -60,7 +60,9 @@ with sync_playwright() as p:
             dock = page.locator('.set-copilot-command-dock'); expect(dock).to_be_visible(timeout=60000)
             page.wait_for_function("document.documentElement.style.getPropertyValue('--set-viewport-height') !== ''")
             shell = page.locator('.app-shell')
-            assert abs(shell.bounding_box()['height'] - height) < 2
+            shell_box = shell.bounding_box(); dock_box = dock.bounding_box()
+            assert abs(shell_box['height'] - height) < 2
+            assert abs((dock_box['y'] + dock_box['height']) - (shell_box['y'] + shell_box['height'])) < 2, 'Mobile dock must meet the shell bottom without an artificial gap'
             expect(page.get_by_role('button', name='AI connection settings')).to_be_visible()
             # Full height from the first welcome frame, before a message is sent.
             dock.get_by_role('button', name='Type to Copilot', exact=True).click()
@@ -95,7 +97,7 @@ with sync_playwright() as p:
             page.screenshot(path=str(artifacts / f'mobile-setup-{width}.png'))
             # Enabling/rechecking the deployment reveals existing official sign-in.
             mode['codex'] = 'enabled'
-            setup.get_by_role('button', name='Recheck Codex setup').click()
+            setup.get_by_role('button', name='Recheck and enable sign-in').click()
             card = page.get_by_role('region', name='Codex · Sign in with ChatGPT')
             checkbox = card.get_by_role('checkbox', name='Use Codex for my Copilot')
             expect(checkbox).to_be_visible(); checkbox.click()
@@ -125,7 +127,7 @@ with sync_playwright() as p:
             page.evaluate('resizeVisibleViewport(390)')
             page.wait_for_function('document.querySelector(".app-shell").getBoundingClientRect().height === 390')
             assert not errors, errors
-            print('PASS mobile setup', width, height, 'viewport/keyboard/zoom, gesture, no-speech, setup, provider save/test, selection rollback')
+            print('PASS mobile setup', width, height, 'viewport/bottom-edge/keyboard/zoom, gesture, no-speech, setup, provider save/test, selection rollback')
         except Exception:
             page.screenshot(path=str(artifacts / f'mobile-setup-{width}-failure.png'), full_page=True)
             (artifacts / f'mobile-setup-{width}-errors.json').write_text(json.dumps(errors))

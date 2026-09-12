@@ -67,25 +67,26 @@ export default function CodexSettings() {
       }
     } catch (e: any) {
       if (mounted.current && current === generation.current) {
-        setStatus(previous); // a failed selection is never shown as connected/selected
+        setStatus(previous);
         setError(e?.message || 'The Codex account operation failed.');
       }
     } finally { if (mounted.current && current === generation.current) setBusy(false); }
   };
 
-  // No sign-in card or controls on cloud. A self-hosted opt-in must be
-  // discoverable even before the operator has enabled/installed Codex.
   if (!loading && !error && !available && !['self-hosted', 'unconfigured'].includes(deploymentMode)) return null;
   if (!available) return <section className="set-card p-4 mb-5" aria-labelledby="codex-setup-heading">
     <h2 id="codex-setup-heading" className="font-semibold">Personal Codex connection</h2>
     {loading ? <p role="status" className="mt-2 text-sm text-set-dim">Checking this deployment…</p> : <>
       {error ? <p role="alert" className="mt-2 text-sm text-red-300">{error}</p> : <>
-        <p className="mt-2 text-sm text-set-dim">Sign in with ChatGPT is available only on an explicitly enabled, trusted self-hosted SET server. It is not available in SET Cloud.</p>
-        <p className="mt-2 text-sm text-set-dim">On your server, enable the included Codex deployment:</p>
-        <pre className="mt-2 rounded-lg bg-set-panel2 p-3 text-xs overflow-x-auto whitespace-pre-wrap break-words">docker compose -f docker-compose.yml -f docker-compose.codex.yml up -d --build</pre>
-        <p className="mt-2 text-xs text-set-dim">For a non-Docker installation, install the supported Codex CLI and set SET_DEPLOYMENT_MODE=self-hosted and SET_CODEX_OAUTH_ENABLED=1, then restart SET. These are server settings, not browser settings. Never paste subscription tokens or device codes here.</p>
+        <p className="mt-2 text-sm text-set-dim">
+          This SET server is self-hosted, but its Codex service is not enabled yet. Enable it once on the server, then come back here and sign in with your ChatGPT account.
+        </p>
+        <pre className="mt-3 rounded-lg bg-set-panel2 p-3 text-xs overflow-x-auto whitespace-pre-wrap break-words">docker compose -f docker-compose.yml -f docker-compose.codex.yml up -d --build</pre>
+        <p className="mt-2 text-xs text-set-dim">
+          Non-Docker: install the supported Codex CLI, set SET_DEPLOYMENT_MODE=self-hosted and SET_CODEX_OAUTH_ENABLED=1, then restart SET.
+        </p>
       </>}
-      <button type="button" className="set-btn mt-3 min-h-11" onClick={() => setRetry(v => v + 1)}>Recheck Codex setup</button>
+      <button type="button" className="set-btn-primary mt-3 min-h-11" onClick={() => setRetry(v => v + 1)}>Recheck and enable sign-in</button>
     </>}
   </section>;
 
@@ -99,19 +100,18 @@ export default function CodexSettings() {
         <span className="text-xs text-set-dim">{loading ? 'Checking connection…' : status?.connected ? 'Connected' : 'Not connected'}</span>
       </div>
       <p className="text-sm text-set-dim mt-3 mb-3">
-        Run your SET Copilot through the official Codex app server using your own ChatGPT account.
-        Your workspace permissions and approval prompts still apply. This does not supply embeddings, transcription, or other API services.
+        Run SET Copilot through the official Codex app server using your own ChatGPT account. Workspace permissions and approval prompts still apply.
       </p>
       {status?.account && <p className="text-sm text-set-text mb-3">{status.account.email}{status.account.planType ? ` · ${status.account.planType}` : ''}</p>}
       {status?.login ? (
         <div className="rounded-lg border border-set-border p-3 space-y-3">
-          <p className="text-sm text-set-text">Open the sign-in page and enter this code:</p>
+          <p className="text-sm text-set-text">Open ChatGPT sign-in and enter this code:</p>
           <code className="block text-xl tracking-widest text-set-text select-all">{status.login.userCode}</code>
           <div className="flex flex-wrap gap-2">
-            <a className="set-btn-primary text-sm" href={status.login.verificationUrl} target="_blank" rel="noopener noreferrer">Continue with ChatGPT</a>
-            <button className="set-btn-ghost text-sm" disabled={busy || loading} onClick={() => void action(() => api.post<Status>('/codex/login/cancel', {}))}>Cancel sign-in</button>
+            <a className="set-btn-primary text-sm min-h-11 inline-flex items-center" href={status.login.verificationUrl} target="_blank" rel="noopener noreferrer">Continue with ChatGPT</a>
+            <button className="set-btn-ghost text-sm min-h-11" disabled={busy || loading} onClick={() => void action(() => api.post<Status>('/codex/login/cancel', {}))}>Cancel sign-in</button>
           </div>
-          <p className="text-xs text-set-dim">Device-code sign-in may need to be enabled in your ChatGPT security settings or by your workspace administrator.</p>
+          <p className="text-xs text-set-dim">SET never asks you to paste a subscription token or device code into a form.</p>
         </div>
       ) : status?.connected ? (
         <div className="space-y-3">
@@ -119,27 +119,26 @@ export default function CodexSettings() {
             <input type="checkbox" checked={status.selected} disabled={busy || loading || status.busy}
               onChange={e => {
                 const enabled = e.target.checked;
-                // Reflect the tap immediately; action restores the confirmed state on failure.
                 setStatus(previous => previous ? { ...previous, selected: enabled } : previous);
                 void action(() => api.put<{ selected: boolean }>('/codex/selection', { enabled }));
               }} />
             Use Codex for my Copilot
           </label>
-          <p className="text-xs text-set-dim">This applies only to your account. Other members keep their provider choices. Subscription limits still apply; failures do not silently switch to a paid API.</p>
-          <button className="set-btn-ghost text-sm" disabled={busy || loading} onClick={() => void action(async () => {
+          <p className="text-xs text-set-dim">This applies only to your account. Other members keep their own provider choices.</p>
+          <button className="set-btn-ghost text-sm min-h-11" disabled={busy || loading} onClick={() => void action(async () => {
             await api.post('/codex/logout', {});
             return { connected: false, selected: false, busy: false, account: null, login: null, error: null };
           })}>Disconnect Codex</button>
         </div>
       ) : (
         <div className="flex flex-wrap gap-2">
-          <button className="set-btn-primary text-sm" disabled={busy || loading} onClick={() => void action(() => api.post<Status>('/codex/login', {}))}>Sign in with ChatGPT</button>
-          {status?.selected && <button className="set-btn-ghost text-sm" disabled={busy || loading} onClick={() => void action(() => api.put<{ selected: boolean }>('/codex/selection', { enabled: false }))}>Use workspace provider instead</button>}
+          <button className="set-btn-primary text-sm min-h-11" disabled={busy || loading} onClick={() => void action(() => api.post<Status>('/codex/login', {}))}>Sign in with ChatGPT</button>
+          {status?.selected && <button className="set-btn-ghost text-sm min-h-11" disabled={busy || loading} onClick={() => void action(() => api.put<{ selected: boolean }>('/codex/selection', { enabled: false }))}>Use workspace provider instead</button>}
         </div>
       )}
       {(error || status?.error) && <div><p role="alert" className="text-sm text-red-300 mt-3">{error || status?.error}</p><button type="button" className="set-btn mt-2 min-h-11" disabled={busy} onClick={() => setRetry(v => v + 1)}>Refresh connection</button></div>}
       {status?.busy && <p role="status" className="text-xs text-set-dim mt-3">A Codex run is in progress. Disconnecting stops that connection.</p>}
-      <p className="text-xs text-set-dim mt-4">Codex stores and refreshes credentials in this self-hosted server’s private per-user directory. The server operator must be trusted. Do not share your device code.</p>
+      <p className="text-xs text-set-dim mt-4">Credentials are stored in this self-hosted server’s private per-user Codex directory.</p>
     </section>
   );
 }
