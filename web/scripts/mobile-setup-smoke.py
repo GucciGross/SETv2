@@ -63,6 +63,21 @@ with sync_playwright() as p:
             shell_box = shell.bounding_box(); dock_box = dock.bounding_box()
             assert abs(shell_box['height'] - height) < 2
             assert abs((dock_box['y'] + dock_box['height']) - (shell_box['y'] + shell_box['height'])) < 2, 'Mobile dock must meet the shell bottom without an artificial gap'
+            # Chromium reports env(safe-area-inset-bottom) as zero. Reproduce a
+            # physical iPhone home-indicator inset so CI catches the real device
+            # failure: shell reserves 34px, while the dock surface must extend
+            # through that strip rather than leaving it black.
+            page.evaluate("""() => {
+              document.documentElement.style.setProperty('--set-mobile-safe-bottom', '34px');
+              document.querySelector('.app-shell').style.paddingBottom = '34px';
+            }""")
+            page.wait_for_timeout(50)
+            shell_box = shell.bounding_box(); dock_box = dock.bounding_box()
+            assert abs((dock_box['y'] + dock_box['height']) - (shell_box['y'] + shell_box['height'])) < 2, 'Dock surface must paint through a physical iPhone bottom safe area'
+            page.evaluate("""() => {
+              document.documentElement.style.removeProperty('--set-mobile-safe-bottom');
+              document.querySelector('.app-shell').style.removeProperty('padding-bottom');
+            }""")
             expect(page.get_by_role('button', name='AI connection settings')).to_be_visible()
             # Full height from the first welcome frame, before a message is sent.
             dock.get_by_role('button', name='Type to Copilot', exact=True).click()
@@ -94,10 +109,11 @@ with sync_playwright() as p:
             expect(page.get_by_role('button', name='AI Providers', exact=True)).to_have_attribute('aria-pressed', 'true')
             setup = page.get_by_role('region', name='Personal Codex connection')
             expect(setup).to_be_visible(); expect(setup).to_contain_text('SET_CODEX_OAUTH_ENABLED=1')
+            expect(setup).to_contain_text('docker compose up -d --build')
             page.screenshot(path=str(artifacts / f'mobile-setup-{width}.png'))
             # Enabling/rechecking the deployment reveals existing official sign-in.
             mode['codex'] = 'enabled'
-            setup.get_by_role('button', name='Recheck and enable sign-in').click()
+            setup.get_by_role('button', name='Recheck Codex').click()
             card = page.get_by_role('region', name='Codex · Sign in with ChatGPT')
             checkbox = card.get_by_role('checkbox', name='Use Codex for my Copilot')
             expect(checkbox).to_be_visible(); checkbox.click()
@@ -127,7 +143,7 @@ with sync_playwright() as p:
             page.evaluate('resizeVisibleViewport(390)')
             page.wait_for_function('document.querySelector(".app-shell").getBoundingClientRect().height === 390')
             assert not errors, errors
-            print('PASS mobile setup', width, height, 'viewport/bottom-edge/keyboard/zoom, gesture, no-speech, setup, provider save/test, selection rollback')
+            print('PASS mobile setup', width, height, 'viewport/physical-safe-area/keyboard/zoom, gesture, no-speech, setup, provider save/test, selection rollback')
         except Exception:
             page.screenshot(path=str(artifacts / f'mobile-setup-{width}-failure.png'), full_page=True)
             (artifacts / f'mobile-setup-{width}-errors.json').write_text(json.dumps(errors))

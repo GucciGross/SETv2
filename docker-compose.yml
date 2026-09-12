@@ -21,13 +21,22 @@ services:
     restart: unless-stopped
 
   server:
-    build: ./server
+    # The normal Docker path is self-hosted, so include the official Codex CLI
+    # and enable personal ChatGPT/Codex sign-in out of the box. Cloud deployments
+    # remain fail-closed because they use SET_DEPLOYMENT_MODE=cloud instead.
+    build:
+      context: ./server
+      target: codex-self-hosted
     environment:
       DATABASE_URL: postgres://set:${POSTGRES_PASSWORD:-set}@db:5432/set
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       DATA_DIR: /app/data
       WEB_ORIGIN: "*"
+      SET_DEPLOYMENT_MODE: self-hosted
+      SET_CODEX_OAUTH_ENABLED: "1"
+      # Experimental realtime Codex voice stays separately opt-in.
+      SET_CODEX_VOICE_ENABLED: ${SET_CODEX_VOICE_ENABLED:-0}
       # Bootstrap LLM (BYOK) — any OpenAI-compatible endpoint (falls back to
       # per-space providers configured in the web UI):
       LLM_BASE_URL: ${LLM_BASE_URL:-}

@@ -71,7 +71,10 @@ with sync_playwright() as p:
             if width < 768:
                 nav = dock.get_by_role('navigation', name='Workspace navigation')
                 expect(nav).to_be_visible()
-                assert nav.bounding_box()['y'] >= dock.locator('.set-copilot-rocker').bounding_box()['y'] + 60
+                rocker_box = dock.locator('.set-copilot-rocker').bounding_box()
+                nav_box = nav.bounding_box()
+                assert rocker_box and nav_box
+                assert nav_box['y'] >= rocker_box['y'] + rocker_box['height'], 'Mobile navigation must render below the rocker without overlap'
                 nav.get_by_role('link', name='Tasks').click()
                 expect(nav.get_by_role('link', name='Tasks')).to_have_attribute('aria-current', 'page')
                 nav.get_by_role('link', name='Home').click()
