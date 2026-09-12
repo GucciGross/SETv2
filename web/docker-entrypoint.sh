@@ -18,5 +18,5 @@ if [ ! -f /etc/nginx/certs/set.crt ] || [ ! -f /etc/nginx/certs/set.key ]; then
         -addext "subjectAltName=DNS:set.local,DNS:localhost,IP:127.0.0.1"
 fi
 
-cp /etc/nginx/nginx-tls.conf /etc/nginx/conf.d/default.conf
+sed 's|${SET_TLS_PORT}|'"${SET_TLS_PORT:-8443}"'|g' /etc/nginx/nginx-tls.conf > /etc/nginx/conf.d/default.conf
 echo "[set-tls] HTTPS enabled — open https://<host>:<port> (accept the self-signed warning once)"

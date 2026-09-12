@@ -112,6 +112,7 @@ services:
       - "${SET_TLS_PORT:-8443}:443"
     environment:
       SET_TLS: ${SET_TLS:-0}
+      SET_TLS_PORT: ${SET_TLS_PORT:-8443}
     volumes:
       - ${SET_TLS_CERT_DIR:-./web/certs-not-mounted}:/etc/nginx/certs
     depends_on:
