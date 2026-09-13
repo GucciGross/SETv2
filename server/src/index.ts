@@ -24,6 +24,7 @@ import { studyRoutes } from './study/routes.js';
 import { modelsRoutes } from './models3d/routes.js';
 import { collabRoutes } from './collab/routes.js';
 import { fileRoutes } from './files/routes.js';
+import { installAssetAccess } from './files/access.js';
 import { libraryRoutes } from './library/routes.js';
 import { codeRoutes, terminalRoutes } from './code/routes.js';
 import { notificationRoutes, commentRoutes, pathProgressRoutes } from './team/routes.js';
@@ -63,6 +64,7 @@ async function main() {
   await app.register(cors, { origin: config.webOrigin === '*' ? true : config.webOrigin.split(','), credentials: true });
   await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024 } });
   await app.register(websocket);
+  installAssetAccess(app);
 
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
     const text = body as string;
@@ -77,19 +79,6 @@ async function main() {
   });
 
   app.get('/health', async () => ({ ok: true, name: 'SET', version: '2.1.0' }));
-
-  app.get('/api/captures/:file', async (req, reply) => {
-    const { getUser } = await import('./lib/http.js');
-    if (!getUser(req)) return reply.code(401).send({ error: 'Unauthorized' });
-    const file = (req.params as any).file as string;
-    if (!/^[a-f0-9-]+\.png$/.test(file)) return reply.code(400).send({ error: 'Bad file' });
-    try {
-      const buf = await readFile(join(config.dataDir, 'captures', file));
-      reply.header('content-type', 'image/png').send(buf);
-    } catch {
-      reply.code(404).send({ error: 'Not found' });
-    }
-  });
 
   await app.register(clipRoutes, { prefix: '/api' });
 

@@ -2,7 +2,12 @@ const TOKEN_KEY = 'set_token';
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY) ?? '';
 export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t);
-export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+export const clearToken = () => {
+  localStorage.removeItem(TOKEN_KEY);
+  // Native fetch, not request(): clearing an expired login must not recurse.
+  // keepalive lets logout clear the HttpOnly asset cookie across navigation.
+  void fetch('/api/assets/session', { method: 'DELETE', credentials: 'same-origin', keepalive: true }).catch(() => {});
+};
 
 export class ApiError extends Error {
   status: number;
