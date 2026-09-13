@@ -50,7 +50,10 @@ function assetUser(req: FastifyRequest): string | null {
   if (!cookie) return null;
   try {
     const value = jwt.verify(cookie, config.jwtSecret, { algorithms: ['HS256'], audience: 'set-assets' }) as jwt.JwtPayload;
-    return value.kind === 'asset' && value.sub && UUID.test(value.sub) ? value.sub : null;
+    if (value.kind !== 'asset' || !value.sub || !UUID.test(value.sub)) return null;
+    const version = value.ver ?? 0;
+    if (!Number.isInteger(version) || version < 0) return null; // session guard revokes stale/invalid on these routes
+    return value.sub;
   } catch { return null; }
 }
 
@@ -94,7 +97,11 @@ export function installAssetAccess(app: FastifyInstance, store: AssetStore = def
     const decoded = jwt.decode(raw) as jwt.JwtPayload | null;
     const ttl = Math.min(300, Math.max(0, (decoded?.exp || 0) - Math.floor(Date.now() / 1000)));
     if (ttl <= 0) return;
-    const token = jwt.sign({ kind: 'asset' }, config.jwtSecret, { algorithm: 'HS256', subject: user.id, audience: 'set-assets', expiresIn: ttl });
+    // Copy the bearer's ver/jti: installSessionGuard runs before this hook and has
+    // already checked them against the database, so no extra query is needed here.
+    const token = jwt.sign(
+      { kind: 'asset', ver: decoded?.ver ?? 0, sid: typeof decoded?.jti === 'string' ? decoded.jti : undefined },
+      config.jwtSecret, { algorithm: 'HS256', subject: user.id, audience: 'set-assets', expiresIn: ttl });
     const secure = config.appUrl.startsWith('https://') || req.protocol === 'https';
     reply.header('Set-Cookie', `${COOKIE}=${token}; Path=/api/; HttpOnly; SameSite=Strict; Max-Age=${ttl}${secure ? '; Secure' : ''}`);
     reply.header('Cache-Control', 'private, no-store');
