@@ -5,72 +5,57 @@ import jwt from 'jsonwebtoken';
 import Fastify from 'fastify';
 import { config } from '../src/config.js';
 import { signToken } from '../src/lib/tokens.js';
-import { readSession, presentedSession, sessionActive } from '../src/auth/session.js';
-import { referencedFileIds } from '../src/files/access.js';
+import { installSessionGuard, readSession, presentedSession } from '../src/auth/session.js';
+import { installAssetAccess } from '../src/files/access.js';
 
-const uuid = '11111111-1111-4111-8111-111111111111';
+const id = '11111111-1111-4111-8111-111111111111';
+const user = { id, email: 'test@example.test', name: 'Test' };
 
-test('SSO path selects and embeds the current session_version (OIDC regression tripwire)', async () => {
+test('OIDC loads and signs the current session version', () => {
   const src = readFileSync(new URL('../src/auth/oidc.ts', import.meta.url), 'utf8');
-  assert.match(src, /session_version FROM users WHERE email/, 'OIDC callback must load session_version');
-  assert.match(src, /signToken\(\{\s*id: user\.id,\s*email: user\.email,\s*name: user\.name,\s*sessionVersion: user\.session_version\s*\}\)/, 'SSO token must carry sessionVersion');
-  // Runtime: a token built the way oidc.ts now builds it embeds ver the guard accepts.
-  const raw = signToken({ id: uuid, email: 's@example.test', name: 'S', sessionVersion: 3 });
-  assert.equal((jwt.decode(raw) as jwt.JwtPayload).ver, 3);
-  assert.equal(readSession(raw)?.version, 3);
+  assert.match(src, /session_version FROM users WHERE email/);
+  assert.match(src, /sessionVersion: user.session_version/);
+  assert.equal(readSession(signToken({ ...user, sessionVersion: 3 }))?.version, 3);
 });
 
-test('asset cookies carry ver + sid derived from the bearer token', async () => {
-  const raw = signToken({ id: uuid, email: 'a@example.test', name: 'A', sessionVersion: 2 });
-  const bearer = jwt.decode(raw) as jwt.JwtPayload;
-  // Mirror of installAssetAccess minting with the new claims.
-  const cookie = jwt.sign(
-    { kind: 'asset', ver: bearer.ver, sid: bearer.jti },
-    config.jwtSecret, { algorithm: 'HS256', subject: uuid, audience: 'set-assets', expiresIn: 300 },
-  );
-  const claims = jwt.verify(cookie, config.jwtSecret, { algorithms: ['HS256'], audience: 'set-assets' }) as jwt.JwtPayload;
-  assert.equal(claims.ver, 2, 'asset cookie must carry bearer session_version');
-  assert.equal(claims.sid, bearer.jti, 'asset cookie must carry bearer session id');
-  // access.ts must copy ver/sid from the bearer; revocation happens in the session guard's
-  // DB check on /api/files|captures (same tree), so asset routes stay DB-free at mint time.
-  const src = readFileSync(new URL('../src/files/access.ts', import.meta.url), 'utf8');
-  assert.match(src, /ver: decoded\?\.ver \?\? 0/, 'mint must copy bearer session_version');
-  assert.match(src, /sid: typeof decoded\?\.jti === 'string' \? decoded\.jti : undefined/, 'mint must copy bearer session id');
-  const guard = readFileSync(new URL('../src/auth/session.ts', import.meta.url), 'utf8');
-  assert.match(guard, /\^\\\/api\\\/\(files\|captures\)\\\//, 'guard must authenticate asset cookies on asset routes');
-  assert.match(guard, /sessionActive/, 'guard must enforce revocation');
-});
-
-test('asset cookie JWT without ver claim is rejected by the guard contract', () => {
-  const stale = jwt.sign({ kind: 'asset' }, config.jwtSecret, { algorithm: 'HS256', subject: uuid, audience: 'set-assets', expiresIn: 300 });
-  const claims = jwt.verify(stale, config.jwtSecret, { algorithms: ['HS256'], audience: 'set-assets' }) as jwt.JwtPayload;
-  // access.ts applies `value.ver ?? 0` then Integer checks — missing ver means version 0
-  const version = claims.ver ?? 0;
-  assert.equal(Number.isInteger(version) && version >= 0, true);
-});
-
-test('presentedSession never authenticates asset cookies on non-asset API paths', async () => {
-  const raw = signToken({ id: uuid, email: 'b@example.test', name: 'B', sessionVersion: 0 });
-  const cookieJwt = jwt.sign({ kind: 'asset', ver: 0 }, config.jwtSecret, { algorithm: 'HS256', subject: uuid, audience: 'set-assets', expiresIn: 300 });
+for (const legacy of [false, true]) test(`asset minting preserves bearer revocation identity (legacy=${legacy})`, async () => {
+  const raw = legacy ? jwt.sign(user, config.jwtSecret, { expiresIn: 300 }) : signToken({ ...user, sessionVersion: 2 });
+  const identity = readSession(raw)!;
+  let revoked = false;
   const app = Fastify();
-  app.get('/api/users/me', async (req) => ({ who: presentedSession(req) }));
+  installSessionGuard(app, async session => !revoked && session.version === identity.version && session.sessionId === identity.sessionId);
+  installAssetAccess(app, {
+    async find() { return null; },
+    async member() { return true; },
+    async shared() { return false; },
+  });
+  app.get('/api/test', async req => ({ session: presentedSession(req) }));
+  app.get(`/api/sessions/${id}/messages`, async () => ({ ok: true }));
   try {
-    const res = await app.inject({ url: '/api/users/me', headers: { cookie: `set_asset_session=${cookieJwt}` } });
-    assert.deepEqual(res.json().who, null);
+    const minted = await app.inject({ url: '/api/test', headers: { authorization: `Bearer ${raw}` } });
+    assert.equal(minted.statusCode, 200);
+    const cookie = String(minted.headers['set-cookie']).split(';')[0];
+    const assetIdentity = readSession(cookie.slice(cookie.indexOf('=') + 1), true)!;
+    assert.equal(assetIdentity.version, identity.version);
+    assert.equal(assetIdentity.sessionId, identity.sessionId);
+    assert.equal((await app.inject({ url: '/api/test', headers: { cookie } })).json().session, null);
+    // 404 means authentication passed and reached the empty asset store.
+    assert.equal((await app.inject({ url: `/api/files/${id}`, headers: { cookie } })).statusCode, 404);
+    revoked = true;
+    assert.equal((await app.inject({ url: `/api/files/${id}`, headers: { cookie } })).statusCode, 401);
+    assert.equal((await app.inject({ url: `/api/captures/${id}.png`, headers: { cookie } })).statusCode, 401);
+    assert.equal((await app.inject({ url: `/api/sessions/${id}/messages`, headers: { authorization: `Bearer ${raw}` } })).statusCode, 401);
   } finally { await app.close(); }
 });
 
-test('sessionActive is the shared revocation oracle and parses real sessions', async () => {
-  const raw = signToken({ id: uuid, email: 'c@example.test', name: 'C', sessionVersion: 2 });
-  const parsed = readSession(raw)!;
-  assert.equal(parsed.userId, uuid);
-  assert.equal(parsed.version, 2);
-  assert.ok(parsed.sessionId);
-  assert.equal(typeof sessionActive, 'function'); // DB revocation oracle; invoked by guard + asset path
-});
-
-test('asset markdown link extraction intact (sharing unaffected by access.ts edits)', () => {
-  const md = '![img](/api/files/22222222-2222-4222-8222-222222222222) and https://elsewhere.example/api/files/33333333-3333-4333-8333-333333333333';
-  const ids = referencedFileIds(md, 'https://set.example.test');
-  assert.deepEqual(ids, ['22222222-2222-4222-8222-222222222222']);
+test('revoked bearer does not block public probes or logout', async () => {
+  const app = Fastify();
+  installSessionGuard(app, async () => false);
+  app.get('/api/ready', async () => ({ ok: true }));
+  app.post('/api/auth/logout', async () => ({ ok: true }));
+  const headers = { authorization: `Bearer ${signToken(user)}` };
+  try {
+    assert.equal((await app.inject({ url: '/api/ready', headers })).statusCode, 200);
+    assert.equal((await app.inject({ method: 'POST', url: '/api/auth/logout', headers })).statusCode, 200);
+  } finally { await app.close(); }
 });

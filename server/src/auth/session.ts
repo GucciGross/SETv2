@@ -42,7 +42,6 @@ export function installSessionGuard(app: FastifyInstance, active = sessionActive
     if (path === '/health' || path === '/ready' || path === '/api/health' || path === '/api/ready' || path === '/api/meta') return;
     // An old bearer sent by the client must not prevent signing in again or resetting a password.
     if (/^\/api\/auth\/(login|register|forgot|reset|logout|oidc(?:\/.*)?)$/.test(path)) return;
-    if (/^\/api\/sessions\/[0-9a-f-]{36}(?:\/messages)?$/.test(path)) return; // requireResourceSpace already scopes by space membership
     const identity = presentedSession(req);
     if (!identity) return; // Existing route guards still reject missing/invalid credentials.
     try {

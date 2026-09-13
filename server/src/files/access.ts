@@ -6,6 +6,7 @@ import { config } from '../config.js';
 import { one } from '../db.js';
 import { getRole, getUser } from '../lib/http.js';
 import { verifyToken } from '../lib/tokens.js';
+import { readSession } from '../auth/session.js';
 
 const COOKIE = 'set_asset_session';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -100,7 +101,7 @@ export function installAssetAccess(app: FastifyInstance, store: AssetStore = def
     // Copy the bearer's ver/jti: installSessionGuard runs before this hook and has
     // already checked them against the database, so no extra query is needed here.
     const token = jwt.sign(
-      { kind: 'asset', ver: decoded?.ver ?? 0, sid: typeof decoded?.jti === 'string' ? decoded.jti : undefined },
+      { kind: 'asset', ver: decoded?.ver ?? 0, sid: readSession(raw)?.sessionId },
       config.jwtSecret, { algorithm: 'HS256', subject: user.id, audience: 'set-assets', expiresIn: ttl });
     const secure = config.appUrl.startsWith('https://') || req.protocol === 'https';
     reply.header('Set-Cookie', `${COOKIE}=${token}; Path=/api/; HttpOnly; SameSite=Strict; Max-Age=${ttl}${secure ? '; Secure' : ''}`);
