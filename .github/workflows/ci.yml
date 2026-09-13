@@ -6,9 +6,6 @@ permissions:
   contents: read
 jobs:
   server:
-    concurrency:
-      group: setv2-api-fixture
-      cancel-in-progress: false
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -70,9 +67,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
   web:
-    concurrency:
-      group: setv2-web-fixture
-      cancel-in-progress: false
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -143,9 +137,6 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   docker:
-    concurrency:
-      group: setv2-docker-fixture
-      cancel-in-progress: false
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 25
