@@ -32,7 +32,7 @@ async function createPersonalSpace(userId: string, name: string, database: Pick<
 export async function authRoutes(app: FastifyInstance) {
   app.post('/auth/register', async (req, reply) => {
     if (!config.registrationOpen) return reply.code(403).send({ error: 'Registration is closed on this server' });
-    if (await authRateLimited(req.routeOptions.url, req.ip)) return reply.code(429).send({ error: 'Too many attempts — try again in a minute' });
+    if (await authRateLimited(req.routeOptions.url ?? 'unknown', req.ip)) return reply.code(429).send({ error: 'Too many attempts — try again in a minute' });
     const parsed = creds.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid registration (password minimum 8 characters)' });
     const { email, name, password } = parsed.data;
@@ -53,7 +53,7 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.post('/auth/login', async (req, reply) => {
-    if (await authRateLimited(req.routeOptions.url, req.ip)) return reply.code(429).send({ error: 'Too many attempts — try again in a minute' });
+    if (await authRateLimited(req.routeOptions.url ?? 'unknown', req.ip)) return reply.code(429).send({ error: 'Too many attempts — try again in a minute' });
     const parsed = creds.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid credentials' });
     const { email, password } = parsed.data;
@@ -77,7 +77,7 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.post('/auth/forgot', async (req, reply) => {
-    if (await authRateLimited(req.routeOptions.url, req.ip, 5)) return reply.code(429).send({ error: 'Too many attempts' });
+    if (await authRateLimited(req.routeOptions.url ?? 'unknown', req.ip, 5)) return reply.code(429).send({ error: 'Too many attempts' });
     const body = z.object({ email: z.string().email() }).safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'Invalid email' });
     const user = await one<any>(`SELECT id, email, name FROM users WHERE email = $1`, [body.data.email.toLowerCase()]);
@@ -100,7 +100,7 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.post('/auth/reset', async (req, reply) => {
-    if (await authRateLimited(req.routeOptions.url, req.ip, 5)) return reply.code(429).send({ error: 'Too many attempts' });
+    if (await authRateLimited(req.routeOptions.url ?? 'unknown', req.ip, 5)) return reply.code(429).send({ error: 'Too many attempts' });
     const body = z.object({ token: z.string().min(32).max(256), password: z.string().min(8).max(200) }).safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'Invalid token or password (min 8 characters)' });
     const hash = crypto.createHash('sha256').update(body.data.token).digest('hex');

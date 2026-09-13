@@ -3,7 +3,8 @@ import { pool } from '../db.js';
 import { bus } from '../lib/events.js';
 
 export function installHealth(app: FastifyInstance, probe: () => Promise<boolean> = async () => {
-  await pool.query({ text: 'SELECT 1', query_timeout: 1500 });
+  const query = { text: 'SELECT 1', query_timeout: 1500 };
+  await pool.query(query);
   return bus.ready();
 }) {
   let started = false;
