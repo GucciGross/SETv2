@@ -6,6 +6,7 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './config.js';
+import { deploymentSettings, validatePublicDeployment } from './deployment.js';
 import { migrate } from './migrate.js';
 import { bus } from './lib/events.js';
 import { authRoutes } from './auth/routes.js';
@@ -46,7 +47,9 @@ import { billingRoutes } from './billing/routes.js';
 import { seed } from './seed.js';
 
 async function main() {
-  const app = Fastify({ logger: true, bodyLimit: 64 * 1024 * 1024, maxParamLength: 2048 });
+  validatePublicDeployment();
+  const deployment = deploymentSettings();
+  const app = Fastify({ logger: true, bodyLimit: 64 * 1024 * 1024, maxParamLength: 2048, trustProxy: deployment.trustProxy });
 
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/api/clip')) return;
@@ -60,7 +63,7 @@ async function main() {
     }
   });
 
-  await app.register(cors, { origin: config.webOrigin === '*' ? true : config.webOrigin.split(','), credentials: true });
+  await app.register(cors, { origin: config.webOrigin === '*' ? true : config.webOrigin.split(',').map(s => s.trim()), credentials: true });
   await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024 } });
   await app.register(websocket);
 
@@ -98,7 +101,8 @@ async function main() {
     await oidcRoutes(api);
     api.get('/meta', async () => {
       const { oidcEnabled } = await import('./auth/oidc.js');
-      return { version: '2.1.0', sso: { enabled: oidcEnabled(), name: config.oidc.displayName } };
+      const { edition, exposure, revision } = deployment;
+      return { version: '2.1.0', deployment: { edition, exposure, revision }, sso: { enabled: oidcEnabled(), name: config.oidc.displayName } };
     });
     await spaceRoutes(api);
     await onboardingRoutes(api);
