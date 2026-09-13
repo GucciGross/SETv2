@@ -2,8 +2,11 @@ name: CI
 on:
   push: { branches: [main] }
   pull_request:
+permissions:
+  contents: read
 jobs:
   server:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -15,6 +18,7 @@ jobs:
           --health-cmd "pg_isready -U set" --health-interval 5s --health-timeout 3s --health-retries 20
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
       - run: npm ci
@@ -33,16 +37,28 @@ jobs:
         working-directory: server
       - name: Install native browser test dependencies
         run: |
+          python3 -m venv "$RUNNER_TEMP/set-python-${{ github.run_id }}-${{ github.job }}"
+          export PATH="$RUNNER_TEMP/set-python-${{ github.run_id }}-${{ github.job }}/bin:$PATH"
+          echo "$RUNNER_TEMP/set-python-${{ github.run_id }}-${{ github.job }}/bin" >> "$GITHUB_PATH"
           python3 -m pip install playwright==1.57.0
           python3 -m playwright install --with-deps chromium
       - name: Smoke suites (API + MCP + H5P)
+        working-directory: server
         run: |
-          DATABASE_URL=postgres://set:set@localhost:5432/set SEED_DEMO=1 DATA_DIR=./data node dist/index.js &
-          sleep 15
+          set -euo pipefail
+          export DATABASE_URL=postgres://set:set@localhost:5432/set
+          export DATA_DIR="$RUNNER_TEMP/set-api-data-${{ github.run_id }}"
+          SEED_DEMO=1 node dist/index.js > "$RUNNER_TEMP/set-api-${{ github.run_id }}.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:4000/health > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:4000/health > /dev/null
           node smoke.mjs
           node mcp-smoke.mjs
-          DATABASE_URL=postgres://set:set@localhost:5432/set DATA_DIR=./data H5P_TEST_DATABASE=1 H5P_BROWSER_TEST=1 node h5p-smoke.mjs
-        working-directory: server
+          H5P_TEST_DATABASE=1 H5P_BROWSER_TEST=1 node h5p-smoke.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -51,10 +67,12 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
   web:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
       - run: npm ci
@@ -67,6 +85,9 @@ jobs:
         working-directory: web
       - name: Install Copilot browser regression dependencies
         run: |
+          python3 -m venv "$RUNNER_TEMP/set-python-${{ github.run_id }}-${{ github.job }}"
+          export PATH="$RUNNER_TEMP/set-python-${{ github.run_id }}-${{ github.job }}/bin:$PATH"
+          echo "$RUNNER_TEMP/set-python-${{ github.run_id }}-${{ github.job }}/bin" >> "$GITHUB_PATH"
           python3 -m pip install playwright==1.57.0
           python3 -m playwright install --with-deps chromium webkit
           sudo apt-get update
@@ -86,10 +107,6 @@ jobs:
           python3 scripts/copilot-approval-smoke.py
           python3 scripts/copilot-controls-smoke.py
           python3 scripts/viewport-layout-smoke.py
-          # Headless Chrome destroys WebGPU devices when a canvas presents, so
-          # the orb shader test needs a real (virtual) display to render into,
-          # and its software Vulkan adapter lives in the Playwright chromium
-          # build rather than stable Chrome.
           xvfb-run -a env SET_BROWSER_HEADED=1 SET_BROWSER_CHANNEL=chromium python3 scripts/voice-orb-smoke.py
       - uses: actions/upload-artifact@v4
         if: always()
@@ -112,7 +129,6 @@ jobs:
           path: /tmp/voice-orb
           if-no-files-found: ignore
           retention-days: 3
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -120,12 +136,13 @@ jobs:
           path: /tmp/viewport-layout
           if-no-files-found: error
           retention-days: 7
-
   docker:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }
       - name: Build server image
         run: docker build -t set-server ./server
       - name: Build web image
@@ -134,14 +151,17 @@ jobs:
         run: |
           docker compose config --quiet
           docker compose -f docker-compose.yml -f docker-compose.codex.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.hosted.yml config --quiet
           docker compose -f docker-compose.yml -f docker-compose.cloud.yml config --quiet
       - name: Validate the optional self-hosted Codex image without credentials
         run: |
           docker build --target codex-self-hosted -t set-server-codex ./server
           docker run --rm -v "$PWD/server/scripts:/app/scripts:ro" --entrypoint node set-server-codex scripts/codex-cli-smoke.mjs
-
       - name: Install deployed-browser test dependencies
         run: |
+          python3 -m venv "$RUNNER_TEMP/set-python-${{ github.run_id }}-${{ github.job }}"
+          export PATH="$RUNNER_TEMP/set-python-${{ github.run_id }}-${{ github.job }}/bin:$PATH"
+          echo "$RUNNER_TEMP/set-python-${{ github.run_id }}-${{ github.job }}/bin" >> "$GITHUB_PATH"
           python3 -m pip install playwright==1.57.0
           python3 -m playwright install --with-deps chromium
       - name: Exercise the built deployment through HTTP and HTTPS Nginx
@@ -150,13 +170,10 @@ jobs:
           compose=(docker compose -p set-h5p-regression -f server/test/h5p-compose.yml)
           trap '"${compose[@]}" down -v' EXIT
           if ! "${compose[@]}" up -d --wait --wait-timeout 120; then
-            # Startup only: no browser launch capabilities have been issued.
             "${compose[@]}" logs --no-color
             exit 1
           fi
           H5P_TEST_DATABASE=1 H5P_BROWSER_ARTIFACTS=/tmp/h5p-deployment/http python3 server/h5p-deployment-smoke.py
-          # Recreate the server, keeping its real persistent volume. Provisioning must be
-          # offline, idempotent and preserve existing content/library bytes.
           "${compose[@]}" exec -T server sh -c 'find /app/data/h5p/spaces /app/data/h5p/libraries -type f -exec sha256sum {} + | sort' > /tmp/h5p-before.txt
           "${compose[@]}" up -d --force-recreate --no-deps --wait --wait-timeout 120 server
           "${compose[@]}" exec -T server sh -c 'find /app/data/h5p/spaces /app/data/h5p/libraries -type f -exec sha256sum {} + | sort' > /tmp/h5p-after.txt

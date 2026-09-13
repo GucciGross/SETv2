@@ -119,21 +119,21 @@ export async function oidcRoutes(app: FastifyInstance) {
     const email = info.email.toLowerCase();
 
     // find-or-provision by email; SSO accounts get an unguessable password
-    let user = await one<{ id: string; email: string; name: string }>(
-      `SELECT id, email, name FROM users WHERE email = $1`,
+    let user = await one<{ id: string; email: string; name: string; session_version: number }>(
+      `SELECT id, email, name, session_version FROM users WHERE email = $1`,
       [email]
     );
     if (!user) {
-      user = await one<{ id: string; email: string; name: string }>(
+      user = await one<{ id: string; email: string; name: string; session_version: number }>(
         `INSERT INTO users (email, name, password_hash, onboarding)
-         VALUES ($1, $2, $3, '{"via":"sso"}'::jsonb) RETURNING id, email, name`,
+         VALUES ($1, $2, $3, '{"via":"sso"}'::jsonb) RETURNING id, email, name, session_version`,
         [email, info.name ?? email.split('@')[0], await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10)]
       );
       if (user) await createPersonalSpace(user.id, user.name);
     }
     if (!user) return fail('provisioning_failed');
 
-    const jwt = signToken({ id: user.id, email: user.email, name: user.name });
+    const jwt = signToken({ id: user.id, email: user.email, name: user.name, sessionVersion: user.session_version });
     return reply.redirect(`${config.appUrl.replace(/\/+$/, '')}/login?set_token=${jwt}`);
   });
 }

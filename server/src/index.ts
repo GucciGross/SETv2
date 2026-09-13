@@ -2,15 +2,17 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import websocket from '@fastify/websocket';
-import path from 'node:path';
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './config.js';
+import { pool } from './db.js';
 import { deploymentSettings, validatePublicDeployment } from './deployment.js';
 import { migrate } from './migrate.js';
 import { bus } from './lib/events.js';
 import { authRoutes } from './auth/routes.js';
 import { oidcRoutes } from './auth/oidc.js';
+import { installSessionGuard } from './auth/session.js';
+import { installRequestScope } from './security/request-scope.js';
+import { installHealth } from './ops/health.js';
 import { spaceRoutes } from './spaces/routes.js';
 import { pageRoutes } from './pages/routes.js';
 import { databaseRoutes, pathRoutes } from './databases/routes.js';
@@ -36,7 +38,7 @@ import { activityRoutes } from './team/activity.js';
 import { importZipRoutes } from './team/importZip.js';
 import { codegraphRoutes } from './team/codegraph.js';
 import { mcpRoutes } from './mcp/routes.js';
-import { skillsRoutes, seedSkills, getActiveSkillPrompt } from './skills/routes.js';
+import { skillsRoutes } from './skills/routes.js';
 import { onboardingRoutes } from './onboarding/routes.js';
 import { copilotKitRoutes } from './copilotkit/route.js';
 import { copilotVoiceRoutes } from './copilotkit/voice.js';
@@ -50,7 +52,16 @@ import { seed } from './seed.js';
 async function main() {
   validatePublicDeployment();
   const deployment = deploymentSettings();
-  const app = Fastify({ logger: true, bodyLimit: 64 * 1024 * 1024, maxParamLength: 2048, trustProxy: deployment.trustProxy });
+  const app = Fastify({
+    logger: {
+      redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
+      serializers: { req(req) { return { method: req.method, url: String(req.url || '').split('?')[0].replace(/(\/api\/(?:h5p\/runtime|share)\/)[^/]+/g, '$1[redacted]'), remoteAddress: req.ip }; } },
+    },
+    bodyLimit: 64 * 1024 * 1024, maxParamLength: 2048, trustProxy: deployment.trustProxy,
+  });
+  const health = installHealth(app);
+  installSessionGuard(app);
+  installRequestScope(app);
 
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/api/clip')) return;
@@ -58,12 +69,8 @@ async function main() {
     reply.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
     reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
     reply.header('Vary', 'Origin');
-    if (req.method === 'OPTIONS') {
-      reply.code(204).send();
-      return reply;
-    }
+    if (req.method === 'OPTIONS') return reply.code(204).send();
   });
-
   await app.register(cors, { origin: config.webOrigin === '*' ? true : config.webOrigin.split(',').map(s => s.trim()), credentials: true });
   await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024 } });
   await app.register(websocket);
@@ -73,22 +80,15 @@ async function main() {
     const text = body as string;
     (req as any).rawBody = text ?? '';
     if (!text?.trim()) return done(null, undefined);
-    try {
-      done(null, JSON.parse(text));
-    } catch (err: any) {
-      err.statusCode = 400;
-      done(err);
-    }
+    try { done(null, JSON.parse(text)); }
+    catch (err: any) { err.statusCode = 400; done(err); }
   });
-
-  app.get('/health', async () => ({ ok: true, name: 'SET', version: '2.1.0' }));
-
   await app.register(clipRoutes, { prefix: '/api' });
-
   await app.register(async (api) => {
     await authRoutes(api);
     await oidcRoutes(api);
-    api.get('/meta', async () => {
+    api.get('/meta', async (_req, reply) => {
+      reply.header('Cache-Control', 'no-store');
       const { oidcEnabled } = await import('./auth/oidc.js');
       const { edition, exposure, revision } = deployment;
       return { version: '2.1.0', deployment: { edition, exposure, revision }, sso: { enabled: oidcEnabled(), name: config.oidc.displayName } };
@@ -137,24 +137,31 @@ async function main() {
   if (config.seedDemo) await seed();
   const { initBriefScheduler } = await import('./study/briefScheduler.js');
   initBriefScheduler();
-
   const { provisionBundledLibraries } = await import('./h5p/bundle.js');
   const bundle = await provisionBundledLibraries(join(config.dataDir, 'h5p', 'libraries'));
   console.log(`[H5P] ${bundle.contentTypes} bundled content types; ${bundle.changed.length} library versions installed or repaired`);
   await app.listen({ port: config.port, host: config.host });
+  health.started();
   console.log(`[SET] server listening on :${config.port}`);
 
   const { telemetry } = await import('./telemetry/index.js');
   telemetry.init(config.dataDir);
-  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-    process.once(sig, () => {
-      telemetry.stop();
-      void telemetry.flush();
-    });
-  }
+  let stopping = false;
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) process.once(sig, async () => {
+    if (stopping) return;
+    stopping = true;
+    health.drain();
+    telemetry.stop();
+    const deadline = setTimeout(() => process.exit(1), 30_000);
+    deadline.unref();
+    try {
+      await app.close(); // Drain requests and close WebSockets/Codex via existing hooks.
+      await telemetry.flush();
+      bus.close();
+      await pool.end();
+      clearTimeout(deadline);
+      process.exit(0);
+    } catch { process.exit(1); }
+  });
 }
-
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+main().catch((e) => { console.error(e); process.exit(1); });
