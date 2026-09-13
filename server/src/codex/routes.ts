@@ -4,7 +4,7 @@ import { codexOAuthEnabled, CodexError } from './policy.js';
 import { codexSessions } from './service.js';
 
 /** No generic RPC endpoint, imported token, client ID, or client-selected user/home. */
-export async function codexRoutes(app: FastifyInstance, sessions: Pick<typeof codexSessions, 'status' | 'login' | 'cancelLogin' | 'disconnect' | 'select' | 'close'> = codexSessions) {
+export async function codexRoutes(app: FastifyInstance, sessions: Pick<typeof codexSessions, 'status' | 'login' | 'cancelLogin' | 'disconnect' | 'select' | 'models' | 'selectModel' | 'close'> = codexSessions) {
   await app.register(async api => {
     api.addHook('preHandler', async (req: FastifyRequest, reply: FastifyReply) => {
       reply.header('Cache-Control', 'no-store');
@@ -35,6 +35,11 @@ export async function codexRoutes(app: FastifyInstance, sessions: Pick<typeof co
       type: 'object', required: ['enabled'], additionalProperties: false,
       properties: { enabled: { type: 'boolean' } },
     } } }, async req => sessions.select(req.user!.id, (req.body as { enabled: boolean }).enabled));
+    api.get('/models', async req => sessions.models(req.user!.id));
+    api.put('/model', { schema: { body: {
+      type: 'object', required: ['model'], additionalProperties: false,
+      properties: { model: { type: ['string', 'null'], minLength: 1, maxLength: 120 } },
+    } } }, async req => sessions.selectModel(req.user!.id, (req.body as { model: string | null }).model));
   }, { prefix: '/codex' });
   app.addHook('onClose', async () => sessions.close());
 }

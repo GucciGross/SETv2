@@ -45,7 +45,9 @@ interface Session {
   loginError?: string;
 }
 
-/** Personal, bounded process pool. Workspace provider records never contain subscription credentials. */
+export interface CodexModelChoice { id: string; displayName: string; description: string; isDefault: boolean; hidden: boolean }
+
+/** Live model/list catalog per user. Selection validates against it, never against a hardcoded list. */
 export class CodexSessions {
   private sessions = new Map<string, Promise<Session>>();
   private disconnecting = new Set<string>();
@@ -138,25 +140,69 @@ export class CodexSessions {
     try { return await action(); } finally { this.mutations.delete(userId); }
   }
 
-  async selected(userId: string): Promise<boolean> {
-    if (!codexOAuthEnabled()) return false;
+  private async readSelection(home: string): Promise<{ enabled: boolean; model: string | null }> {
+    const file = join(home, 'selection.json');
     try {
-      const file = join(userDirectory(this.dataDir, userId), 'selection.json');
       const st = await lstat(file);
       if (!st.isFile() || st.isSymbolicLink() || st.size > 1024) throw new Error('Unsafe selection file');
-      return JSON.parse(await readFile(file, 'utf8')).enabled === true;
+      const raw = JSON.parse(await readFile(file, 'utf8'));
+      if (!raw || Array.isArray(raw) || typeof raw.enabled !== 'boolean' ||
+          (raw.model != null && (typeof raw.model !== 'string' || !raw.model.trim() || raw.model.length > 120))) throw new Error('Invalid selection file');
+      return { enabled: raw.enabled, model: raw.model ?? null };
     } catch (error: any) {
-      if (error?.code === 'ENOENT') return false;
+      if (error?.code === 'ENOENT') return { enabled: false, model: null };
       throw new CodexError(500, 'Could not read the personal Codex preference. No provider fallback was attempted.');
     }
   }
 
-  private async saveSelection(home: string, enabled: boolean) {
+  async selected(userId: string): Promise<boolean> {
+    if (!codexOAuthEnabled()) return false;
+    return (await this.readSelection(userDirectory(this.dataDir, userId))).enabled;
+  }
+
+  /** The saved model id, or null when unset (the CLI default applies). */
+  async selectedModelId(userId: string): Promise<string | null> {
+    if (!codexOAuthEnabled()) return null;
+    return (await this.readSelection(userDirectory(this.dataDir, userId))).model;
+  }
+
+  private async saveSelection(home: string, enabled: boolean, model: string | null) {
     const file = join(home, `selection-${randomUUID()}.tmp`);
     try {
-      await writeFile(file, JSON.stringify({ enabled }), { mode: 0o600, flag: 'wx' });
+      await writeFile(file, JSON.stringify(model ? { enabled, model } : { enabled }), { mode: 0o600, flag: 'wx' });
       await rename(file, join(home, 'selection.json'));
     } finally { await rm(file, { force: true }); }
+  }
+
+  /** One sanitized page of the live app-server model catalog. Bounded, no raw RPC passthrough. */
+  async models(userId: string): Promise<{ models: CodexModelChoice[]; selectedModel: string | null }> {
+    const s = await this.get(userId);
+    const list = await this.exclusive(s, async () => this.listModels(s));
+    return { models: list.map(({ model, ...choice }) => choice), selectedModel: await this.selectedModelId(userId) };
+  }
+
+  private async listModels(s: Session): Promise<(CodexModelChoice & { model: string })[]> {
+    const sanitize = (value: any): (CodexModelChoice & { model: string }) | null => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      const id = typeof value.id === 'string' ? value.id : '';
+      if (!id || id.length > 120 || typeof value.model !== 'string' || !value.model.trim() || value.model.length > 120) return null;
+      const text = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
+      return { id, model: value.model, displayName: text(value.displayName, 120) || id, description: text(value.description, 400), isDefault: value.isDefault === true, hidden: value.hidden === true };
+    };
+    const seen = new Set<string>();
+    const models: (CodexModelChoice & { model: string })[] = [];
+    // ponytail: 5-page cap trusts the CLI not to loop a cursor forever; tighten only if upstream misbehaves.
+    for (let pages = 0, cursor: string | null = null; pages < 5; pages++) {
+      const page: any = await s.rpc.request('model/list', cursor ? { cursor } : {});
+      if (!page || !Array.isArray(page.data)) throw new CodexError(502, 'Codex returned an unreadable model catalog.');
+      for (const raw of page.data) {
+        const model = sanitize(raw);
+        if (model && !seen.has(model.id)) { seen.add(model.id); models.push(model); }
+      }
+      cursor = typeof page.nextCursor === 'string' && page.nextCursor ? page.nextCursor : null;
+      if (!cursor) return models;
+    }
+    return models;
   }
 
   async status(userId: string) {
@@ -165,6 +211,7 @@ export class CodexSessions {
     const a = info?.account;
     return {
       available: true, connected: a?.type === 'chatgpt', selected: await this.selected(userId), busy: s.busy || !!s.voice,
+      selectedModel: await this.selectedModelId(userId),
       account: a?.type === 'chatgpt' ? {
         email: typeof a.email === 'string' ? a.email.slice(0, 254) : '',
         planType: typeof a.planType === 'string' ? a.planType.slice(0, 60) : '',
@@ -215,7 +262,8 @@ export class CodexSessions {
       requireCodexOAuth();
       const current = await this.sessions.get(userId);
       if (current?.busy || current?.voice || current?.locked || this.disconnecting.has(userId)) throw new CodexError(409, 'Stop the current Codex operation before switching providers.');
-      await this.saveSelection(await this.storage(userId), false);
+      const home = await this.storage(userId);
+      await this.saveSelection(home, false, (await this.readSelection(home)).model);
       return { selected: false };
     }
     const s = await this.get(userId);
@@ -224,9 +272,30 @@ export class CodexSessions {
       if ((await s.rpc.request('account/read', { refreshToken: false }))?.account?.type !== 'chatgpt') {
         throw new CodexError(409, 'Sign in with ChatGPT before selecting Codex for Copilot.');
       }
-      await this.saveSelection(s.home, true);
+      const saved = await this.readSelection(s.home);
+      await this.saveSelection(s.home, true, saved.model);
     });
     return { selected: true };
+  }
+
+  /** Pick a model for future Copilot runs. Membership is checked against the live catalog, never a local copy. */
+  async selectModel(userId: string, modelId: string | null): Promise<{ selectedModel: string | null }> {
+    return this.mutate(userId, () => this.selectModelImpl(userId, modelId));
+  }
+
+  private async selectModelImpl(userId: string, modelId: string | null) {
+    const id = modelId;
+    if (id !== null && (typeof id !== 'string' || !id.trim() || id.length > 120)) throw new CodexError(400, 'Choose a model from the list.');
+    const s = await this.get(userId);
+    await this.exclusive(s, async () => {
+      if (s.busy || s.voice || s.login) throw new CodexError(409, 'Stop the current Codex run before changing the model.');
+      if ((await s.rpc.request('account/read', { refreshToken: false }))?.account?.type !== 'chatgpt') {
+        throw new CodexError(409, 'Sign in with ChatGPT before choosing a Codex model.');
+      }
+      if (id !== null && !(await this.listModels(s)).some(m => m.id === id)) throw new CodexError(400, 'Choose a model from the list. That model is not in your account catalog.');
+      await this.saveSelection(s.home, (await this.readSelection(s.home)).enabled, id);
+    });
+    return { selectedModel: id };
   }
 
   async disconnect(userId: string) {
@@ -235,7 +304,7 @@ export class CodexSessions {
     this.disconnecting.add(userId);
     try {
       const home = await this.storage(userId);
-      await this.saveSelection(home, false);
+      await this.saveSelection(home, false, null);
       const promise = this.sessions.get(userId);
       const s = await promise?.catch(() => null);
       if (s) {
@@ -267,11 +336,14 @@ export class CodexSessions {
       if ((await s.rpc.request('account/read', { refreshToken: false }))?.account?.type !== 'chatgpt') {
         throw new CodexError(409, 'Your selected Codex account needs sign-in. Reconnect in Settings.');
       }
+      const id = await this.selectedModelId(userId);
+      const model = id === null ? undefined : (await this.listModels(s)).find(m => m.id === id)?.model;
+      if (id !== null && !model) throw new CodexError(409, 'Your saved Codex model is no longer available. Choose a model in Settings.');
       s.busy = true;
       const bridge = new CodexBridge(s.rpc, s.workDir, healthy => {
         s.busy = false; s.bridge = undefined; s.touched = Date.now();
         if (!healthy) s.rpc.stop();
-      });
+      }, model);
       s.bridge = bridge;
       return bridge;
     });

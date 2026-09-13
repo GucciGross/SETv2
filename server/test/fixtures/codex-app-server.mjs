@@ -29,8 +29,16 @@ for await (const line of createInterface({ input: process.stdin })) {
       process.stdout.write(JSON.stringify({ id: m.id, result }) + '\n' + JSON.stringify({ method: 'account/login/completed', params: { loginId: 'login', success: true } }) + '\n');
     }
   } else if (m.method === 'account/logout') { rmSync(auth, { force: true }); reply({}); }
+ else if (m.method === 'model/list') {
+   const cursor = m.params?.cursor != null ? String(m.params.cursor) : '';
+   const file = cursor ? join(home, `fixture-models-${cursor}`) : join(home, 'fixture-models');
+   let page = { data: [], nextCursor: null };
+   try { page = JSON.parse(readFileSync(file, 'utf8')); } catch {}
+   reply(page);
+ }
   else if (m.method === 'account/login/cancel') reply({ status: 'cancelled' });
   else if (m.method === 'thread/start') {
+    if (m.params.sandbox !== 'read-only') { process.stdout.write(JSON.stringify({ id: m.id, error: { code: -32600, message: 'thread/start sandbox must use the CLI wire enum read-only' } }) + '\n'); continue; }
     thread = 'thread'; tool = m.params.dynamicTools[0]?.name;
     writeFileSync(join(home, 'fixture-thread.json'), JSON.stringify(m.params));
     reply({ thread: { id: thread } });
