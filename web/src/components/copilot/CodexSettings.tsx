@@ -8,7 +8,10 @@ interface Status {
   account: { email: string; planType: string } | null;
   login: { userCode: string; verificationUrl: string } | null;
   error: string | null;
+  selectedModel: string | null;
 }
+
+interface ModelPage { models: { id: string; displayName: string; description: string; isDefault: boolean; hidden: boolean }[]; selectedModel: string | null; }
 
 /** A personal Copilot backend, not a workspace-shared API provider. */
 export default function CodexSettings() {
@@ -22,17 +25,28 @@ export default function CodexSettings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const mounted = useRef(true);
+  const [modelPage, setModelPage] = useState<ModelPage | null>(null);
+  const [modelError, setModelError] = useState(false);
+
+  const loadModels = async (current: number) => {
+    setModelError(false);
+    try {
+      const page = await api.get<ModelPage>('/codex/models');
+      if (mounted.current && current === generation.current) setModelPage(page);
+    } catch { if (mounted.current && current === generation.current) setModelError(true); }
+  };
 
   useEffect(() => {
     let active = true; mounted.current = true; generation.current++;
     setAvailable(false); setStatus(null); setBusy(false); setError(''); setLoading(true); setDeploymentMode('');
+    setModelPage(null); setModelError(false);
     void api.get('/codex/capabilities').then(async result => {
       if (!active) return;
       setDeploymentMode(result.deploymentMode ?? '');
       if (result.available !== true) return;
       setAvailable(true);
       const next = await api.get<Status>('/codex/account');
-      if (active) setStatus(next);
+      if (active) { setStatus(next); void loadModels(generation.current); }
     }).catch(() => { if (active) setError('The personal Codex connection could not be loaded. Check the server installation.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; mounted.current = false; generation.current++; };
@@ -62,7 +76,7 @@ export default function CodexSettings() {
     try {
       const next = await fn();
       if (mounted.current && current === generation.current) {
-        if (next) setStatus(value => ({ connected: false, selected: false, busy: false, account: null, login: null, error: null, ...value, ...next }));
+        if (next) setStatus(value => ({ connected: false, selected: false, busy: false, account: null, login: null, error: null, selectedModel: null, ...value, ...next } as Status));
         window.dispatchEvent(new Event(AI_CONNECTION_CHANGED));
       }
     } catch (e: any) {
@@ -125,9 +139,28 @@ export default function CodexSettings() {
             Use Codex for my Copilot
           </label>
           <p className="text-xs text-set-dim">This applies only to your account. Other members keep their own provider choices.</p>
+          {status.selected && (modelPage
+            ? <label className="flex flex-wrap items-center gap-2 text-sm text-set-text min-h-11">
+                <span>Model</span>
+                <select className="set-input text-sm min-h-11" value={modelPage.selectedModel ?? ''} disabled={busy || loading || status.busy}
+                  onChange={e => {
+                    const model = e.target.value || null;
+                    setModelPage(page => page ? { ...page, selectedModel: model } : page);
+                    void action(async () => {
+                      const next = await api.put<{ selectedModel: string | null }>('/codex/model', { model: e.target.value });
+                      setModelPage(page => page ? { ...page, selectedModel: next.selectedModel } : page);
+                    });
+                  }}>
+                  <option value="">CLI default{modelPage.models.some(m => m.isDefault) ? '' : ''}</option>
+                  {modelPage.models.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
+                </select>
+              </label>
+            : <p role="status" className="text-xs text-set-dim">{modelError
+                ? <button type="button" className="set-btn text-xs min-h-9" disabled={busy} onClick={() => void loadModels(generation.current)}>Could not load models. Retry</button>
+                : 'Loading models…'}</p>)}
           <button className="set-btn-ghost text-sm min-h-11" disabled={busy || loading} onClick={() => void action(async () => {
             await api.post('/codex/logout', {});
-            return { connected: false, selected: false, busy: false, account: null, login: null, error: null };
+            return { connected: false, selected: false, busy: false, account: null, login: null, error: null, selectedModel: null };
           })}>Disconnect Codex</button>
         </div>
       ) : (
