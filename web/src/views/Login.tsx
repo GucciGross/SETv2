@@ -49,8 +49,11 @@ export default function Login() {
   }, [params, setParams, navigate]);
 
   useEffect(() => {
-    api.get('/meta').then((r) => setSso(r.sso)).catch(() => {});
-    api.get('/meta').then((r) => setPreview(!!r.privatePreview)).catch(() => {});
+    api.get('/meta').then((r) => {
+      setSso(r.sso);
+      setPreview(!!r.privatePreview);
+      if (r.privatePreview) setMode('login');
+    }).catch(() => {});
   }, []);
 
   const submit = async (e: React.FormEvent) => {
@@ -135,7 +138,7 @@ export default function Login() {
             {/* sliding segmented control */}
             <div className="relative flex rounded-xl border border-set-border/60 bg-set-panel2/60 p-1">
               <span
-                className={`absolute bottom-1 top-1 left-1 w-[calc(50%-4px)] rounded-lg bg-set-accent shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_2px_10px_-2px_rgb(108_140_255/0.7)] transition-transform duration-300 ease-out ${mode === 'register' ? 'translate-x-full' : ''}`}
+                className={`absolute bottom-1 top-1 left-1 ${preview ? 'w-[calc(100%-8px)]' : 'w-[calc(50%-4px)]'} rounded-lg bg-set-accent shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_2px_10px_-2px_rgb(108_140_255/0.7)] transition-transform duration-300 ease-out ${mode === 'register' ? 'translate-x-full' : ''}`}
                 aria-hidden
               />
               {(['login', 'register'] as const)

@@ -61,12 +61,9 @@ export async function authRoutes(app: FastifyInstance) {
     const { email, password } = parsed.data;
     const user = await one<{ id: string; email: string; name: string; password_hash: string; mascot: any; onboarding: any; session_version: number }>(
       `SELECT id, email, name, password_hash, mascot, onboarding, session_version FROM users WHERE email = $1`, [email.toLowerCase()]);
-    if (!user) {
-      // Preview: do not hint which emails exist — steer everyone to self-host.
-      if (previewEnabled()) return reply.code(401).send({ error: CLOUD_NOT_READY });
-      return reply.code(401).send({ error: 'Invalid email or password' });
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      return reply.code(401).send({ error: previewEnabled() ? CLOUD_NOT_READY : 'Invalid email or password' });
     }
-    if (!(await bcrypt.compare(password, user.password_hash))) return reply.code(401).send({ error: 'Invalid email or password' });
     return {
       token: signToken({ id: user.id, email: user.email, name: user.name, sessionVersion: user.session_version }),
       user: { id: user.id, email: user.email, name: user.name, mascot: user.mascot ?? null, onboarding: user.onboarding ?? {} },
