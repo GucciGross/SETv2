@@ -5,6 +5,8 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  /** Server-computed from users.is_site_admin; never client-settable. */
+  isSiteAdmin?: boolean;
 }
 export interface Space {
   id: string;

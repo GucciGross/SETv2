@@ -12,7 +12,6 @@ import { authRateLimited } from './rate-limit.js';
 import { presentedSession, revokeSession } from './session.js';
 import { deploymentSettings } from '../deployment.js';
 import { previewEnabled, CLOUD_NOT_READY } from './preview.js';
-import { SiteAdminRequiredError } from '../spaces/invite.js';
 
 const creds = z.object({
   email: z.string().email(),

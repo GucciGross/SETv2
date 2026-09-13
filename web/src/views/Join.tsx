@@ -12,15 +12,15 @@ export default function Join() {
   const [state, setState] = useState<'working' | 'done' | 'error' | 'missing'>('working');
   const [error, setError] = useState('');
   const [spaceName, setSpaceName] = useState('');
-  const [loginPath, setLoginPath] = useState('/login');
   const started = useRef(false);
-
   // Private preview: /login renders the public self-host page, so the sign-in
-  // handoff goes to the unlinked private route instead.
+  // handoff goes to the unlinked private route. Resolved before any navigation
+  // (both effects wait on this promise) so Join never lands on the wrong page.
+  const loginPathRef = useRef<Promise<string>>(Promise.resolve('/login'));
   useEffect(() => {
-    api.get('/meta').then((r) => {
-      if (r.privatePreview) setLoginPath('/private/login');
-    }).catch(() => {});
+    loginPathRef.current = api.get('/meta')
+      .then((r) => (r.privatePreview ? '/private/login' : '/login'))
+      .catch(() => '/login');
   }, []);
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export default function Join() {
     if (!getToken()) {
       // stash the invite so Login can route back here after auth
       sessionStorage.setItem('set_join_token', token);
-      navigate(loginPath);
+      void loginPathRef.current.then((path) => navigate(path));
       return;
     }
     if (started.current) return;
@@ -47,7 +47,7 @@ export default function Join() {
         setState('error');
       }
     })();
-  }, [token, navigate, loginPath]);
+  }, [token, navigate]);
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-set-bg via-[#101422] to-[#141126]">
@@ -73,10 +73,18 @@ export default function Join() {
             <Mascot config={{ ...DEFAULT_MASCOT, species: 'ghost' }} mood="idle" size={90} />
             <h1 className="text-xl font-bold text-white">{state === 'missing' ? 'Missing invite token' : 'Invite not accepted'}</h1>
             <p className="text-sm text-red-400">{state === 'missing' ? 'Open the invite link from your email, or ask the workspace owner to resend it.' : error}</p>
-            <a href={loginPath} className="set-btn inline-block text-sm">Go to sign in</a>
+            <GoToSignIn />
           </>
         )}
       </div>
     </div>
   );
+}
+
+function GoToSignIn() {
+  const [path, setPath] = useState('/login');
+  useEffect(() => {
+    api.get('/meta').then((r) => { if (r.privatePreview) setPath('/private/login'); }).catch(() => {});
+  }, []);
+  return <a href={path} className="set-btn inline-block text-sm">Go to sign in</a>;
 }

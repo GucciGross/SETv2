@@ -36,7 +36,13 @@ export default function Reset() {
     setMsg('');
     try {
       await api.post('/auth/reset', { token, password });
-      navigate(loginPath);
+      // Navigation waits for the async meta probe: in private preview /login is
+      // the public self-host page, so the sign-in route is /private/login.
+      // Navigating before meta resolves lands fresh teammates on the wrong page.
+      api.get('/meta')
+        .then((r) => (r.privatePreview ? '/private/login' : '/login'))
+        .then((path) => navigate(path))
+        .catch(() => navigate('/login'));
     } catch (err: any) {
       setMsg(err.message);
     } finally {
