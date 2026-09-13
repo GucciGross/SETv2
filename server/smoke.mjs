@@ -67,7 +67,7 @@ const richSaved = richFetched.markdown;
 check('rich md: serialized back to pipes', richSaved.includes('| A | B |') && richSaved.includes(':---'));
 await call('DELETE', `/pages/${richPage.id}`);
 
-// 5c. file upload + serve (multipart)
+// 5c. file upload + authenticated serve (multipart); UUID secrecy is not authorization.
 const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 const pngBuffer = Buffer.from(pngBase64, 'base64');
 const fd = new FormData();
@@ -80,9 +80,17 @@ const up = await fetch(`${BASE}/spaces/${team.id}/files`, {
 const upJson = await up.json();
 check('file upload', up.status === 200 && upJson.files?.length === 1);
 const fileId = upJson.files?.[0]?.id;
-const served = await fetch(`${BASE}/files/${fileId}`);
+const anonymousFile = await fetch(`${BASE}/files/${fileId}`);
+check('private file rejects anonymous download', anonymousFile.status === 401);
+await anonymousFile.arrayBuffer();
+const served = await fetch(`${BASE}/files/${fileId}`, { headers: h() });
 const servedBuf = Buffer.from(await served.arrayBuffer());
-check('file served back intact', served.status === 200 && servedBuf.equals(pngBuffer) && served.headers.get('content-type') === 'image/png');
+check('file served back intact to member', served.status === 200 && servedBuf.equals(pngBuffer) && served.headers.get('content-type') === 'image/png');
+check('private file does not retain year-long cache', served.headers.get('cache-control') === 'private, no-store');
+const assetCookie = up.headers.get('set-cookie')?.split(';')[0];
+check('upload issues asset-only browser session', !!assetCookie);
+const cookieFile = await fetch(`${BASE}/files/${fileId}`, { headers: { cookie: assetCookie || '' } });
+check('ordinary image cookie reads exact uploaded bytes', cookieFile.status === 200 && Buffer.from(await cookieFile.arrayBuffer()).equals(pngBuffer));
 
 await call('DELETE', `/pages/${created.id}`);
 const trash = (await call('GET', `/spaces/${team.id}/trash`)).json.pages;
@@ -236,11 +244,16 @@ check('create provider', createdProv.status === 200);
 // 17. auth: register new user + invite + permission enforcement
 const reg = await call('POST', '/auth/register', { email: 'smoke@test.local', name: 'Smoke', password: 'password123' });
 check('register new user', reg.status === 200 && reg.json.token);
+const outsiderFile = await fetch(`${BASE}/files/${fileId}`, { headers: { authorization: `Bearer ${reg.json.token}` } });
+check('file rejects another tenant before invitation', outsiderFile.status === 404);
+await outsiderFile.arrayBuffer();
 const invite = await call('POST', '/spaces/' + team.id + '/invite', { email: 'smoke@test.local', role: 'viewer' });
 check('invite member', invite.status === 200);
 token = reg.json.token;
 const memberView = await call('GET', '/spaces/' + team.id + '/pages');
 check('invited viewer can read', memberView.status === 200);
+const viewerFile = await fetch(`${BASE}/files/${fileId}`, { headers: h() });
+check('invited viewer can read workspace attachment', viewerFile.status === 200 && Buffer.from(await viewerFile.arrayBuffer()).equals(pngBuffer));
 const memberWrite = await call('POST', '/pages', { spaceId: team.id, title: 'nope' });
 check('viewer cannot write (403)', memberWrite.status === 403);
 
