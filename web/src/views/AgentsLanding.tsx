@@ -22,7 +22,7 @@ export default function AgentsLanding() {
             <a href="https://github.com/GucciGross/SETv2" target="_blank" rel="noreferrer" className="set-btn-ghost flex items-center gap-1.5">
               <Github size={14} /> <span className="hidden sm:inline">GitHub</span>
             </a>
-            <Link to="/login" className="set-btn-primary">Open SET</Link>
+            <Link to="/self-host" className="set-btn-primary">Self-host SET</Link>
           </nav>
         </div>
       </header>
@@ -146,10 +146,10 @@ export default function AgentsLanding() {
 
       <section className="border-t border-set-border/60">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 text-center">
-          <h2 className="text-2xl font-bold text-white mb-3">Self-hosted or cloud — same MCP</h2>
-          <p className="text-set-dim mb-6">Run SET yourself and point agents at your own URL, or use the hosted cloud when it opens.</p>
+          <h2 className="text-2xl font-bold text-white mb-3">Self-hosted SET, with MCP</h2>
+          <p className="text-set-dim mb-6">Run SET yourself and point agents at your own URL.</p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link to="/login" className="set-btn-primary px-6 py-2.5 flex items-center gap-2">Launch SET <ArrowRight size={14} /></Link>
+            <Link to="/self-host" className="set-btn-primary px-6 py-2.5 flex items-center gap-2">Self-host SET <ArrowRight size={14} /></Link>
             <a href="/docs?section=mcp" className="set-btn px-6 py-2.5">Full tool documentation</a>
           </div>
         </div>
