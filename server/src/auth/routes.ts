@@ -12,6 +12,7 @@ import { authRateLimited } from './rate-limit.js';
 import { presentedSession, revokeSession } from './session.js';
 import { deploymentSettings } from '../deployment.js';
 import { previewEnabled, CLOUD_NOT_READY } from './preview.js';
+import { SiteAdminRequiredError } from '../spaces/invite.js';
 
 const creds = z.object({
   email: z.string().email(),
@@ -35,6 +36,8 @@ export async function authRoutes(app: FastifyInstance) {
     if (previewEnabled()) return reply.code(403).send({ error: CLOUD_NOT_READY });
     if (!config.registrationOpen) return reply.code(403).send({ error: 'Registration is closed on this server' });
     if (await authRateLimited(req.routeOptions.url ?? 'unknown', req.ip)) return reply.code(429).send({ error: 'Too many attempts — try again in a minute' });
+    // Credentials only — an isSiteAdmin key on the body is ignored; the flag
+    // is never client-settable and there is no first-user auto-promotion.
     const parsed = creds.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid registration (password minimum 8 characters)' });
     const { email, name, password } = parsed.data;
@@ -59,14 +62,14 @@ export async function authRoutes(app: FastifyInstance) {
     const parsed = creds.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid credentials' });
     const { email, password } = parsed.data;
-    const user = await one<{ id: string; email: string; name: string; password_hash: string; mascot: any; onboarding: any; session_version: number }>(
-      `SELECT id, email, name, password_hash, mascot, onboarding, session_version FROM users WHERE email = $1`, [email.toLowerCase()]);
+    const user = await one<{ id: string; email: string; name: string; password_hash: string; mascot: any; onboarding: any; session_version: number; is_site_admin: boolean }>(
+      `SELECT id, email, name, password_hash, mascot, onboarding, session_version, is_site_admin FROM users WHERE email = $1`, [email.toLowerCase()]);
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
       return reply.code(401).send({ error: previewEnabled() ? CLOUD_NOT_READY : 'Invalid email or password' });
     }
     return {
       token: signToken({ id: user.id, email: user.email, name: user.name, sessionVersion: user.session_version }),
-      user: { id: user.id, email: user.email, name: user.name, mascot: user.mascot ?? null, onboarding: user.onboarding ?? {} },
+      user: { id: user.id, email: user.email, name: user.name, mascot: user.mascot ?? null, onboarding: user.onboarding ?? {}, isSiteAdmin: !!user.is_site_admin },
     };
   });
 
@@ -132,8 +135,8 @@ export async function authRoutes(app: FastifyInstance) {
   app.get('/auth/me', async (req, reply) => {
     const user = await requireUser(req, reply);
     if (!user) return;
-    const full = await one<{ mascot: any; onboarding: any }>(`SELECT mascot, onboarding FROM users WHERE id = $1`, [user.id]);
-    return { user: { ...user, mascot: full?.mascot ?? null, onboarding: full?.onboarding ?? {} } };
+    const full = await one<{ mascot: any; onboarding: any; is_site_admin: boolean }>(`SELECT mascot, onboarding, is_site_admin FROM users WHERE id = $1`, [user.id]);
+    return { user: { ...user, mascot: full?.mascot ?? null, onboarding: full?.onboarding ?? {}, isSiteAdmin: !!full?.is_site_admin } };
   });
 
   /** Delete the account and solely owned spaces; retain shared content. */
@@ -163,8 +166,7 @@ export async function authRoutes(app: FastifyInstance) {
     const body = z.object({
       name: z.string().min(1).max(40),
       species: z.enum(['bot', 'cat', 'blob', 'mouse', 'dog', 'fox', 'bird', 'dragon', 'ghost', 'bloub']),
-      bodyColor: z.string().regex(/^#[0-9a-fA-F]{6}$/), accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-      eyes: z.enum(['normal', 'happy', 'sleepy', 'visor']),
+      bodyColor: z.string().regex(/^#[0-9a-fA-F]{6}$/), accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/), eyes: z.enum(['normal', 'happy', 'sleepy', 'visor']),
       accessory: z.enum(['none', 'antenna', 'halo', 'headphones', 'hardhat', 'party', 'scarf', 'bow']), enabled: z.boolean().optional(),
     }).parse(req.body);
     await q(`UPDATE users SET mascot = $2 WHERE id = $1`, [user.id, JSON.stringify(body)]);

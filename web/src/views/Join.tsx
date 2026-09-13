@@ -12,7 +12,16 @@ export default function Join() {
   const [state, setState] = useState<'working' | 'done' | 'error' | 'missing'>('working');
   const [error, setError] = useState('');
   const [spaceName, setSpaceName] = useState('');
+  const [loginPath, setLoginPath] = useState('/login');
   const started = useRef(false);
+
+  // Private preview: /login renders the public self-host page, so the sign-in
+  // handoff goes to the unlinked private route instead.
+  useEffect(() => {
+    api.get('/meta').then((r) => {
+      if (r.privatePreview) setLoginPath('/private/login');
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!token) {
@@ -22,7 +31,7 @@ export default function Join() {
     if (!getToken()) {
       // stash the invite so Login can route back here after auth
       sessionStorage.setItem('set_join_token', token);
-      navigate('/login');
+      navigate(loginPath);
       return;
     }
     if (started.current) return;
@@ -38,7 +47,7 @@ export default function Join() {
         setState('error');
       }
     })();
-  }, [token, navigate]);
+  }, [token, navigate, loginPath]);
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-set-bg via-[#101422] to-[#141126]">
@@ -64,7 +73,7 @@ export default function Join() {
             <Mascot config={{ ...DEFAULT_MASCOT, species: 'ghost' }} mood="idle" size={90} />
             <h1 className="text-xl font-bold text-white">{state === 'missing' ? 'Missing invite token' : 'Invite not accepted'}</h1>
             <p className="text-sm text-red-400">{state === 'missing' ? 'Open the invite link from your email, or ask the workspace owner to resend it.' : error}</p>
-            <a href="/login" className="set-btn inline-block text-sm">Go to sign in</a>
+            <a href={loginPath} className="set-btn inline-block text-sm">Go to sign in</a>
           </>
         )}
       </div>

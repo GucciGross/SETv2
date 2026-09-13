@@ -730,7 +730,7 @@ function MembersTab({ spaceId }: { spaceId: string }) {
         </select>
         <button className="set-btn-primary" onClick={invite}>Invite</button>
       </div>
-      <p className="text-xs text-set-dim mb-3 -mt-2 ml-1">Existing users are added instantly; anyone else gets an invite email with a sign-up link.</p>
+      <p className="text-xs text-set-dim mb-3 -mt-2 ml-1">Existing users are added instantly. In private preview, a site admin can also invite brand-new teammates: their account is provisioned and they get a one-time set-password email (24 h). Non-admin owners cannot invite during the preview.</p>
       <div className="set-card p-4 mb-4 flex flex-wrap items-center gap-2">
         <div className="flex-1 min-w-[200px]">
           <div className="text-sm text-white">Import a whole roster</div>
