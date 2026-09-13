@@ -6,8 +6,10 @@ permissions:
   contents: read
 jobs:
   compose-editions:
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }
       - run: python3 scripts/ops/test-deployment-compose.py

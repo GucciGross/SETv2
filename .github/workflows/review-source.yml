@@ -5,21 +5,29 @@ permissions:
   contents: read
 jobs:
   archive:
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Archive the exact reviewed source (tracked files only)
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install locked server dependencies for reproducible offline review
+        run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: server
+      - name: Archive exact reviewed source and locked dependencies (no credentials or runtime data)
         run: |
-          mkdir -p /tmp/set-review
-          git archive --format=tar.gz --output=/tmp/set-review/SETv2-source.tar.gz HEAD
-          git rev-parse HEAD > /tmp/set-review/COMMIT.txt
-          sha256sum /tmp/set-review/SETv2-source.tar.gz > /tmp/set-review/SHA256SUMS
+          mkdir -p "$RUNNER_TEMP/set-review-${{ github.run_id }}"
+          git archive --format=tar.gz --output="$RUNNER_TEMP/set-review-${{ github.run_id }}/SETv2-source.tar.gz" HEAD
+          tar -czf "$RUNNER_TEMP/set-review-${{ github.run_id }}/server-dependencies.tar.gz" -C server node_modules
+          git rev-parse HEAD > "$RUNNER_TEMP/set-review-${{ github.run_id }}/COMMIT.txt"
+          cd "$RUNNER_TEMP/set-review-${{ github.run_id }}"
+          sha256sum SETv2-source.tar.gz server-dependencies.tar.gz > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: set-review-source
-          path: /tmp/set-review
-          retention-days: 3
+          path: ${{ runner.temp }}/set-review-${{ github.run_id }}
+          retention-days: 1
           if-no-files-found: error

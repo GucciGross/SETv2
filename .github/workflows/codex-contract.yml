@@ -7,18 +7,20 @@ permissions:
   contents: read
 jobs:
   protocol:
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
       - run: npm ci && npm run build
         working-directory: server
       - name: Install pinned official Codex (no account credentials)
-        run: npm install --prefix /tmp/set-codex --no-audit --no-fund @openai/codex@0.154.0
+        run: npm install --prefix "${{ runner.temp }}/set-codex-${{ github.run_id }}" --no-audit --no-fund @openai/codex@0.154.0
       - name: Exercise the real managed-account protocol, without logging in
         working-directory: server
         env:
-          SET_CODEX_BIN: /tmp/set-codex/node_modules/.bin/codex
+          SET_CODEX_BIN: ${{ runner.temp }}/set-codex-${{ github.run_id }}/node_modules/.bin/codex
         run: node scripts/codex-cli-smoke.mjs
