@@ -27,6 +27,7 @@ cpkStyleEl.textContent = cpkStyles;
 document.head.appendChild(cpkStyleEl);
 import App from './App';
 import Login from './views/Login';
+import SelfHost from './views/SelfHost';
 import AppShell from './components/AppShell';
 import PageView from './views/PageView';
 import GraphView from './views/GraphView';
@@ -61,6 +62,8 @@ import { Compass, RefreshCw } from 'lucide-react';
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
+  { path: '/private/login', element: <Login /> },
+  { path: '/self-host', element: <SelfHost /> },
   { path: '/docs', element: <DocsView standalone /> },
   { path: '/reset', element: <Reset /> },
   { path: '/share/:token', element: <ShareView /> },

@@ -1,10 +1,8 @@
 import { Link, useNavigate } from 'react-router-dom';
 import {
   BookOpen, Network, Database, Boxes, Terminal, Code2, Route as RouteIcon, PenLine, LibraryBig,
-  Sparkles, ShieldCheck, Server, ArrowRight, Github, FileText, Zap, Users, MessageSquare, Check, Cloud, Bot,
+  Sparkles, ShieldCheck, Server, ArrowRight, Github, FileText, Zap, Users, MessageSquare, Bot,
 } from 'lucide-react';
-import { useState } from 'react';
-import { api } from '../lib/api';
 import ShaderBackground from '../components/ShaderBackground';
 import { DitherButton, DitherGradient, DitherAvatar } from '../components/dither-kit';
 
@@ -62,44 +60,6 @@ function SectionHead({ index, tag, title, sub }: { index: string; tag: string; t
   );
 }
 
-function WaitlistForm() {
-  const [email, setEmail] = useState('');
-  const [state, setState] = useState<'idle' | 'busy' | 'done'>('idle');
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.includes('@') || state === 'busy') return;
-    setState('busy');
-    try {
-      await api.post('/waitlist', { email });
-      setState('done');
-    } catch {
-      setState('idle');
-    }
-  };
-  if (state === 'done') {
-    return (
-      <div className="flex items-center gap-2 text-sm text-green-300">
-        <Check size={16} /> You're on the list — we'll email you when your hosted workspace is ready.
-      </div>
-    );
-  }
-  return (
-    <form onSubmit={submit} className="flex w-full max-w-md gap-2">
-      <input
-        type="email"
-        required
-        className="set-input flex-1"
-        placeholder="you@team.com"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
-      <button className="set-btn-primary shrink-0" disabled={state === 'busy'}>
-        {state === 'busy' ? '…' : 'Join the waitlist'}
-      </button>
-    </form>
-  );
-}
-
 /* The spec plate — the hero's right-hand instrument sheet. */
 function SpecPlate() {
   const rows: Array<[string, string]> = [
@@ -146,7 +106,7 @@ function InstallBlock() {
         <span className="set-mono set-mono-dim ml-auto hidden sm:inline">BASH · DOCKER</span>
       </div>
       <div className="p-4 font-mono text-[13px] leading-relaxed overflow-x-auto tex-grid">
-        <div><span className="text-set-accent">$</span> <span className="text-green-300">git clone</span> <span className="text-set-text">github.com/GucciGross/SETv2 set</span> <span className="text-set-dim">&amp;&amp; cd set</span></div>
+        <div><span className="text-set-accent">$</span> <span className="text-green-300">git clone</span> <span className="text-set-text">https://github.com/GucciGross/SETv2 set</span> <span className="text-set-dim">&amp;&amp; cd set</span></div>
         <div><span className="text-set-accent">$</span> <span className="text-set-text">cp .env.example .env</span></div>
         <div><span className="text-set-accent">$</span> <span className="text-set-text">docker compose up -d</span></div>
         <div><span className="text-set-dim"># open</span> <span className="text-set-accent underline decoration-set-accent/40 underline-offset-4">http://localhost:8080</span> <span className="text-set-dim">— that's the whole install.</span></div>
@@ -175,7 +135,7 @@ export default function Landing() {
             <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="set-btn-ghost flex items-center gap-1.5">
               <Github size={14} /> <span className="hidden sm:inline">GitHub</span>
             </a>
-            <Link to="/login" className="set-btn-primary">Open SET</Link>
+            <Link to="/self-host" className="set-btn-primary">Self-host SET</Link>
           </nav>
         </div>
       </header>
@@ -208,9 +168,9 @@ export default function Landing() {
                   variant="gradient"
                   bloom="low"
                   className="px-6 py-2.5 text-base rounded-lg text-white"
-                  onClick={() => navigate('/login')}
+                  onClick={() => navigate('/self-host')}
                 >
-                  <span className="flex items-center gap-2">Launch the app <ArrowRight size={16} /></span>
+                  <span className="flex items-center gap-2">Self-host SET <ArrowRight size={16} /></span>
                 </DitherButton>
                 <a href="/docs" className="set-btn px-6 py-2.5 text-base flex items-center gap-2">
                   <BookOpen size={16} /> Read the docs
@@ -346,85 +306,10 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Hosting: two ways to run SET */}
-      <section className="border-b border-set-border/40 bg-set-panel/20 tex-grid">
+      <section className="border-b border-set-border/40">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16">
-          <SectionHead
-            index="§04"
-            tag="HOSTING"
-            title="Two ways to run SET"
-            sub="Self-hosting is free forever — that's the promise. But if you'd rather not run servers at all, the hosted SET cloud does it for you, cheaply, with the same data-ownership guarantees (full Markdown export anytime)."
-          />
-          <div className="grid md:grid-cols-2 gap-4 mb-8">
-            <div className="set-card p-6">
-              <div className="flex items-center gap-2 mb-1">
-                <Server size={16} className="text-blue-300" />
-                <h3 className="font-semibold text-white">Self-hosted</h3>
-                <span className="ml-auto set-mono text-green-300 border border-green-500/40 bg-green-500/10 rounded px-1.5 py-0.5">FREE FOREVER</span>
-              </div>
-              <p className="text-sm text-set-dim leading-relaxed mt-2">
-                One Docker command. Your Postgres, your files, your network. AGPL-3.0 — no feature gates,
-                no telemetry, no lock-in. Bring your own LLM key (or run models locally with Ollama).
-              </p>
-              <div className="mt-4 set-card bg-set-panel2/70 p-2.5 font-mono text-[11px] text-set-dim">$ docker compose up -d</div>
-            </div>
-            <div className="set-card p-6 border-set-accent/40 relative overflow-hidden">
-              <DitherGradient from="blue" direction="up" opacity={0.08} cell={3} />
-              <div className="relative">
-                <div className="flex items-center gap-2 mb-1">
-                  <Cloud size={16} className="text-violet-300" />
-                  <h3 className="font-semibold text-white">SET Cloud (hosted)</h3>
-                  <span className="ml-auto set-mono text-violet-300 border border-violet-500/40 bg-violet-500/10 rounded px-1.5 py-0.5">COMING SOON</span>
-                </div>
-                <p className="text-sm text-set-dim leading-relaxed mt-2">
-                  We host everything — no setup, automatic updates and backups, invite your whole team in
-                  minutes. Cheap flat pricing per workspace, and an optional bundled LLM API through
-                  {' '}<a href="https://llm.wandgx.com" target="_blank" rel="noreferrer" className="text-blue-300 hover:underline">llm.wandgx.com</a>{' '}
-                  so you can skip provider setup entirely. Same export-anytime guarantee.
-                </p>
-                <div className="mt-5">
-                  <div className="set-mono set-mono-dim mb-2 flex items-center gap-1.5"><Zap size={12} /> EARLY-ACCESS WAITLIST</div>
-                  <WaitlistForm />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Which one is for you */}
-          <div className="set-card p-5 mb-6">
-            <div className="text-sm font-semibold text-white mb-3">Which one is right for you?</div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[540px]">
-                <thead>
-                  <tr className="text-left set-mono set-mono-dim">
-                    <th className="py-2 pr-4 font-normal"></th>
-                    <th className="py-2 pr-4 font-normal">SELF-HOSTED</th>
-                    <th className="py-2 font-normal">SET CLOUD</th>
-                  </tr>
-                </thead>
-                <tbody className="text-set-text/90">
-                  {[
-                    ['Setup', 'One Docker command on your machine or server', 'None — we run it for you'],
-                    ['Cost', 'Free forever (AGPL-3.0)', 'Cheap flat monthly price per workspace'],
-                    ['Where your data lives', 'Your Postgres, your disks, your network', 'Our managed servers, with full Markdown export anytime'],
-                    ['Maintenance', 'You update, back up, and secure the stack', 'Automatic updates, backups, and TLS'],
-                    ['Who can access', 'Only you — it can run fully offline', 'Your invited team members, over TLS'],
-                    ['LLM', 'Bring any key: local models or any API', 'Bring your own key, or bundle one with llm.wandgx.com'],
-                    ['Best for', 'Privacy-first users, homelabbers, companies with data policies', 'Teams that want to start in minutes with zero ops'],
-                  ].map(([label, selfHost, cloud]) => (
-                    <tr key={label} className="border-t border-set-border/50">
-                      <td className="py-2 pr-4 text-set-dim whitespace-nowrap">{label}</td>
-                      <td className="py-2 pr-4">{selfHost}</td>
-                      <td className="py-2">{cloud}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="text-xs text-set-dim mt-3">
-              Both run the same open-source core — the cloud is just our copy, operated for you. Start self-hosted and move to cloud (or back) anytime: export everything as Markdown, import it anywhere.
-            </p>
-          </div>
+          <SectionHead index="§04" tag="HOSTING" title="Run SET on your own machine" sub="Install with Docker, create your account locally, and connect your own AI provider. This website does not offer public hosted accounts." />
+          <Link to="/self-host" className="set-btn-primary">Self-hosting instructions</Link>
         </div>
       </section>
 
@@ -462,7 +347,7 @@ export default function Landing() {
           <h2 className="text-2xl sm:text-3xl font-bold text-white mb-3">Own your knowledge stack</h2>
           <p className="text-set-dim mb-6">Free forever for self-hosting. AGPL-3.0. No lock-in — export everything as Markdown anytime.</p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link to="/login" className="set-btn-primary px-6 py-2.5">Launch the app</Link>
+            <Link to="/self-host" className="set-btn-primary px-6 py-2.5">Self-host SET</Link>
             <a href="/docs" className="set-btn px-6 py-2.5">Full documentation</a>
             <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="set-btn px-6 py-2.5 flex items-center gap-2">
               <Github size={15} /> Star on GitHub
