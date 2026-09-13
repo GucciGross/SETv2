@@ -11,6 +11,7 @@ import { sendMail, htmlEmail } from '../lib/mail.js';
 import { authRateLimited } from './rate-limit.js';
 import { presentedSession, revokeSession } from './session.js';
 import { deploymentSettings } from '../deployment.js';
+import { previewEnabled, CLOUD_NOT_READY } from './preview.js';
 
 const creds = z.object({
   email: z.string().email(),
@@ -31,6 +32,7 @@ async function createPersonalSpace(userId: string, name: string, database: Pick<
 
 export async function authRoutes(app: FastifyInstance) {
   app.post('/auth/register', async (req, reply) => {
+    if (previewEnabled()) return reply.code(403).send({ error: CLOUD_NOT_READY });
     if (!config.registrationOpen) return reply.code(403).send({ error: 'Registration is closed on this server' });
     if (await authRateLimited(req.routeOptions.url ?? 'unknown', req.ip)) return reply.code(429).send({ error: 'Too many attempts — try again in a minute' });
     const parsed = creds.safeParse(req.body);
@@ -59,7 +61,9 @@ export async function authRoutes(app: FastifyInstance) {
     const { email, password } = parsed.data;
     const user = await one<{ id: string; email: string; name: string; password_hash: string; mascot: any; onboarding: any; session_version: number }>(
       `SELECT id, email, name, password_hash, mascot, onboarding, session_version FROM users WHERE email = $1`, [email.toLowerCase()]);
-    if (!user || !(await bcrypt.compare(password, user.password_hash))) return reply.code(401).send({ error: 'Invalid email or password' });
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      return reply.code(401).send({ error: previewEnabled() ? CLOUD_NOT_READY : 'Invalid email or password' });
+    }
     return {
       token: signToken({ id: user.id, email: user.email, name: user.name, sessionVersion: user.session_version }),
       user: { id: user.id, email: user.email, name: user.name, mascot: user.mascot ?? null, onboarding: user.onboarding ?? {} },

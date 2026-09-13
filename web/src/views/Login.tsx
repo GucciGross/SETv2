@@ -27,6 +27,7 @@ export default function Login() {
   const [mood, setMood] = useState<MascotMood>('idle');
   const [rejected, setRejected] = useState(0); // bumps on each failed attempt
   const [sso, setSso] = useState<{ enabled: boolean; name: string } | null>(null);
+  const [preview, setPreview] = useState(false);
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -48,7 +49,11 @@ export default function Login() {
   }, [params, setParams, navigate]);
 
   useEffect(() => {
-    api.get('/meta').then((r) => setSso(r.sso)).catch(() => {});
+    api.get('/meta').then((r) => {
+      setSso(r.sso);
+      setPreview(!!r.privatePreview);
+      if (r.privatePreview) setMode('login');
+    }).catch(() => {});
   }, []);
 
   const submit = async (e: React.FormEvent) => {
@@ -133,17 +138,19 @@ export default function Login() {
             {/* sliding segmented control */}
             <div className="relative flex rounded-xl border border-set-border/60 bg-set-panel2/60 p-1">
               <span
-                className={`absolute bottom-1 top-1 left-1 w-[calc(50%-4px)] rounded-lg bg-set-accent shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_2px_10px_-2px_rgb(108_140_255/0.7)] transition-transform duration-300 ease-out ${mode === 'register' ? 'translate-x-full' : ''}`}
+                className={`absolute bottom-1 top-1 left-1 ${preview ? 'w-[calc(100%-8px)]' : 'w-[calc(50%-4px)]'} rounded-lg bg-set-accent shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_2px_10px_-2px_rgb(108_140_255/0.7)] transition-transform duration-300 ease-out ${mode === 'register' ? 'translate-x-full' : ''}`}
                 aria-hidden
               />
-              {(['login', 'register'] as const).map((m) => (
+              {(['login', 'register'] as const)
+                .filter((m) => m === 'login' || !preview)
+                .map((m) => (
                 <button
                   key={m}
                   type="button"
                   onClick={() => { setMode(m); setError(''); }}
                   className={`relative z-10 flex-1 rounded-lg py-2 text-sm transition-colors duration-200 ${mode === m ? 'font-semibold text-white' : 'text-set-dim hover:text-set-text'}`}
                 >
-                  {m === 'login' ? 'Sign in' : 'Create account'}
+                  {m === 'login' ? (preview ? 'Private tester sign in' : 'Sign in') : 'Create account'}
                 </button>
               ))}
             </div>
@@ -194,6 +201,20 @@ export default function Login() {
                 <span className="text-xs text-set-dim">Spaces, graph and notebooks — all yours in a minute</span>
               )}
             </div>
+
+            {preview && (
+              <div className="rounded-lg border border-set-border/60 bg-set-panel2/40 px-3 py-2.5 text-xs text-set-dim">
+                SET Cloud is not ready yet. Self-host SET:
+                <ol className="my-1.5 list-decimal space-y-0.5 pl-4 set-mono" style={{ fontSize: '10px' }}>
+                  <li>git clone https://github.com/GucciGross/SETv2</li>
+                  <li>cd SETv2</li>
+                  <li>cp .env.example .env</li>
+                  <li>docker compose up -d</li>
+                </ol>
+                Open <span className="set-mono">http://localhost:8080</span> (local-only defaults).{' '}
+                <a href="https://github.com/GucciGross/SETv2#readme" target="_blank" rel="noreferrer" className="text-set-accent hover:underline">Read the readme</a>
+              </div>
+            )}
 
             <div className="flex items-center justify-center gap-1.5 border-t border-set-border/40 pt-3 set-mono set-mono-dim">
               <span className="h-1.5 w-1.5 rounded-full bg-set-ok shadow-[0_0_6px_rgb(52_211_153/0.9)]" style={{ animation: 'mascot-pulse 2.2s ease-in-out infinite' }} />

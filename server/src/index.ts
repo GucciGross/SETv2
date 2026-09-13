@@ -90,8 +90,9 @@ async function main() {
     api.get('/meta', async (_req, reply) => {
       reply.header('Cache-Control', 'no-store');
       const { oidcEnabled } = await import('./auth/oidc.js');
+      const { previewEnabled } = await import('./auth/preview.js');
       const { edition, exposure, revision } = deployment;
-      return { version: '2.1.0', deployment: { edition, exposure, revision }, sso: { enabled: oidcEnabled(), name: config.oidc.displayName } };
+      return { version: '2.1.0', deployment: { edition, exposure, revision }, privatePreview: previewEnabled(), sso: { enabled: oidcEnabled(), name: config.oidc.displayName } };
     });
     await spaceRoutes(api);
     await onboardingRoutes(api);

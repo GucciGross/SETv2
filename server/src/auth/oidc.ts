@@ -5,6 +5,7 @@ import { one, q } from '../db.js';
 import { config } from '../config.js';
 import { signToken } from '../lib/tokens.js';
 import { createPersonalSpace } from './routes.js';
+import { previewEnabled } from './preview.js';
 
 /**
  * Single sign-on via any OIDC provider (env-configured: OIDC_ISSUER,
@@ -16,6 +17,8 @@ import { createPersonalSpace } from './routes.js';
 const STATE_COOKIE = 'set_oidc_state';
 
 export function oidcEnabled(): boolean {
+  // Private preview: no alternate account-creation path — password login only.
+  if (previewEnabled()) return false;
   return !!(config.oidc.issuer && config.oidc.clientId && config.oidc.clientSecret);
 }
 
