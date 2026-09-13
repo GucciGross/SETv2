@@ -674,10 +674,22 @@ function ProvidersTab({ spaceId }: { spaceId: string }) {
 }
 
 function MembersTab({ spaceId }: { spaceId: string }) {
+  const { spaces, user } = useApp();
   const [members, setMembers] = useState<any[]>([]);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('editor');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // Real abilities, not just labels: during private preview only a site admin
+  // who owns this workspace can invite at all (the server enforces the same
+  // rule), so the controls are hidden from everyone else. Outside the preview
+  // the classic self-host behavior holds — any workspace owner invites.
+  const isSiteAdmin = !!user?.isSiteAdmin;
+  const role_ = spaces.find((s) => s.id === spaceId)?.role ?? 'viewer';
+  const [preview, setPreview] = useState(false);
+  useEffect(() => {
+    api.get('/meta').then((r) => setPreview(!!r.privatePreview)).catch(() => {});
+  }, []);
+  const canInvite = (preview ? isSiteAdmin : true) && role_ === 'owner';
 
   const load = async () => setMembers((await api.get(`/spaces/${spaceId}/members`)).members);
   useEffect(() => {
@@ -690,7 +702,8 @@ function MembersTab({ spaceId }: { spaceId: string }) {
       const res = await api.post(`/spaces/${spaceId}/invite`, { email, role });
       if (res.added) setMsg({ ok: true, text: `${email} was added to the workspace` });
       else if (res.emailed) setMsg({ ok: true, text: `Invite email sent to ${email}` });
-      else setMsg({ ok: true, text: `Email isn't configured on this server — share this invite link: ${res.link}` });
+      else if (res.link) setMsg({ ok: true, text: `Email isn't configured on this server — share this invite link: ${res.link}` });
+      else setMsg({ ok: true, text: `Invite recorded for ${email}, but email isn't configured on this server. They can use "Forgot password" on the sign-in page once it is.` });
       setEmail('');
       load();
     } catch (e: any) {
@@ -708,7 +721,7 @@ function MembersTab({ spaceId }: { spaceId: string }) {
       const s = res.summary;
       setMsg({
         ok: true,
-        text: `Roster: ${s.added} added, ${s.invited} invited by email${s.already ? `, ${s.already} already members` : ''}${
+        text: `Roster: ${s.added} added, ${s.invited} invited by email${s.already ? `, ${s.already} already members` : ''}${s.provisioned ? `, ${s.provisioned} provisioned with a set-password email` : ''}${
           res.results.some((r: any) => r.result === 'invited' && !r.emailed) ? ' — email not configured on this server, invite links are in the server log' : ''
         }`,
       });
@@ -722,25 +735,37 @@ function MembersTab({ spaceId }: { spaceId: string }) {
 
   return (
     <div>
-      <div className="set-card p-4 mb-4 flex flex-wrap gap-2">
-        <input className="set-input flex-1 min-w-[220px]" placeholder="teammate@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <select className="set-input w-32" value={role} onChange={(e) => setRole(e.target.value)}>
-          <option value="editor">Editor</option>
-          <option value="viewer">Viewer</option>
-        </select>
-        <button className="set-btn-primary" onClick={invite}>Invite</button>
-      </div>
-      <p className="text-xs text-set-dim mb-3 -mt-2 ml-1">Existing users are added instantly; anyone else gets an invite email with a sign-up link.</p>
-      <div className="set-card p-4 mb-4 flex flex-wrap items-center gap-2">
-        <div className="flex-1 min-w-[200px]">
-          <div className="text-sm text-white">Import a whole roster</div>
-          <div className="text-xs text-set-dim">CSV with an email column (header row fine); an optional <code>editor</code>/<code>viewer</code> column sets the role.</div>
-        </div>
-        <label className="set-btn cursor-pointer text-sm flex items-center gap-1.5">
-          <Upload size={13} /> {rosterBusy ? 'Importing…' : 'Upload CSV'}
-          <input type="file" hidden accept=".csv,text/csv" disabled={rosterBusy} onChange={(e) => e.target.files?.[0] && importRoster(e.target.files[0])} />
-        </label>
-      </div>
+      {canInvite ? (
+        <>
+          <div className="set-card p-4 mb-4 flex flex-wrap gap-2">
+            <input className="set-input flex-1 min-w-[220px]" placeholder="teammate@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <select className="set-input w-32" value={role} onChange={(e) => setRole(e.target.value)}>
+              <option value="editor">Editor</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            <button className="set-btn-primary" onClick={invite}>Invite</button>
+          </div>
+          <p className="text-xs text-set-dim mb-3 -mt-2 ml-1">You are this server's site admin and this workspace's owner: existing users are added instantly, and brand-new teammates get an account plus a one-time set-password email (expires in 24 h).</p>
+          <div className="set-card p-4 mb-4 flex flex-wrap items-center gap-2">
+            <div className="flex-1 min-w-[200px]">
+              <div className="text-sm text-white">Import a whole roster</div>
+              <div className="text-xs text-set-dim">CSV with an email column (header row fine); an optional <code>editor</code>/<code>viewer</code> column sets the role.</div>
+            </div>
+            <label className="set-btn cursor-pointer text-sm flex items-center gap-1.5">
+              <Upload size={13} /> {rosterBusy ? 'Importing…' : 'Upload CSV'}
+              <input type="file" hidden accept=".csv,text/csv" disabled={rosterBusy} onChange={(e) => e.target.files?.[0] && importRoster(e.target.files[0])} />
+            </label>
+          </div>
+        </>
+      ) : (
+        <p className="set-card p-4 mb-4 text-xs text-set-dim">
+          {isSiteAdmin
+            ? 'You are this server\u2019s site admin, but only the workspace owner can invite members here.'
+            : role_ === 'owner'
+              ? (preview ? 'Inviting is reserved for the site admin during private preview.' : 'Only the workspace owner can invite members (you are an owner).')
+              : 'Only the workspace owner (and, during private preview, the site admin) can invite members.'}
+        </p>
+      )}
       {msg && <p className={`text-xs mb-3 break-all ${msg.ok ? 'text-green-400' : 'text-red-400'}`}>{msg.text}</p>}
       <div className="space-y-2">
         {members.map((m) => (

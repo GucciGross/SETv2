@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 
@@ -11,6 +11,15 @@ export default function Reset() {
   const [password, setPassword] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loginPath, setLoginPath] = useState('/login');
+
+  // Private preview: /login renders the public self-host page, so sign-in
+  // handoffs use the unlinked private route instead.
+  useEffect(() => {
+    api.get('/meta').then((r) => {
+      if (r.privatePreview) setLoginPath('/private/login');
+    }).catch(() => {});
+  }, []);
 
   const requestReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +36,13 @@ export default function Reset() {
     setMsg('');
     try {
       await api.post('/auth/reset', { token, password });
-      navigate('/login');
+      // Navigation waits for the async meta probe: in private preview /login is
+      // the public self-host page, so the sign-in route is /private/login.
+      // Navigating before meta resolves lands fresh teammates on the wrong page.
+      api.get('/meta')
+        .then((r) => (r.privatePreview ? '/private/login' : '/login'))
+        .then((path) => navigate(path))
+        .catch(() => navigate('/login'));
     } catch (err: any) {
       setMsg(err.message);
     } finally {
@@ -51,7 +66,7 @@ export default function Reset() {
           </>
         )}
         {msg && <div className="text-sm text-set-dim">{msg}</div>}
-        <Link to="/login" className="block text-center text-xs text-set-dim hover:text-set-text">&larr; back to sign in</Link>
+        <Link to={loginPath} className="block text-center text-xs text-set-dim hover:text-set-text">&larr; back to sign in</Link>
       </form>
     </div>
   );

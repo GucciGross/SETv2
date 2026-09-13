@@ -5,7 +5,7 @@ import { requireSpace, requireUser } from '../lib/http.js';
 import { recordActivity } from '../team/activity.js';
 import { config } from '../config.js';
 import { verifyInviteToken } from '../lib/tokens.js';
-import { inviteOne, inviteBulk } from './invite.js';
+import { inviteOne, inviteBulk, SiteAdminRequiredError } from './invite.js';
 
 export async function spaceRoutes(app: FastifyInstance) {
 
@@ -48,14 +48,19 @@ export async function spaceRoutes(app: FastifyInstance) {
     const body = z
       .object({ email: z.string().email(), role: z.enum(['editor', 'viewer']).default('editor') })
       .parse(req.body);
-    const out = await inviteOne(String(spaceId), req.user!, body.email.toLowerCase(), body.role);
-    return {
-      ok: true,
-      added: out.result === 'added',
-      invited: out.result === 'invited',
-      emailed: out.result === 'invited' ? out.emailed : undefined,
-      ...(out.result === 'invited' && !out.emailed ? { link: out.link } : {}),
-    };
+    try {
+      const out = await inviteOne(String(spaceId), req.user!, body.email.toLowerCase(), body.role);
+      return {
+        ok: true,
+        added: out.result === 'added',
+        invited: out.result === 'invited' || out.result === 'provisioned',
+        emailed: out.result === 'invited' || out.result === 'provisioned' ? out.emailed : undefined,
+        ...(out.result === 'invited' && !out.emailed ? { link: out.link } : {}),
+      };
+    } catch (e) {
+      if (e instanceof SiteAdminRequiredError) return reply.code(403).send({ error: e.message });
+      throw e;
+    }
   });
 
   /** Roster import: CSV text with an email column (+ optional role column). Header row tolerated. */
@@ -65,7 +70,12 @@ export async function spaceRoutes(app: FastifyInstance) {
     const body = z
       .object({ csv: z.string().min(1).max(200_000), defaultRole: z.enum(['editor', 'viewer']).default('editor') })
       .parse(req.body);
-    return inviteBulk(String(spaceId), req.user!, body.csv, body.defaultRole);
+    try {
+      return await inviteBulk(String(spaceId), req.user!, body.csv, body.defaultRole);
+    } catch (e) {
+      if (e instanceof SiteAdminRequiredError) return reply.code(403).send({ error: e.message });
+      throw e;
+    }
   });
 
   /** Redeem an emailed invite: requires being signed in as the invited email. */

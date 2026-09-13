@@ -38,8 +38,11 @@ export async function sendMail(input: MailInput): Promise<MailResult> {
         signal: AbortSignal.timeout(20_000),
       });
       if (res.ok) return { sent: true, provider: 'forwardemail' };
-      const detail = await res.text().catch(() => '');
-      console.error(`[mail] forwardemail error ${res.status}: ${detail.slice(0, 300)}`);
+      // Truncate hard and strip any body echo: provider error bodies have been
+      // observed to reflect the submitted email (including reset/setup links),
+      // and a log must never carry a live credential link.
+      const detail = (await res.text().catch(() => '')).slice(0, 120).replace(/token=[0-9a-zA-Z._-]+/g, 'token=[redacted]');
+      console.error(`[mail] forwardemail error ${res.status}: ${detail}`);
     } catch (e: any) {
       console.error(`[mail] forwardemail request failed: ${e.message}`);
     }
