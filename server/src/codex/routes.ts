@@ -38,8 +38,8 @@ export async function codexRoutes(app: FastifyInstance, sessions: Pick<typeof co
     api.get('/models', async req => sessions.models(req.user!.id));
     api.put('/model', { schema: { body: {
       type: 'object', required: ['model'], additionalProperties: false,
-      properties: { model: { type: 'string', minLength: 1, maxLength: 120 } },
-    } } }, async req => sessions.selectModel(req.user!.id, (req.body as { model: string }).model));
+      properties: { model: { type: ['string', 'null'], minLength: 1, maxLength: 120 } },
+    } } }, async req => sessions.selectModel(req.user!.id, (req.body as { model: string | null }).model));
   }, { prefix: '/codex' });
   app.addHook('onClose', async () => sessions.close());
 }

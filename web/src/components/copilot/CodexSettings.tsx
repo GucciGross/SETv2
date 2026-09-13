@@ -32,6 +32,7 @@ export default function CodexSettings() {
     setModelError(false);
     try {
       const page = await api.get<ModelPage>('/codex/models');
+      if (!Array.isArray(page?.models)) throw new Error('Unreadable model catalog');
       if (mounted.current && current === generation.current) setModelPage(page);
     } catch { if (mounted.current && current === generation.current) setModelError(true); }
   };
@@ -46,11 +47,16 @@ export default function CodexSettings() {
       if (result.available !== true) return;
       setAvailable(true);
       const next = await api.get<Status>('/codex/account');
-      if (active) { setStatus(next); void loadModels(generation.current); }
+      if (active) setStatus(next);
     }).catch(() => { if (active) setError('The personal Codex connection could not be loaded. Check the server installation.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; mounted.current = false; generation.current++; };
   }, [userId, retry]);
+
+  useEffect(() => {
+    if (status?.connected) void loadModels(generation.current);
+    else setModelPage(null);
+  }, [status?.connected, userId, retry]);
 
   useEffect(() => {
     if (!available || !status?.login) return;
@@ -142,16 +148,12 @@ export default function CodexSettings() {
           {status.selected && (modelPage
             ? <label className="flex flex-wrap items-center gap-2 text-sm text-set-text min-h-11">
                 <span>Model</span>
-                <select className="set-input text-sm min-h-11" value={modelPage.selectedModel ?? ''} disabled={busy || loading || status.busy}
+                <select className="set-input text-sm min-h-11" value={status.selectedModel ?? ''} disabled={busy || loading || status.busy}
                   onChange={e => {
                     const model = e.target.value || null;
-                    setModelPage(page => page ? { ...page, selectedModel: model } : page);
-                    void action(async () => {
-                      const next = await api.put<{ selectedModel: string | null }>('/codex/model', { model: e.target.value });
-                      setModelPage(page => page ? { ...page, selectedModel: next.selectedModel } : page);
-                    });
+                    void action(() => api.put<{ selectedModel: string | null }>('/codex/model', { model }));
                   }}>
-                  <option value="">CLI default{modelPage.models.some(m => m.isDefault) ? '' : ''}</option>
+                  <option value="">CLI default</option>
                   {modelPage.models.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
                 </select>
               </label>

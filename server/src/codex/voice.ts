@@ -78,7 +78,7 @@ export class CodexVoice {
     }, 25_000);
     try {
       const started = await this.rpc.request('thread/start', {
-        cwd: this.workDir, sandbox: 'readOnly', approvalPolicy: 'never', ephemeral: true,
+        cwd: this.workDir, sandbox: 'read-only', approvalPolicy: 'never', ephemeral: true,
         developerInstructions: INSTRUCTIONS,
         dynamicTools: [{ type: 'function', name: 'set_copilot', description: 'Ask the existing SET Copilot chat to answer or perform the user request with its normal permissions and approvals.',
           inputSchema: { type: 'object', properties: { request: { type: 'string', maxLength: VOICE_LIMITS.text } }, required: ['request'], additionalProperties: false } }],

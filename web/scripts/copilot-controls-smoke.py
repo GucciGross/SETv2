@@ -11,10 +11,12 @@ artifacts = Path('/tmp/copilot-controls'); artifacts.mkdir(parents=True, exist_o
 
 with sync_playwright() as p:
     browser = p.chromium.launch(executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'))
-    for name, width, settings in [('phone', 390, False), ('small-phone', 320, False), ('desktop', 1440, False), ('account', 390, True), ('cloud', 390, True)]:
+    for name, width, settings in [('phone', 390, False), ('small-phone', 320, False), ('desktop', 1440, False), ('account', 390, True), ('catalog-unavailable', 390, True), ('catalog-malformed', 390, True), ('cloud', 390, True)]:
         page = browser.new_page(viewport={'width': width, 'height': 900}, reduced_motion='reduce')
-        errors, uploads, selections = [], [], []
-        account = {'connected': False, 'selected': False, 'busy': False, 'account': None, 'login': None, 'error': None}
+        errors, uploads, selections, model_saves, catalogs = [], [], [], [], []
+        fail_model_save = False
+        defer_model_save, pending_models = False, []
+        account = {'connected': False, 'selected': False, 'busy': False, 'account': None, 'login': None, 'error': None, 'selectedModel': None}
         page.on('pageerror', lambda e: errors.append(str(e)))
         def transport(route):
             request = route.request; path = urlparse(request.url).path
@@ -31,6 +33,17 @@ with sync_playwright() as p:
                 account.update(connected=False, selected=False, account=None, login=None); route.fulfill(json={'disconnected': True})
             elif path.endswith('/codex/selection'):
                 selections.append(request.post_data_json); account['selected'] = request.post_data_json['enabled']; route.fulfill(json={'selected': account['selected']})
+            elif path.endswith('/codex/models'):
+                catalogs.append(account['connected'])
+                if name == 'catalog-unavailable': route.fulfill(status=503, json={'error': 'Catalog unavailable'})
+                elif name == 'catalog-malformed': route.fulfill(json={'settings': {}})
+                else: route.fulfill(json={'models': [{'id': 'model-a', 'displayName': 'Model A', 'description': '', 'isDefault': True, 'hidden': False}, {'id': 'model-b', 'displayName': 'Model B', 'description': '', 'isDefault': False, 'hidden': False}] if account['connected'] else [], 'selectedModel': account['selectedModel']})
+            elif path.endswith('/codex/model'):
+                model_saves.append(request.post_data_json)
+                if defer_model_save: pending_models.append(route)
+                elif fail_model_save: route.fulfill(status=503, json={'error': 'Model save failed'})
+                else:
+                    account['selectedModel'] = request.post_data_json['model']; route.fulfill(json={'selectedModel': account['selectedModel']})
             elif path.endswith('/codex/account'): route.fulfill(json=account)
             else: route.fulfill(json={'settings': {}, 'pages': [], 'notebooks': [], 'databases': [], 'subjects': [], 'notifications': [], 'providers': [], 'presets': [], 'members': []})
         page.route('**/api/**', transport)
@@ -60,6 +73,36 @@ with sync_playwright() as p:
                     expect(checkbox).to_be_checked()
                     expect(card.get_by_text('tester@example.invalid · plus')).to_be_visible()
                     assert selections == [{'enabled': True}]
+                    assert True in catalogs, 'Catalog must refresh after sign-in completion'
+                    if name in ('catalog-unavailable', 'catalog-malformed'):
+                        expect(card.get_by_role('button', name='Could not load models. Retry')).to_be_visible()
+                        checkbox.uncheck(); expect(checkbox).not_to_be_checked()
+                        checkbox.check(); expect(checkbox).to_be_checked()
+                    else:
+                        picker = card.get_by_role('combobox', name='Model', exact=True)
+                        picker.select_option('model-a'); expect(picker).to_have_value('model-a'); expect(picker).to_be_enabled()
+                        assert model_saves[-1] == {'model': 'model-a'}
+                        picker.select_option(''); expect(picker).to_have_value(''); expect(picker).to_be_enabled()
+                        assert model_saves[-1] == {'model': None}
+                        picker.select_option('model-a'); expect(picker).to_have_value('model-a'); expect(picker).to_be_enabled()
+                        fail_model_save = True
+                        picker.select_option('model-b')
+                        expect(card.get_by_role('alert')).to_be_visible()
+                        expect(picker).to_have_value('model-a')
+                        assert account['selectedModel'] == 'model-a'
+                        fail_model_save = False
+                        # A late write response from the previous signed-in user must not alter this user's picker.
+                        defer_model_save = True
+                        picker.select_option('model-b')
+                        expect(picker).to_be_disabled()
+                        assert len(pending_models) == 1
+                        account.update(selectedModel=None, account={'email': 'next@example.invalid', 'planType': 'plus'})
+                        page.evaluate("async () => { const {useApp} = await import('/src/stores/app.ts'); useApp.setState(s => ({user: {...s.user, id: 'next-user'}})); }")
+                        expect(card.get_by_text('next@example.invalid · plus')).to_be_visible()
+                        expect(picker).to_be_enabled(); expect(picker).to_have_value('')
+                        with page.expect_response('**/api/codex/model'):
+                            pending_models.pop().fulfill(json={'selectedModel': 'model-b'})
+                        expect(picker).to_have_value('')
                     card.get_by_role('button', name='Disconnect Codex').click()
                     expect(card.get_by_role('button', name='Sign in with ChatGPT', exact=True)).to_be_visible()
                 print('PASS', name, 'personal settings lifecycle/cloud absence')

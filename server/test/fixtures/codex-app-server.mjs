@@ -38,6 +38,7 @@ for await (const line of createInterface({ input: process.stdin })) {
  }
   else if (m.method === 'account/login/cancel') reply({ status: 'cancelled' });
   else if (m.method === 'thread/start') {
+    if (m.params.sandbox !== 'read-only') { process.stdout.write(JSON.stringify({ id: m.id, error: { code: -32600, message: 'thread/start sandbox must use the CLI wire enum read-only' } }) + '\n'); continue; }
     thread = 'thread'; tool = m.params.dynamicTools[0]?.name;
     writeFileSync(join(home, 'fixture-thread.json'), JSON.stringify(m.params));
     reply({ thread: { id: thread } });

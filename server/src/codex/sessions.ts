@@ -142,31 +142,28 @@ export class CodexSessions {
 
   private async readSelection(home: string): Promise<{ enabled: boolean; model: string | null }> {
     const file = join(home, 'selection.json');
-    const st = await lstat(file);
-    if (!st.isFile() || st.isSymbolicLink() || st.size > 1024) throw new Error('Unsafe selection file');
-    const raw = JSON.parse(await readFile(file, 'utf8'));
-    return { enabled: raw?.enabled === true, model: typeof raw?.model === 'string' && raw.model ? raw.model : null };
+    try {
+      const st = await lstat(file);
+      if (!st.isFile() || st.isSymbolicLink() || st.size > 1024) throw new Error('Unsafe selection file');
+      const raw = JSON.parse(await readFile(file, 'utf8'));
+      if (!raw || Array.isArray(raw) || typeof raw.enabled !== 'boolean' ||
+          (raw.model != null && (typeof raw.model !== 'string' || !raw.model.trim() || raw.model.length > 120))) throw new Error('Invalid selection file');
+      return { enabled: raw.enabled, model: raw.model ?? null };
+    } catch (error: any) {
+      if (error?.code === 'ENOENT') return { enabled: false, model: null };
+      throw new CodexError(500, 'Could not read the personal Codex preference. No provider fallback was attempted.');
+    }
   }
 
   async selected(userId: string): Promise<boolean> {
     if (!codexOAuthEnabled()) return false;
-    try {
-      return (await this.readSelection(userDirectory(this.dataDir, userId))).enabled;
-    } catch (error: any) {
-      if (error?.code === 'ENOENT') return false;
-      throw new CodexError(500, 'Could not read the personal Codex preference. No provider fallback was attempted.');
-    }
+    return (await this.readSelection(userDirectory(this.dataDir, userId))).enabled;
   }
 
   /** The saved model id, or null when unset (the CLI default applies). */
   async selectedModelId(userId: string): Promise<string | null> {
     if (!codexOAuthEnabled()) return null;
-    try {
-      return (await this.readSelection(userDirectory(this.dataDir, userId))).model;
-    } catch (error: any) {
-      if (error?.code === 'ENOENT') return null;
-      throw new CodexError(500, 'Could not read the personal Codex preference. No provider fallback was attempted.');
-    }
+    return (await this.readSelection(userDirectory(this.dataDir, userId))).model;
   }
 
   private async saveSelection(home: string, enabled: boolean, model: string | null) {
@@ -181,19 +178,19 @@ export class CodexSessions {
   async models(userId: string): Promise<{ models: CodexModelChoice[]; selectedModel: string | null }> {
     const s = await this.get(userId);
     const list = await this.exclusive(s, async () => this.listModels(s));
-    return { models: list, selectedModel: await this.selectedModelId(userId) };
+    return { models: list.map(({ model, ...choice }) => choice), selectedModel: await this.selectedModelId(userId) };
   }
 
-  private async listModels(s: Session): Promise<CodexModelChoice[]> {
-    const sanitize = (value: any): CodexModelChoice | null => {
+  private async listModels(s: Session): Promise<(CodexModelChoice & { model: string })[]> {
+    const sanitize = (value: any): (CodexModelChoice & { model: string }) | null => {
       if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
       const id = typeof value.id === 'string' ? value.id : '';
-      if (!id || id.length > 120) return null;
+      if (!id || id.length > 120 || typeof value.model !== 'string' || !value.model.trim() || value.model.length > 120) return null;
       const text = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
-      return { id, displayName: text(value.displayName, 120) || id, description: text(value.description, 400), isDefault: value.isDefault === true, hidden: value.hidden === true };
+      return { id, model: value.model, displayName: text(value.displayName, 120) || id, description: text(value.description, 400), isDefault: value.isDefault === true, hidden: value.hidden === true };
     };
     const seen = new Set<string>();
-    const models: CodexModelChoice[] = [];
+    const models: (CodexModelChoice & { model: string })[] = [];
     // ponytail: 5-page cap trusts the CLI not to loop a cursor forever; tighten only if upstream misbehaves.
     for (let pages = 0, cursor: string | null = null; pages < 5; pages++) {
       const page: any = await s.rpc.request('model/list', cursor ? { cursor } : {});
@@ -265,7 +262,8 @@ export class CodexSessions {
       requireCodexOAuth();
       const current = await this.sessions.get(userId);
       if (current?.busy || current?.voice || current?.locked || this.disconnecting.has(userId)) throw new CodexError(409, 'Stop the current Codex operation before switching providers.');
-      await this.saveSelection(await this.storage(userId), false, null);
+      const home = await this.storage(userId);
+      await this.saveSelection(home, false, (await this.readSelection(home)).model);
       return { selected: false };
     }
     const s = await this.get(userId);
@@ -274,29 +272,28 @@ export class CodexSessions {
       if ((await s.rpc.request('account/read', { refreshToken: false }))?.account?.type !== 'chatgpt') {
         throw new CodexError(409, 'Sign in with ChatGPT before selecting Codex for Copilot.');
       }
-      const saved = await this.readSelection(s.home).catch(() => null);
-      await this.saveSelection(s.home, true, saved?.model ?? null);
+      const saved = await this.readSelection(s.home);
+      await this.saveSelection(s.home, true, saved.model);
     });
     return { selected: true };
   }
 
   /** Pick a model for future Copilot runs. Membership is checked against the live catalog, never a local copy. */
-  async selectModel(userId: string, modelId: string): Promise<{ selectedModel: string | null }> {
+  async selectModel(userId: string, modelId: string | null): Promise<{ selectedModel: string | null }> {
     return this.mutate(userId, () => this.selectModelImpl(userId, modelId));
   }
 
-  private async selectModelImpl(userId: string, modelId: string) {
-    const id = typeof modelId === 'string' ? modelId.trim() : '';
-    if (!id || id.length > 120) throw new CodexError(400, 'Choose a model from the list.');
+  private async selectModelImpl(userId: string, modelId: string | null) {
+    const id = modelId;
+    if (id !== null && (typeof id !== 'string' || !id.trim() || id.length > 120)) throw new CodexError(400, 'Choose a model from the list.');
     const s = await this.get(userId);
     await this.exclusive(s, async () => {
       if (s.busy || s.voice || s.login) throw new CodexError(409, 'Stop the current Codex run before changing the model.');
       if ((await s.rpc.request('account/read', { refreshToken: false }))?.account?.type !== 'chatgpt') {
         throw new CodexError(409, 'Sign in with ChatGPT before choosing a Codex model.');
       }
-      const catalog = await this.listModels(s);
-      if (!catalog.some(m => m.id === id)) throw new CodexError(400, 'Choose a model from the list. That model is not in your account catalog.');
-      await this.saveSelection(s.home, (await this.readSelection(s.home).catch(() => null))?.enabled === true, id);
+      if (id !== null && !(await this.listModels(s)).some(m => m.id === id)) throw new CodexError(400, 'Choose a model from the list. That model is not in your account catalog.');
+      await this.saveSelection(s.home, (await this.readSelection(s.home)).enabled, id);
     });
     return { selectedModel: id };
   }
@@ -339,11 +336,14 @@ export class CodexSessions {
       if ((await s.rpc.request('account/read', { refreshToken: false }))?.account?.type !== 'chatgpt') {
         throw new CodexError(409, 'Your selected Codex account needs sign-in. Reconnect in Settings.');
       }
+      const id = await this.selectedModelId(userId);
+      const model = id === null ? undefined : (await this.listModels(s)).find(m => m.id === id)?.model;
+      if (id !== null && !model) throw new CodexError(409, 'Your saved Codex model is no longer available. Choose a model in Settings.');
       s.busy = true;
       const bridge = new CodexBridge(s.rpc, s.workDir, healthy => {
         s.busy = false; s.bridge = undefined; s.touched = Date.now();
         if (!healthy) s.rpc.stop();
-      }, await this.selectedModelId(userId) ?? undefined);
+      }, model);
       s.bridge = bridge;
       return bridge;
     });

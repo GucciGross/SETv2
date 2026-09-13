@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, writeFile, chmod, stat } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, chmod, stat, symlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import Fastify from 'fastify';
@@ -23,7 +23,7 @@ test('model picker: discovery, validation, persistence, thread/start, isolation'
   await t.test('model/list returns only sanitized catalog fields from the real app-server response', async () => {
     await writeFile(join(aliceHome, 'fixture-models'), JSON.stringify({ data: [
       { id: 'gpt-5.2', model: 'gpt-5.2', displayName: 'GPT-5.2', description: 'flagship', isDefault: true, hidden: false, defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'balanced' }], accessToken: 'SECRET-TOKEN', cliAuthCredentialsStore: 'file' },
-      { id: 'gpt-5.2-codex', model: 'gpt-5.2-codex', displayName: 'GPT-5.2 Codex', description: 'agentic', isDefault: false, hidden: true, defaultReasoningEffort: 'high', supportedReasoningEfforts: [] },
+      { id: 'gpt-5.2-codex', model: 'upstream-codex-selector', displayName: 'GPT-5.2 Codex', description: 'agentic', isDefault: false, hidden: true, defaultReasoningEffort: 'high', supportedReasoningEfforts: [] },
     ], nextCursor: null, rawUpstream: 'LEAK' }), 'utf8');
     const page = await pool.models('alice');
     assert.deepEqual(page, { models: [
@@ -53,7 +53,7 @@ test('model picker: discovery, validation, persistence, thread/start, isolation'
   await t.test('selecting a discovered catalog model persists atomically 0600 with enabled compatibility', async () => {
     await writeFile(join(aliceHome, 'fixture-models'), JSON.stringify({ data: [
       { id: 'gpt-5.2', model: 'gpt-5.2', displayName: 'GPT-5.2', description: 'flagship', isDefault: true, hidden: false, defaultReasoningEffort: 'medium', supportedReasoningEfforts: [] },
-      { id: 'gpt-5.2-codex', model: 'gpt-5.2-codex', displayName: 'GPT-5.2 Codex', description: 'agentic', isDefault: false, hidden: false, defaultReasoningEffort: 'high', supportedReasoningEfforts: [] },
+      { id: 'gpt-5.2-codex', model: 'upstream-codex-selector', displayName: 'GPT-5.2 Codex', description: 'agentic', isDefault: false, hidden: false, defaultReasoningEffort: 'high', supportedReasoningEfforts: [] },
     ], nextCursor: null }), 'utf8');
     await pool.selectModel('alice', 'gpt-5.2');
     const st = await stat(join(aliceHome, 'selection.json'));
@@ -73,7 +73,7 @@ test('model picker: discovery, validation, persistence, thread/start, isolation'
   await t.test('thread/start carries the chosen model; a later run can switch models', async () => {
     await writeFile(join(aliceHome, 'fixture-models'), JSON.stringify({ data: [
       { id: 'gpt-5.2', model: 'gpt-5.2', displayName: 'GPT-5.2', description: '', isDefault: true, hidden: false, defaultReasoningEffort: 'medium', supportedReasoningEfforts: [] },
-      { id: 'gpt-5.2-codex', model: 'gpt-5.2-codex', displayName: 'GPT-5.2 Codex', description: '', isDefault: false, hidden: false, defaultReasoningEffort: 'high', supportedReasoningEfforts: [] },
+      { id: 'gpt-5.2-codex', model: 'upstream-codex-selector', displayName: 'GPT-5.2 Codex', description: '', isDefault: false, hidden: false, defaultReasoningEffort: 'high', supportedReasoningEfforts: [] },
     ], nextCursor: null }), 'utf8');
     await pool.selectModel('alice', 'gpt-5.2');
     const bridge = (await pool.acquire('alice'))!;
@@ -85,7 +85,7 @@ test('model picker: discovery, validation, persistence, thread/start, isolation'
     const bridge2 = (await pool.acquire('alice'))!;
     await bridge2.complete({ messages: [{ role: 'user', content: 'Find the lesson' }], tools: [{ type: 'function', function: { name: 'search_workspace', description: 'Search SET', parameters: { type: 'object', properties: {}, required: [] } } }] }, () => {});
     const thread2 = JSON.parse(await readFile(join(aliceHome, 'fixture-thread.json'), 'utf8'));
-    assert.equal(thread2.model, 'gpt-5.2-codex');
+    assert.equal(thread2.model, 'upstream-codex-selector');
     await bridge2.close();
   });
 
@@ -101,6 +101,50 @@ test('model picker: discovery, validation, persistence, thread/start, isolation'
     await pending;
     await pool.selectModel('alice', 'gpt-5.2');
     assert.equal(JSON.parse(await readFile(join(aliceHome, 'selection.json'), 'utf8')).model, 'gpt-5.2');
+  });
+
+  await t.test('disable preserves model and null clears without a catalog', async () => {
+    await pool.select('alice', false);
+    assert.equal(await pool.selectedModelId('alice'), 'gpt-5.2');
+    await pool.select('alice', true);
+    const catalogFile = join(aliceHome, 'fixture-models');
+    const catalog = await readFile(catalogFile, 'utf8');
+    await writeFile(catalogFile, '{}');
+    await pool.selectModel('alice', null);
+    assert.equal(await pool.selectedModelId('alice'), null);
+    const bridge = (await pool.acquire('alice'))!;
+    try {
+      await bridge.complete({ messages: [{ role: 'user', content: 'Hello' }], tools: [{ type: 'function', function: { name: 'search_workspace', description: 'Search SET', parameters: { type: 'object', properties: {}, required: [] } } }] }, () => {});
+      assert.equal(JSON.parse(await readFile(join(aliceHome, 'fixture-thread.json'), 'utf8')).model, undefined);
+    } finally { await bridge.close(); await writeFile(catalogFile, catalog); }
+    await pool.selectModel('alice', 'gpt-5.2');
+  });
+
+  await t.test('corrupt preferences cannot be overwritten', async () => {
+    const file = join(aliceHome, 'selection.json');
+    const before = await readFile(file, 'utf8');
+    await writeFile(file, '{broken');
+    try {
+      await assert.rejects(pool.select('alice', true));
+      await assert.rejects(pool.select('alice', false));
+      await assert.rejects(pool.selectModel('alice', 'gpt-5.2'));
+      assert.equal(await readFile(file, 'utf8'), '{broken');
+    } finally { await writeFile(file, before); }
+  });
+
+  await t.test('unsafe selection files are not replaced by mutations', async () => {
+    const file = join(aliceHome, 'selection.json');
+    const before = await readFile(file, 'utf8');
+    for (const value of ['null', JSON.stringify({ enabled: true, model: {} }), 'x'.repeat(1025), 'symlink']) {
+      await rm(file);
+      if (value === 'symlink') await symlink(join(aliceHome, 'missing-target'), file);
+      else await writeFile(file, value);
+      try {
+        await assert.rejects(pool.select('alice', true));
+        await assert.rejects(pool.select('alice', false));
+        await assert.rejects(pool.selectModel('alice', null));
+      } finally { await rm(file); await writeFile(file, before); }
+    }
   });
 
   await t.test('per-user isolation: bob has no model and cannot write alice storage', async () => {
@@ -142,6 +186,9 @@ test('model picker HTTP: bearer identity, safe fields, schema rejects unknown bo
     assert.equal((await app.inject({ url: '/codex/models', headers: { authorization: `Bearer ${signServiceToken()}` } })).statusCode, 401);
     const ok = await app.inject({ method: 'PUT', url: '/codex/model', headers, payload: { model: 'gpt-5.2' } });
     assert.equal(ok.statusCode, 200); assert.equal(ok.json().selectedModel, 'gpt-5.2');
+    const cleared = await app.inject({ method: 'PUT', url: '/codex/model', headers, payload: { model: null } });
+    assert.equal(cleared.statusCode, 200); assert.equal(cleared.json().selectedModel, null);
+    assert.equal((await app.inject({ method: 'PUT', url: '/codex/model', headers, payload: { model: '' } })).statusCode, 400);
     // Fastify's shared ajv config coerces scalars and strips unknown keys; the
     // catalog-membership check in sessions is the trust boundary, not the schema.
     for (const payload of [{}, { model: {} }]) {
