@@ -1,0 +1,24 @@
+name: Ingress contract
+on:
+  push: { branches: [main] }
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build actual images
+        run: |
+          docker build -t set-server ./server
+          docker build -t set-web ./web
+      - run: python3 -m pip install websockets==15.0.1
+      - name: Verify HTTP and HTTPS routes through Nginx
+        run: |
+          set -euo pipefail
+          compose=(docker compose -p set-ingress-regression -f server/test/h5p-compose.yml)
+          trap '"${compose[@]}" down -v' EXIT
+          "${compose[@]}" up -d --wait --wait-timeout 120
+          H5P_TEST_DATABASE=1 python3 server/ingress-smoke.py
