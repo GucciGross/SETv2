@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { browserDictationAvailable } from '../../lib/voiceFallback';
 import { AI_CONNECTION_CHANGED, nativeVoiceSelected, useVoiceCapabilities } from './voiceCapabilities';
+import { useCodexVoice } from './useCodexVoice';
 
 /** Diagnostics only: checking setup never requests the microphone or records. */
 export default function VoiceSettings() {
@@ -7,6 +9,9 @@ export default function VoiceSettings() {
   const secure = window.isSecureContext;
   const browser = browserDictationAvailable();
   const native = nativeVoiceSelected(data);
+  const voice = useCodexVoice(async () => ({ success: false, text: '' }), true);
+  const [loadError, setLoadError] = useState('');
+  useEffect(() => { if (native) void voice.loadCatalog(); }, [native]);
   return <section className="set-card p-4 mt-4" aria-labelledby="voice-setup-heading">
     <h2 id="voice-setup-heading" className="font-semibold">Voice setup</h2>
     <p className="mt-2 text-sm text-set-dim">Voice uses the same Copilot conversation and selected LLM. Connecting a chat model alone does not add speech-to-text.</p>
@@ -20,6 +25,24 @@ export default function VoiceSettings() {
       <p className="text-set-dim">On your SET server, set TRANSCRIBE_BASE_URL to a service with /audio/transcriptions, TRANSCRIBE_MODEL to its speech model, and TRANSCRIBE_API_KEY only if required. Restart SET, then recheck here. A plain Ollama chat endpoint is not a transcription service. Do not put credentials in a URL.</p>
     </details>}
     {native && <p className="mt-3 text-xs text-set-dim">This uses the existing opt-in Codex voice integration. Successful ChatGPT sign-in does not prove that this account/runtime supports native realtime audio.</p>}
+    {native && (
+      voice.catalog
+        ? <label className="flex flex-wrap items-center gap-2 text-sm mt-3 min-h-11">
+            <span>Voice</span>
+            <select className="set-input text-sm min-h-11" value={voice.voice ?? ''}
+              onChange={e => voice.setVoice(e.target.value || null)}>
+              <option value="">Account default</option>
+              {voice.catalog.v1.length > 0 && <optgroup label="Standard voices">{voice.catalog.v1.map(v => <option key={v} value={v}>{v}</option>)}</optgroup>}
+              {voice.catalog.v2.length > 0 && <optgroup label="GPT realtime voices">{voice.catalog.v2.map(v => <option key={v} value={v}>{v}</option>)}</optgroup>}
+            </select>
+            <span className="text-xs text-set-dim">Applies to the next voice conversation. No compatibility is claimed for any specific voice; the account default is preferred.</span>
+          </label>
+        : <p role="status" className="text-xs text-set-dim mt-3">
+            {voice.catalogError
+              ? <button type="button" className="set-btn text-xs min-h-9" onClick={() => void voice.loadCatalog()}>Could not load voices: {voice.catalogError}. Retry</button>
+              : loadError || 'Loading voices…'}
+          </p>
+    )}
     <button type="button" className="set-btn mt-3 min-h-11" onClick={() => window.dispatchEvent(new Event(AI_CONNECTION_CHANGED))}>Recheck voice setup</button>
   </section>;
 }

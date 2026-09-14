@@ -9,6 +9,35 @@ export type VoiceEvent = { sequence: number } & (
   { type: 'transcript'; text: string }
 );
 
+export interface CodexVoiceCatalog { v1: string[]; v2: string[]; all: string[]; defaultV1: string | null; defaultV2: string | null }
+const VOICE_NAME_MAX = 120;
+const VOICE_LIST_MAX = 64;
+const unreadable = () => new CodexError(502, 'Codex returned an unreadable voice catalog.');
+
+/** Strict wire validation of thread/realtime/listVoices. A malformed catalog fails closed. */
+export function parseVoiceCatalog(value: unknown): CodexVoiceCatalog {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw unreadable();
+  const raw = value as { voices?: unknown; defaultV1?: unknown; defaultV2?: unknown };
+  if (!raw.voices || typeof raw.voices !== 'object' || Array.isArray(raw.voices)) throw unreadable();
+  const groups = raw.voices as { v1?: unknown; v2?: unknown };
+  const list = (v: unknown): string[] => {
+    if (!Array.isArray(v) || v.length > VOICE_LIST_MAX) throw unreadable();
+    const out: string[] = [];
+    for (const name of v) {
+      if (typeof name !== 'string' || !name.trim() || name.length > VOICE_NAME_MAX || out.includes(name)) throw unreadable();
+      out.push(name);
+    }
+    return out;
+  };
+  const def = (v: unknown): string | null => {
+    if (v === undefined || v === null) return null;
+    if (typeof v !== 'string' || !v.trim() || v.length > VOICE_NAME_MAX) throw unreadable();
+    return v;
+  };
+  const catalog = { v1: list(groups.v1), v2: list(groups.v2), defaultV1: def(raw.defaultV1), defaultV2: def(raw.defaultV2) };
+  return { ...catalog, all: [...catalog.v1, ...catalog.v2] };
+}
+
 export function voiceOffer(value: unknown): string {
   if (typeof value !== 'string' || value.length > VOICE_LIMITS.sdp || !value.startsWith('v=0') ||
       !/(?:\r?\n)m=audio /.test(value)) throw new CodexError(400, 'A bounded WebRTC audio offer is required.');
@@ -51,6 +80,7 @@ export class CodexVoice {
 
   constructor(private readonly rpc: CodexRpc, private readonly workDir: string,
     readonly spaceId: string, private readonly release: (healthy: boolean) => void,
+    private readonly chosenVoice: string | null = null,
     limits = { idleMs: VOICE_LIMITS.idleMs, lifetimeMs: VOICE_LIMITS.lifetimeMs }) {
     this.deadline = setTimeout(() => void this.close(), limits.lifetimeMs);
     this.heartbeat = setInterval(() => {
@@ -65,6 +95,11 @@ export class CodexVoice {
   private assertActive() {
     requireCodexVoice();
     if (this.closed) throw new CodexError(410, 'The voice session ended. Start voice again or use text.');
+  }
+
+  private listVoices(): Promise<CodexVoiceCatalog> {
+    return this.rpc.request('thread/realtime/listVoices', this.threadId ? { threadId: this.threadId } : {})
+      .then(value => parseVoiceCatalog(value));
   }
 
   async start(offer: string): Promise<{ sessionId: string; sdp: string }> {
@@ -89,10 +124,16 @@ export class CodexVoice {
         await this.rpc.request('thread/unsubscribe', { threadId: this.threadId }, 2000).catch(() => {});
         this.assertActive();
       }
+      // Validate an explicit voice against a freshly fetched catalog: discovery
+      // is not entitlement and cached lists go stale. Fail closed, no fallback.
+      if (this.chosenVoice !== null && !(await this.listVoices()).all.includes(this.chosenVoice)) {
+        throw new CodexError(400, 'That voice is not in your account catalog. Pick another voice or use the account default.');
+      }
       await this.rpc.request('thread/realtime/start', {
         threadId: this.threadId, outputModality: 'audio', transport: { type: 'webrtc', sdp: offer },
         // Do not invent a GPT Voice model ID or override account-side routing.
         // Keep Codex's delegation prompt and automatic response handoffs.
+        ...(this.chosenVoice ? { voice: this.chosenVoice } : {}),
         realtimeStartInstructions: INSTRUCTIONS,
       });
       const sdp = await answer;
