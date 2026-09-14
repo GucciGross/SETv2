@@ -4,22 +4,26 @@ import { useApp } from '../../stores/app';
 import type { VoiceCapabilities } from './voiceCapabilities';
 import { CodexVoiceClient, type CodexVoiceCatalog, type CopilotVoiceResult } from './codexVoiceClient';
 
-/** Session-scoped voice choice: in-memory only, reset when the signed-in user changes. */
-let chosenVoice: string | null = null;
-let chosenVoiceUser = '';
+/** A user never sees another user's leftover choice; keying by user IS the reset. */
+export function voiceChoiceForUser(choice: { userId: string; voice: string | null }, userId: string): string | null {
+  return choice.userId === userId ? choice.voice : null;
+}
 
-export interface VoiceOption { name: string; generation: 'v1' | 'v2' }
+/** Reactive, session-scoped picker state: per-user, in-memory, never persisted. */
+export function useCodexVoiceChoice() {
+  const userId = useApp(s => s.user?.id ?? '');
+  const choice = useApp(s => s.codexVoiceChoice);
+  const voice = voiceChoiceForUser(choice, userId);
+  const setVoice = useCallback((next: string | null) => useApp.getState().setCodexVoiceChoice(userId, next), [userId]);
+  return { voice, setVoice };
+}
+
 export function useCodexVoice(onRequest: (text: string, signal: AbortSignal) => Promise<CopilotVoiceResult>, spoken: boolean) {
-  const userId = useApp(s => s.user?.id);
-  // Per-user in-memory reset. Evaluated during render; same user = keep the choice.
-  if ((userId ?? '') !== chosenVoiceUser) { chosenVoiceUser = userId ?? ''; chosenVoice = null; }
-  const setVoice = useCallback((voice: string | null) => { chosenVoice = voice; }, []);
+  const { voice: chosenVoice, setVoice } = useCodexVoiceChoice();
   const [state, setState] = useState<'idle' | 'requesting' | 'live'>('idle');
   const [error, setError] = useState('');
   const [interim, setInterim] = useState('');
   const [selected, setSelected] = useState(false);
-  const [catalog, setCatalog] = useState<CodexVoiceCatalog | null>(null);
-  const [catalogError, setCatalogError] = useState('');
   const [inputStream, setInputStream] = useState<MediaStream | null>(null);
   const [outputStream, setOutputStream] = useState<MediaStream | null>(null);
   const client = useRef<CodexVoiceClient | undefined>(undefined);
@@ -32,26 +36,6 @@ export function useCodexVoice(onRequest: (text: string, signal: AbortSignal) => 
   }, []);
   useEffect(() => cancel, [cancel]);
   useEffect(() => { client.current?.setMuted(!spoken); }, [spoken]);
-
-  /** Live catalog for the picker. Fails closed: an error leaves the selector unusable, never a stale list. */
-  const loadCatalog = useCallback(async () => {
-    const current = ++generation.current;
-    setCatalog(null); setCatalogError('');
-    try {
-      const spaceId = useApp.getState().currentSpaceId ?? '';
-      const response = await fetch(`/api/copilot/voice/codex/voices?spaceId=${encodeURIComponent(spaceId)}`, {
-        headers: { authorization: `Bearer ${getToken()}` }, cache: 'no-store', signal: AbortSignal.timeout(15_000),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Voice catalog could not be loaded.');
-      if (current !== generation.current) return;
-      if (!data || !Array.isArray(data.v1) || !Array.isArray(data.v2)) throw new Error('The server returned an unreadable voice catalog.');
-      setCatalog(data);
-    } catch (e: any) {
-      if (current !== generation.current) return;
-      setCatalog(null); setCatalogError(e?.message ?? 'Voice catalog could not be loaded.');
-    }
-  }, []);
 
   const start = useCallback(async (capabilities: VoiceCapabilities) => {
     cancel(); setError(''); setSelected(true); setState('requesting');
@@ -70,7 +54,7 @@ export function useCodexVoice(onRequest: (text: string, signal: AbortSignal) => 
     if (current !== generation.current) return true;
     if (!handled) { cancel(); setSelected(false); }
     return handled;
-  }, [cancel]);
+  }, [cancel, chosenVoice]);
 
-  return { state, error, interim, selected, inputStream, outputStream, start, cancel, catalog, catalogError, loadCatalog, voice: chosenVoice, setVoice };
+  return { state, error, interim, selected, inputStream, outputStream, start, cancel, voice: chosenVoice, setVoice };
 }
