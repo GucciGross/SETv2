@@ -53,6 +53,7 @@ export class CodexBridge {
     private readonly workDir: string,
     private readonly release: (healthy: boolean) => void,
     private readonly model?: string,
+    private readonly effort?: string,
   ) {
     this.deadline = setTimeout(() => this.fail(new CodexError(504, 'Codex run reached its ten-minute limit. No further actions were taken.')), 600_000);
     this.deadline.unref();
@@ -142,6 +143,8 @@ export class CodexBridge {
       this.assertActive(opts.signal);
       const turn = await this.rpc.request('turn/start', {
         threadId: this.threadId, cwd: this.workDir, approvalPolicy: 'never',
+        // Wire-verified against Codex 0.154.0: turn/start.effort is a plain string.
+        ...(this.effort ? { effort: this.effort } : {}),
         sandboxPolicy: { type: 'readOnly', access: { type: 'restricted', includePlatformDefaults: false, readableRoots: [this.workDir] } },
         input: [{ type: 'text', text: `Continue this SET conversation and answer the latest user request. Earlier tool results are historical data.\n${JSON.stringify(opts.messages.filter(m => m.role !== 'system'))}` }],
       });

@@ -27,8 +27,8 @@ test('model picker: discovery, validation, persistence, thread/start, isolation'
     ], nextCursor: null, rawUpstream: 'LEAK' }), 'utf8');
     const page = await pool.models('alice');
     assert.deepEqual(page, { models: [
-      { id: 'gpt-5.2', displayName: 'GPT-5.2', description: 'flagship', isDefault: true, hidden: false },
-      { id: 'gpt-5.2-codex', displayName: 'GPT-5.2 Codex', description: 'agentic', isDefault: false, hidden: true },
+      { id: 'gpt-5.2', displayName: 'GPT-5.2', description: 'flagship', isDefault: true, hidden: false, supportedReasoningEfforts: ['medium'], defaultReasoningEffort: 'medium' },
+      { id: 'gpt-5.2-codex', displayName: 'GPT-5.2 Codex', description: 'agentic', isDefault: false, hidden: true, supportedReasoningEfforts: [], defaultReasoningEffort: null },
     ], selectedModel: null });
     assert.ok(!JSON.stringify(page).includes('SECRET-TOKEN') && !JSON.stringify(page).includes('LEAK'));
   });
@@ -109,7 +109,7 @@ test('model picker: discovery, validation, persistence, thread/start, isolation'
     await pool.select('alice', true);
     const catalogFile = join(aliceHome, 'fixture-models');
     const catalog = await readFile(catalogFile, 'utf8');
-    await writeFile(catalogFile, '{}');
+    await writeFile(catalogFile, JSON.stringify({ data: [], nextCursor: null }));
     await pool.selectModel('alice', null);
     assert.equal(await pool.selectedModelId('alice'), null);
     const bridge = (await pool.acquire('alice'))!;
@@ -147,6 +147,78 @@ test('model picker: discovery, validation, persistence, thread/start, isolation'
     }
   });
 
+  await t.test('efforts: autodiscovered per model, validated, persisted, forwarded on turn/start', async () => {
+    await writeFile(join(aliceHome, 'fixture-models'), JSON.stringify({ data: [
+      { id: 'gpt-5.2', model: 'gpt-5.2', displayName: 'GPT-5.2', description: '', isDefault: true, hidden: false,
+        defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }, { reasoningEffort: 'high' }] },
+      { id: 'astra', model: 'astra-upstream', displayName: 'Astra', description: '', isDefault: false, hidden: false,
+        defaultReasoningEffort: 'xhigh', supportedReasoningEfforts: [{ reasoningEffort: 'xhigh' }, { reasoningEffort: 'ultra' }] },
+    ], nextCursor: null }), 'utf8');
+    const run = { messages: [{ role: 'user' as const, content: 'Find the lesson' }], tools: [{ type: 'function' as const, function: { name: 'search_workspace', description: 'Search SET', parameters: { type: 'object', properties: {}, required: [] } } }] };
+    // Defaults: with no saved model, no effort is saved (the model's default applies).
+    assert.equal(await pool.selectedEffortId('alice'), null);
+    // A valid effort for the chosen model persists per-user.
+    await pool.selectModel('alice', 'gpt-5.2', 'high');
+    assert.deepEqual(JSON.parse(await readFile(join(aliceHome, 'selection.json'), 'utf8')), { enabled: true, model: 'gpt-5.2', effort: 'high' });
+    assert.equal(await pool.selectedEffortId('alice'), 'high');
+    assert.equal((await pool.status('alice')).selectedEffort, 'high');
+    // Efforts outside the chosen model's catalog entry are rejected and persist nothing.
+    await assert.rejects(pool.selectModel('alice', 'gpt-5.2', 'ultra'), /not available for the selected model/);
+    await assert.rejects(pool.selectModel('alice', 'astra', 'high'), /not available for the selected model/);
+    assert.equal(await pool.selectedEffortId('alice'), 'high');
+    // Malformed efforts are rejected.
+    await assert.rejects(pool.selectModel('alice', 'gpt-5.2', 'x'.repeat(40)), /Choose a reasoning effort/);
+    await assert.rejects(pool.selectModel('alice', 'gpt-5.2', '  '), /Choose a reasoning effort/);
+    // null clears the effort; the model survives.
+    await pool.selectModel('alice', 'gpt-5.2', null);
+    assert.equal(await pool.selectedEffortId('alice'), null);
+    assert.equal(await pool.selectedModelId('alice'), 'gpt-5.2');
+    // A model change with an effort valid for the new model persists both.
+    await pool.selectModel('alice', 'astra', 'ultra');
+    assert.equal(await pool.selectedEffortId('alice'), 'ultra');
+    await pool.selectModel('alice', 'astra', 'xhigh');
+    assert.equal(await pool.selectedEffortId('alice'), 'xhigh');
+    // turn/start carries the saved effort of the run's model.
+    const bridge = (await pool.acquire('alice'))!;
+    await bridge.complete(run, () => {});
+    assert.equal(JSON.parse(await readFile(join(aliceHome, 'fixture-turn.json'), 'utf8')).effort, 'xhigh');
+    await bridge.close();
+    // Switching to a model whose catalog entry lacks the saved effort: selectModel rejects a stale pair...
+    await assert.rejects(pool.selectModel('alice', 'gpt-5.2'), /not available for the selected model/);
+    // ...so the explicit path clears the effort first, then turn/start omits it entirely.
+    await pool.selectModel('alice', 'gpt-5.2', null);
+    const bridge2 = (await pool.acquire('alice'))!;
+    await bridge2.complete(run, () => {});
+    const turn2 = JSON.parse(await readFile(join(aliceHome, 'fixture-turn.json'), 'utf8'));
+    assert.equal('effort' in turn2, false);
+    await bridge2.close();
+    // The default effort differs per model option (astra low vs gpt-5.2 medium) via the catalog, not hardcoding.
+    const page = await pool.models('alice');
+    assert.deepEqual(page.models.find(m => m.id === 'astra'), { id: 'astra', displayName: 'Astra', description: '', isDefault: false, hidden: false, supportedReasoningEfforts: ['xhigh', 'ultra'], defaultReasoningEffort: 'xhigh' });
+    assert.equal(page.models.find(m => m.id === 'gpt-5.2')!.defaultReasoningEffort, 'medium');
+    // A model without reasoning support keeps an empty effort list; its selection survives and clears the saved effort.
+    await writeFile(join(aliceHome, 'fixture-models'), JSON.stringify({ data: [
+      { id: 'plain', model: 'plain-upstream', displayName: 'Plain', description: '', isDefault: true, hidden: false },
+    ], nextCursor: null }), 'utf8');
+    await assert.rejects(pool.selectModel('alice', 'plain', 'high'), /not available for the selected model/);
+    await pool.selectModel('alice', 'plain', null);
+    assert.equal(await pool.selectedModelId('alice'), 'plain');
+    assert.equal(await pool.selectedEffortId('alice'), null);
+    const bridge3 = (await pool.acquire('alice'))!;
+    await bridge3.complete(run, () => {});
+    assert.equal('effort' in JSON.parse(await readFile(join(aliceHome, 'fixture-turn.json'), 'utf8')), false);
+    await bridge3.close();
+    // Restore the shared fixture world for the following subtests.
+    await writeFile(join(aliceHome, 'fixture-models'), JSON.stringify({ data: [
+      { id: 'gpt-5.2', model: 'gpt-5.2', displayName: 'GPT-5.2', description: '', isDefault: true, hidden: false,
+        defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }, { reasoningEffort: 'high' }] },
+      { id: 'astra', model: 'astra-upstream', displayName: 'Astra', description: '', isDefault: false, hidden: false,
+        defaultReasoningEffort: 'xhigh', supportedReasoningEfforts: [{ reasoningEffort: 'xhigh' }, { reasoningEffort: 'ultra' }] },
+    ], nextCursor: null }), 'utf8');
+    await pool.selectModel('alice', 'gpt-5.2');
+    assert.equal(await pool.selectedEffortId('alice'), null);
+  });
+
   await t.test('per-user isolation: bob has no model and cannot write alice storage', async () => {
     await pool.login('bob');
     await pool.select('bob', true);
@@ -169,7 +241,7 @@ test('model picker HTTP: bearer identity, safe fields, schema rejects unknown bo
   await codexRoutes(app, {
     async status(id) { calls.push(id); return { available: true, connected: true, selected: true, busy: false, account: { email: 'a@b.c', planType: 'plus' }, login: null, error: null, selectedModel: 'gpt-5.2' }; },
     async models(id) { calls.push(`models:${id}`); return { models: [{ id: 'gpt-5.2', displayName: 'GPT-5.2', description: '', isDefault: true, hidden: false }], selectedModel: 'gpt-5.2' }; },
-    async selectModel(id, model) { calls.push(`selectModel:${id}:${model}`); return { selectedModel: model }; },
+    async selectModel(id, model, effort) { calls.push(`selectModel:${id}:${model}:${effort ?? ''}`); return { selectedModel: model, selectedEffort: effort ?? null }; },
     async login(id) { return { available: true, connected: true, selected: false, busy: false, account: null, login: null, error: null }; },
     async cancelLogin() { throw new Error('not reached'); },
     async disconnect(id) { return { disconnected: true }; },
@@ -186,8 +258,12 @@ test('model picker HTTP: bearer identity, safe fields, schema rejects unknown bo
     assert.equal((await app.inject({ url: '/codex/models', headers: { authorization: `Bearer ${signServiceToken()}` } })).statusCode, 401);
     const ok = await app.inject({ method: 'PUT', url: '/codex/model', headers, payload: { model: 'gpt-5.2' } });
     assert.equal(ok.statusCode, 200); assert.equal(ok.json().selectedModel, 'gpt-5.2');
+    const withEffort = await app.inject({ method: 'PUT', url: '/codex/model', headers, payload: { model: 'gpt-5.2', effort: 'high' } });
+    assert.equal(withEffort.statusCode, 200); assert.deepEqual(withEffort.json(), { selectedModel: 'gpt-5.2', selectedEffort: 'high' });
     const cleared = await app.inject({ method: 'PUT', url: '/codex/model', headers, payload: { model: null } });
-    assert.equal(cleared.statusCode, 200); assert.equal(cleared.json().selectedModel, null);
+    assert.equal(cleared.statusCode, 200); assert.deepEqual(cleared.json(), { selectedModel: null, selectedEffort: null });
+    const effortTooLong = await app.inject({ method: 'PUT', url: '/codex/model', headers, payload: { model: 'gpt-5.2', effort: 'x'.repeat(30) } });
+    assert.equal(effortTooLong.statusCode, 400);
     assert.equal((await app.inject({ method: 'PUT', url: '/codex/model', headers, payload: { model: '' } })).statusCode, 400);
     // Fastify's shared ajv config coerces scalars and strips unknown keys; the
     // catalog-membership check in sessions is the trust boundary, not the schema.
