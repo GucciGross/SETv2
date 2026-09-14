@@ -32,6 +32,8 @@ export class CodexBridge {
   private allowed = new Set<string>();
   private deadline: NodeJS.Timeout;
   private bytes = 0;
+  private readonly messageText = new Map<string, string>();
+  private readonly completedMessages = new Set<string>();
   private calls = 0;
   private upstreamSignal?: AbortSignal;
   private readonly cancellation = new AbortController();
@@ -106,10 +108,25 @@ export class CodexBridge {
   private readonly notification = (msg: RpcMessage) => {
     const p = msg.params;
     if (!p || p.threadId !== this.threadId || this.closed) return;
+    if (this.turnId && p.turnId && p.turnId !== this.turnId) return;
     if (msg.method === 'item/agentMessage/delta' && typeof p.delta === 'string') {
-      this.bytes += Buffer.byteLength(p.delta);
-      if (this.bytes > 2 * 1024 * 1024) return this.rpc.stop('Codex output limit exceeded.');
-      this.push({ type: 'text', delta: p.delta });
+      if (this.completedMessages.has(p.itemId)) return;
+      this.publishText(p.delta);
+      if (typeof p.itemId === 'string') this.messageText.set(p.itemId, (this.messageText.get(p.itemId) ?? '') + p.delta);
+    } else if (msg.method === 'item/completed' && p.item?.type === 'agentMessage' &&
+        typeof p.item.id === 'string' && typeof p.item.text === 'string') {
+      // The final item is authoritative. Codex can deliver it without deltas;
+      // append only the missing suffix so normal streamed replies never double.
+      const { id, text } = p.item;
+      if (this.completedMessages.has(id)) return;
+      const streamed = this.messageText.get(id) ?? '';
+      if (!text.startsWith(streamed)) {
+        this.fail(new CodexError(502, 'Codex reply changed while streaming. Review the partial reply and retry.'));
+        return;
+      }
+      this.publishText(text.slice(streamed.length));
+      this.completedMessages.add(id);
+      this.messageText.delete(id);
     } else if (msg.method === 'turn/completed') {
       this.completeTurn = true;
       if (p.turn?.status === 'completed') this.push({ type: 'done' });
@@ -120,6 +137,17 @@ export class CodexBridge {
       this.fail(new CodexError(403, 'A native Codex tool was requested instead of an approved SET tool. Request stopped.'));
     }
   };
+
+  private publishText(delta: string) {
+    if (!delta) return;
+    this.bytes += Buffer.byteLength(delta);
+    if (this.bytes > 2 * 1024 * 1024) {
+      this.fail(new CodexError(502, 'Codex output limit exceeded.'));
+      this.rpc.stop('Codex output limit exceeded.');
+      return;
+    }
+    this.push({ type: 'text', delta });
+  }
 
   async complete(opts: { messages: Message[]; tools?: ToolDefinition[]; signal?: AbortSignal }, onDelta: (text: string) => void): Promise<Result> {
     this.assertActive(opts.signal);
@@ -204,6 +232,7 @@ export class CodexBridge {
       await this.rpc.request('thread/unsubscribe', { threadId: this.threadId }, 2000).catch(() => { healthy = false; });
     }
     this.queue = []; this.requestIds.clear();
+    this.messageText.clear(); this.completedMessages.clear();
     this.release(healthy);
   }
 }

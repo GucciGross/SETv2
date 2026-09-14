@@ -333,6 +333,29 @@ with sync_playwright() as p:
             assert page.evaluate('window.controlsFixture.calls.at(-1).threadId') == thread
             assert page.evaluate('window.controlsFixture.calls.at(-1).messages.filter(m => m.role === "user").length') == 3
             page.screenshot(path=str(artifacts / (name + '-conversation.png')))
+            # The reported regression: typed user bubbles without any visible
+            # reply or error. Use the real CopilotKit failure lifecycle, not a toast mock.
+            alert = header.get_by_role('alert')
+            for failure, expected in [('server-error', 'sign in again'), ('transport-error', 'connection failed'), ('empty-error', 'returned no reply')]:
+                before_calls = page.evaluate('window.controlsFixture.calls.length')
+                page.evaluate('(failure) => window.controlsFixture.nextRun = failure', failure)
+                text.fill('Hello? ' + failure); text.press('Enter')
+                expect(alert).to_be_visible(); expect(alert).to_contain_text(expected)
+                expect(alert).not_to_contain_text('PRIVATE-UPSTREAM-DETAIL')
+                page.wait_for_timeout(200)
+                assert page.evaluate('window.controlsFixture.calls.length') == before_calls + 1, 'Failure must not automatically retry workspace actions'
+                box = alert.bounding_box()
+                assert box and box['x'] >= 0 and box['x'] + box['width'] <= width + 1, 'Error must fit the phone viewport'
+                page.screenshot(path=str(artifacts / (name + '-' + failure + '.png')))
+                text.fill('Retry ' + failure); text.press('Enter')
+                expect(popup.get_by_text('Received in the same Copilot conversation: Retry ' + failure, exact=True)).to_be_visible()
+                expect(alert).to_have_count(0)
+                assert page.evaluate('window.controlsFixture.calls.at(-1).threadId') == thread
+            # New chat also clears a failed run, not just the voice-input state.
+            page.evaluate("window.controlsFixture.nextRun = 'server-error'")
+            text.fill('Reset this failed chat'); text.press('Enter'); expect(alert).to_be_visible()
+            popup.locator('button[title="Start a new chat"]').click()
+            expect(alert).to_have_count(0)
             voice.click(); expect(stop).to_be_visible()
             before = page.evaluate('window.controlsFixture.stoppedTracks')
             popup.locator('[data-testid="copilot-close-button"]').click()
