@@ -9,9 +9,10 @@ interface Status {
   login: { userCode: string; verificationUrl: string } | null;
   error: string | null;
   selectedModel: string | null;
+  selectedEffort: string | null;
 }
 
-interface ModelPage { models: { id: string; displayName: string; description: string; isDefault: boolean; hidden: boolean }[]; selectedModel: string | null; }
+interface ModelPage { models: { id: string; displayName: string; description: string; isDefault: boolean; hidden: boolean; supportedReasoningEfforts: string[] }[]; selectedModel: string | null; }
 
 /** A personal Copilot backend, not a workspace-shared API provider. */
 export default function CodexSettings() {
@@ -82,7 +83,7 @@ export default function CodexSettings() {
     try {
       const next = await fn();
       if (mounted.current && current === generation.current) {
-        if (next) setStatus(value => ({ connected: false, selected: false, busy: false, account: null, login: null, error: null, selectedModel: null, ...value, ...next } as Status));
+        if (next) setStatus(value => ({ connected: false, selected: false, busy: false, account: null, login: null, error: null, selectedModel: null, selectedEffort: null, ...value, ...next } as Status));
         window.dispatchEvent(new Event(AI_CONNECTION_CHANGED));
       }
     } catch (e: any) {
@@ -92,6 +93,12 @@ export default function CodexSettings() {
       }
     } finally { if (mounted.current && current === generation.current) setBusy(false); }
   };
+
+  // Mirror the server rule: efforts belong to the chosen model, else the catalog default's.
+  const effortsFor = (modelId: string | null): string[] =>
+    modelPage?.models.find(m => m.id === modelId)?.supportedReasoningEfforts
+    ?? modelPage?.models.find(m => m.isDefault)?.supportedReasoningEfforts ?? [];
+  const efforts = effortsFor(status?.selectedModel ?? null);
 
   if (!loading && !error && !available && !['self-hosted', 'unconfigured'].includes(deploymentMode)) return null;
   if (!available) return <section className="set-card p-4 mb-5" aria-labelledby="codex-setup-heading">
@@ -146,23 +153,39 @@ export default function CodexSettings() {
           </label>
           <p className="text-xs text-set-dim">This applies only to your account. Other members keep their own provider choices.</p>
           {status.selected && (modelPage
-            ? <label className="flex flex-wrap items-center gap-2 text-sm text-set-text min-h-11">
-                <span>Model</span>
-                <select className="set-input text-sm min-h-11" value={status.selectedModel ?? ''} disabled={busy || loading || status.busy}
-                  onChange={e => {
-                    const model = e.target.value || null;
-                    void action(() => api.put<{ selectedModel: string | null }>('/codex/model', { model }));
-                  }}>
-                  <option value="">CLI default</option>
-                  {modelPage.models.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
-                </select>
-              </label>
+            ? <div className="flex flex-col gap-3">
+                <label className="flex flex-wrap items-center gap-2 text-sm text-set-text min-h-11">
+                  <span>Model</span>
+                  <select className="set-input text-sm min-h-11" value={status.selectedModel ?? ''} disabled={busy || loading || status.busy}
+                    onChange={e => {
+                      const model = e.target.value || null;
+                      // status owns the selection; every save sends the full model+effort pair, keeping a
+                      // saved effort only when the new model's catalog entry still supports it.
+                      const effort = model !== null && status.selectedEffort !== null && effortsFor(model).includes(status.selectedEffort) ? status.selectedEffort : null;
+                      void action(() => api.put<{ selectedModel: string | null; selectedEffort: string | null }>('/codex/model', { model, effort }));
+                    }}>
+                    <option value="">CLI default</option>
+                    {modelPage.models.map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
+                  </select>
+                </label>
+                {efforts.length > 0 && <label className="flex flex-wrap items-center gap-2 text-sm text-set-text min-h-11">
+                  <span>Reasoning effort</span>
+                  <select className="set-input text-sm min-h-11" value={status.selectedEffort ?? ''} disabled={busy || loading || status.busy}
+                    onChange={e => {
+                      const effort = e.target.value || null;
+                      void action(() => api.put<{ selectedModel: string | null; selectedEffort: string | null }>('/codex/model', { model: status.selectedModel, effort }));
+                    }}>
+                    <option value="">Model default</option>
+                    {efforts.map(effort => <option key={effort} value={effort}>{effort}</option>)}
+                  </select>
+                </label>}
+              </div>
             : <p role="status" className="text-xs text-set-dim">{modelError
                 ? <button type="button" className="set-btn text-xs min-h-9" disabled={busy} onClick={() => void loadModels(generation.current)}>Could not load models. Retry</button>
                 : 'Loading models…'}</p>)}
           <button className="set-btn-ghost text-sm min-h-11" disabled={busy || loading} onClick={() => void action(async () => {
             await api.post('/codex/logout', {});
-            return { connected: false, selected: false, busy: false, account: null, login: null, error: null, selectedModel: null };
+            return { connected: false, selected: false, busy: false, account: null, login: null, error: null, selectedModel: null, selectedEffort: null };
           })}>Disconnect Codex</button>
         </div>
       ) : (

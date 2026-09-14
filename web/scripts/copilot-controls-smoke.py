@@ -37,13 +37,17 @@ with sync_playwright() as p:
                 catalogs.append(account['connected'])
                 if name == 'catalog-unavailable': route.fulfill(status=503, json={'error': 'Catalog unavailable'})
                 elif name == 'catalog-malformed': route.fulfill(json={'settings': {}})
-                else: route.fulfill(json={'models': [{'id': 'model-a', 'displayName': 'Model A', 'description': '', 'isDefault': True, 'hidden': False}, {'id': 'model-b', 'displayName': 'Model B', 'description': '', 'isDefault': False, 'hidden': False}] if account['connected'] else [], 'selectedModel': account['selectedModel']})
+                else: route.fulfill(json={'models': [{'id': 'model-a', 'displayName': 'Model A', 'description': '', 'isDefault': True, 'hidden': False, 'supportedReasoningEfforts': ['low', 'high', 'xhigh']}, {'id': 'model-b', 'displayName': 'Model B', 'description': '', 'isDefault': False, 'hidden': False, 'supportedReasoningEfforts': []}] if account['connected'] else [], 'selectedModel': account['selectedModel']})
             elif path.endswith('/codex/model'):
                 model_saves.append(request.post_data_json)
                 if defer_model_save: pending_models.append(route)
                 elif fail_model_save: route.fulfill(status=503, json={'error': 'Model save failed'})
                 else:
-                    account['selectedModel'] = request.post_data_json['model']; route.fulfill(json={'selectedModel': account['selectedModel']})
+                    body = request.post_data_json
+                    account['selectedModel'] = body['model']
+                    if 'effort' in body: account['selectedEffort'] = body['effort']
+                    else: account['selectedEffort'] = None
+                    route.fulfill(json={'selectedModel': body['model'], 'selectedEffort': account['selectedEffort']})
             elif path.endswith('/codex/account'): route.fulfill(json=account)
             else: route.fulfill(json={'settings': {}, 'pages': [], 'notebooks': [], 'databases': [], 'subjects': [], 'notifications': [], 'providers': [], 'presets': [], 'members': []})
         page.route('**/api/**', transport)
@@ -81,9 +85,9 @@ with sync_playwright() as p:
                     else:
                         picker = card.get_by_role('combobox', name='Model', exact=True)
                         picker.select_option('model-a'); expect(picker).to_have_value('model-a'); expect(picker).to_be_enabled()
-                        assert model_saves[-1] == {'model': 'model-a'}
+                        assert model_saves[-1] == {'model': 'model-a', 'effort': None}
                         picker.select_option(''); expect(picker).to_have_value(''); expect(picker).to_be_enabled()
-                        assert model_saves[-1] == {'model': None}
+                        assert model_saves[-1] == {'model': None, 'effort': None}
                         picker.select_option('model-a'); expect(picker).to_have_value('model-a'); expect(picker).to_be_enabled()
                         fail_model_save = True
                         picker.select_option('model-b')
@@ -103,6 +107,35 @@ with sync_playwright() as p:
                         with page.expect_response('**/api/codex/model'):
                             pending_models.pop().fulfill(json={'selectedModel': 'model-b'})
                         expect(picker).to_have_value('')
+                        defer_model_save = False
+                        # Reasoning effort: options follow the selected model's own catalog entry; the value
+                        # lives on status (single authority) and failure restores it.
+                        effort = card.get_by_role('combobox', name='Reasoning effort', exact=True)
+                        expect(effort).to_be_visible()
+                        picker.select_option('model-a')
+                        expect(effort).to_be_enabled(timeout=15000)
+                        expect(effort).to_have_value('')
+                        effort.select_option('high'); expect(effort).to_have_value('high'); expect(effort).to_be_enabled()
+                        assert model_saves[-1] == {'model': 'model-a', 'effort': 'high'}
+                        assert account['selectedEffort'] == 'high'
+                        # Switching models drops efforts the new model lacks (model-b has none at all).
+                        picker.select_option('model-b')
+                        expect(effort).to_have_count(0, timeout=15000)
+                        assert model_saves[-1] == {'model': 'model-b', 'effort': None}
+                        picker.select_option('model-a')
+                        expect(effort).to_be_enabled(timeout=15000)
+                        expect(effort).to_have_value('')
+                        assert model_saves[-1] == {'model': 'model-a', 'effort': None}
+                        effort.select_option('high'); expect(effort).to_have_value('high'); expect(effort).to_be_enabled()
+                        assert model_saves[-1] == {'model': 'model-a', 'effort': 'high'}
+                        assert account['selectedEffort'] == 'high'
+                        effort.select_option(''); expect(effort).to_have_value(''); expect(effort).to_be_enabled()
+                        assert model_saves[-1] == {'model': 'model-a', 'effort': None}
+                        fail_model_save = True
+                        effort.select_option('low')
+                        expect(card.get_by_role('alert')).to_be_visible()
+                        expect(effort).to_have_value('')
+                        fail_model_save = False
                     card.get_by_role('button', name='Disconnect Codex').click()
                     expect(card.get_by_role('button', name='Sign in with ChatGPT', exact=True)).to_be_visible()
                 print('PASS', name, 'personal settings lifecycle/cloud absence')

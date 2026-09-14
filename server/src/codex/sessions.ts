@@ -45,7 +45,7 @@ interface Session {
   loginError?: string;
 }
 
-export interface CodexModelChoice { id: string; displayName: string; description: string; isDefault: boolean; hidden: boolean }
+export interface CodexModelChoice { id: string; displayName: string; description: string; isDefault: boolean; hidden: boolean; supportedReasoningEfforts: string[]; defaultReasoningEffort: string | null }
 
 /** Live model/list catalog per user. Selection validates against it, never against a hardcoded list. */
 export class CodexSessions {
@@ -140,17 +140,18 @@ export class CodexSessions {
     try { return await action(); } finally { this.mutations.delete(userId); }
   }
 
-  private async readSelection(home: string): Promise<{ enabled: boolean; model: string | null }> {
+  private async readSelection(home: string): Promise<{ enabled: boolean; model: string | null; effort: string | null }> {
     const file = join(home, 'selection.json');
     try {
       const st = await lstat(file);
       if (!st.isFile() || st.isSymbolicLink() || st.size > 1024) throw new Error('Unsafe selection file');
       const raw = JSON.parse(await readFile(file, 'utf8'));
       if (!raw || Array.isArray(raw) || typeof raw.enabled !== 'boolean' ||
-          (raw.model != null && (typeof raw.model !== 'string' || !raw.model.trim() || raw.model.length > 120))) throw new Error('Invalid selection file');
-      return { enabled: raw.enabled, model: raw.model ?? null };
+          (raw.model != null && (typeof raw.model !== 'string' || !raw.model.trim() || raw.model.length > 120)) ||
+          (raw.effort != null && (typeof raw.effort !== 'string' || !raw.effort.trim() || raw.effort.length > 24))) throw new Error('Invalid selection file');
+      return { enabled: raw.enabled, model: raw.model ?? null, effort: raw.effort ?? null };
     } catch (error: any) {
-      if (error?.code === 'ENOENT') return { enabled: false, model: null };
+      if (error?.code === 'ENOENT') return { enabled: false, model: null, effort: null };
       throw new CodexError(500, 'Could not read the personal Codex preference. No provider fallback was attempted.');
     }
   }
@@ -166,10 +167,19 @@ export class CodexSessions {
     return (await this.readSelection(userDirectory(this.dataDir, userId))).model;
   }
 
-  private async saveSelection(home: string, enabled: boolean, model: string | null) {
+  /** The saved reasoning effort, or null when unset (the model's default applies). */
+  async selectedEffortId(userId: string): Promise<string | null> {
+    if (!codexOAuthEnabled()) return null;
+    return (await this.readSelection(userDirectory(this.dataDir, userId))).effort;
+  }
+
+  private async saveSelection(home: string, enabled: boolean, model: string | null, effort: string | null) {
     const file = join(home, `selection-${randomUUID()}.tmp`);
     try {
-      await writeFile(file, JSON.stringify(model ? { enabled, model } : { enabled }), { mode: 0o600, flag: 'wx' });
+      const saved: { enabled: boolean; model?: string; effort?: string } = { enabled };
+      if (model) saved.model = model;
+      if (effort) saved.effort = effort;
+      await writeFile(file, JSON.stringify(saved), { mode: 0o600, flag: 'wx' });
       await rename(file, join(home, 'selection.json'));
     } finally { await rm(file, { force: true }); }
   }
@@ -187,7 +197,19 @@ export class CodexSessions {
       const id = typeof value.id === 'string' ? value.id : '';
       if (!id || id.length > 120 || typeof value.model !== 'string' || !value.model.trim() || value.model.length > 120) return null;
       const text = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
-      return { id, model: value.model, displayName: text(value.displayName, 120) || id, description: text(value.description, 400), isDefault: value.isDefault === true, hidden: value.hidden === true };
+      const effortId = (entry: unknown): string => {
+        const effort = (entry as any)?.reasoningEffort;
+        return typeof effort === 'string' && effort.trim() && effort.length <= 24 ? effort : '';
+      };
+      const supportedReasoningEfforts: string[] = Array.from(new Set<string>((Array.isArray(value.supportedReasoningEfforts) ? value.supportedReasoningEfforts : []).map(effortId).filter(Boolean)));
+      return {
+        id, model: value.model,
+        displayName: text(value.displayName, 120) || id,
+        description: text(value.description, 400),
+        isDefault: value.isDefault === true, hidden: value.hidden === true,
+        supportedReasoningEfforts,
+        defaultReasoningEffort: typeof value.defaultReasoningEffort === 'string' && supportedReasoningEfforts.includes(value.defaultReasoningEffort) ? value.defaultReasoningEffort : null,
+      };
     };
     const seen = new Set<string>();
     const models: (CodexModelChoice & { model: string })[] = [];
@@ -212,6 +234,7 @@ export class CodexSessions {
     return {
       available: true, connected: a?.type === 'chatgpt', selected: await this.selected(userId), busy: s.busy || !!s.voice,
       selectedModel: await this.selectedModelId(userId),
+      selectedEffort: await this.selectedEffortId(userId),
       account: a?.type === 'chatgpt' ? {
         email: typeof a.email === 'string' ? a.email.slice(0, 254) : '',
         planType: typeof a.planType === 'string' ? a.planType.slice(0, 60) : '',
@@ -263,7 +286,7 @@ export class CodexSessions {
       const current = await this.sessions.get(userId);
       if (current?.busy || current?.voice || current?.locked || this.disconnecting.has(userId)) throw new CodexError(409, 'Stop the current Codex operation before switching providers.');
       const home = await this.storage(userId);
-      await this.saveSelection(home, false, (await this.readSelection(home)).model);
+      await this.saveSelection(home, false, (await this.readSelection(home)).model, (await this.readSelection(home)).effort);
       return { selected: false };
     }
     const s = await this.get(userId);
@@ -273,17 +296,17 @@ export class CodexSessions {
         throw new CodexError(409, 'Sign in with ChatGPT before selecting Codex for Copilot.');
       }
       const saved = await this.readSelection(s.home);
-      await this.saveSelection(s.home, true, saved.model);
+      await this.saveSelection(s.home, true, saved.model, saved.effort);
     });
     return { selected: true };
   }
 
-  /** Pick a model for future Copilot runs. Membership is checked against the live catalog, never a local copy. */
-  async selectModel(userId: string, modelId: string | null): Promise<{ selectedModel: string | null }> {
-    return this.mutate(userId, () => this.selectModelImpl(userId, modelId));
+  /** Pick a model (and optionally its reasoning effort) for future Copilot runs. Membership is checked against the live catalog, never a local copy. */
+  async selectModel(userId: string, modelId: string | null, effortId?: string | null): Promise<{ selectedModel: string | null; selectedEffort: string | null }> {
+    return this.mutate(userId, () => this.selectModelImpl(userId, modelId, effortId === undefined ? undefined : effortId));
   }
 
-  private async selectModelImpl(userId: string, modelId: string | null) {
+  private async selectModelImpl(userId: string, modelId: string | null, effortId: string | null | undefined) {
     const id = modelId;
     if (id !== null && (typeof id !== 'string' || !id.trim() || id.length > 120)) throw new CodexError(400, 'Choose a model from the list.');
     const s = await this.get(userId);
@@ -292,10 +315,22 @@ export class CodexSessions {
       if ((await s.rpc.request('account/read', { refreshToken: false }))?.account?.type !== 'chatgpt') {
         throw new CodexError(409, 'Sign in with ChatGPT before choosing a Codex model.');
       }
-      if (id !== null && !(await this.listModels(s)).some(m => m.id === id)) throw new CodexError(400, 'Choose a model from the list. That model is not in your account catalog.');
-      await this.saveSelection(s.home, (await this.readSelection(s.home)).enabled, id);
+      const saved = await this.readSelection(s.home);
+      let effort = saved.effort;
+      if (effortId !== undefined) {
+        if (effortId !== null && (typeof effortId !== 'string' || !effortId.trim() || effortId.length > 24)) throw new CodexError(400, 'Choose a reasoning effort from the list.');
+        effort = effortId;
+      }
+      // Validate against the model that will serve the run: the chosen one, else the catalog default.
+      const list = await this.listModels(s);
+      const chosen = id === null ? list.find(m => m.isDefault) : list.find(m => m.id === id);
+      if (id !== null && !chosen) throw new CodexError(400, 'Choose a model from the list. That model is not in your account catalog.');
+      if (effort !== null && !chosen?.supportedReasoningEfforts.includes(effort)) {
+        throw new CodexError(400, 'Choose a reasoning effort from the list. That effort is not available for the selected model.');
+      }
+      await this.saveSelection(s.home, saved.enabled, id, effort);
     });
-    return { selectedModel: id };
+    return { selectedModel: id, selectedEffort: (await this.readSelection(s.home)).effort };
   }
 
   async disconnect(userId: string) {
@@ -304,7 +339,7 @@ export class CodexSessions {
     this.disconnecting.add(userId);
     try {
       const home = await this.storage(userId);
-      await this.saveSelection(home, false, null);
+      await this.saveSelection(home, false, null, null);
       const promise = this.sessions.get(userId);
       const s = await promise?.catch(() => null);
       if (s) {
@@ -337,13 +372,18 @@ export class CodexSessions {
         throw new CodexError(409, 'Your selected Codex account needs sign-in. Reconnect in Settings.');
       }
       const id = await this.selectedModelId(userId);
-      const model = id === null ? undefined : (await this.listModels(s)).find(m => m.id === id)?.model;
+      const list = await this.listModels(s);
+      const model = id === null ? undefined : list.find(m => m.id === id)?.model;
       if (id !== null && !model) throw new CodexError(409, 'Your saved Codex model is no longer available. Choose a model in Settings.');
+      // The saved effort must still belong to the model that will serve this run.
+      const chosen = id === null ? list.find(m => m.isDefault) : list.find(m => m.id === id);
+      const savedEffort = await this.selectedEffortId(userId);
+      const effort = savedEffort !== null && chosen?.supportedReasoningEfforts.includes(savedEffort) ? savedEffort : undefined;
       s.busy = true;
       const bridge = new CodexBridge(s.rpc, s.workDir, healthy => {
         s.busy = false; s.bridge = undefined; s.touched = Date.now();
         if (!healthy) s.rpc.stop();
-      }, model);
+      }, model, effort);
       s.bridge = bridge;
       return bridge;
     });
