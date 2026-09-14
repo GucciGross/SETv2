@@ -30,6 +30,9 @@ interface AppState {
   spaces: Space[];
   pages: PageMeta[];
   currentSpaceId: string | null;
+  /** Session-scoped Codex voice choice, keyed by user id: in-memory only, never persisted. */
+  codexVoiceChoice: { userId: string; voice: string | null };
+  setCodexVoiceChoice: (userId: string, voice: string | null) => void;
   ws: WebSocket | null;
   presence: { userId: string; name: string; pageId?: string }[];
   copilotOpen: boolean;
@@ -63,6 +66,8 @@ export const useApp = create<AppState>((set, get) => ({
   spaces: [],
   pages: [],
   currentSpaceId: null,
+  codexVoiceChoice: { userId: '', voice: null },
+  setCodexVoiceChoice: (userId, voice) => set({ codexVoiceChoice: { userId, voice } }),
   ws: null,
   presence: [],
   copilotOpen: typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,

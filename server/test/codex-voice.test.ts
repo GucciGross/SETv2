@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { codexVoiceEnabled } from '../src/codex/policy.js';
-import { CodexVoice, voiceOffer, voiceResult } from '../src/codex/voice.js';
+import { CodexVoice, parseVoiceCatalog, voiceOffer, voiceResult } from '../src/codex/voice.js';
 import { CodexRpc, type RpcMessage } from '../src/codex/rpc.js';
 
 const OFFER = 'v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n';
@@ -16,10 +16,12 @@ class FakeRpc {
   replies: { id: any; value: any }[] = [];
   beforeThread?: () => Promise<void>;
   failStart = false;
+  catalog?: any;
   addServerRequestHandler(fn: (m: any) => boolean) { this.handlers.add(fn); return () => { this.handlers.delete(fn); }; }
   async request(method: string, params: any) {
     this.calls.push({ method, params });
     if (method === 'thread/start') { await this.beforeThread?.(); return { thread: { id: 'voice-thread' } }; }
+    if (method === 'thread/realtime/listVoices') return this.catalog ?? { voices: { v1: ['alloy'], v2: ['cedar'] }, defaultV1: 'alloy', defaultV2: 'cedar' };
     if (method === 'thread/realtime/start') {
       if (this.failStart) throw new Error('fixture: unavailable');
       // Deliberately before the RPC promise continuation.
@@ -33,11 +35,11 @@ class FakeRpc {
     return [...this.handlers].some(h => h({ id, method, params: { threadId: 'voice-thread', turnId: 'voice-turn', tool: 'set_copilot', arguments: { request: 'Create a lesson' }, ...params } }));
   }
 }
-function fixture(t: any, limits?: { idleMs: number; lifetimeMs: number }) {
+function fixture(t: any, limits?: { idleMs: number; lifetimeMs: number }, voiceName: string | null = null) {
   const old = Object.fromEntries(Object.keys(enabled).map(k => [k, process.env[k]]));
   Object.assign(process.env, enabled);
   const rpc = new FakeRpc(); let releases = 0;
-  const voice = new CodexVoice(rpc as unknown as CodexRpc, '/private/work', 'space-a', () => { releases++; }, limits);
+  const voice = new CodexVoice(rpc as unknown as CodexRpc, '/private/work', 'space-a', () => { releases++; }, voiceName, limits);
   t.after(async () => {
     await voice.close();
     for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
@@ -133,4 +135,55 @@ test('RPC multiplexing keeps text and voice handlers independent and denies unkn
   assert.equal(text, 1); assert.equal(voice, 1); assert.equal(writes[0].error?.code, -32601);
   remove(); child.stdout.write(JSON.stringify({ id: 4, method: 'item/tool/call', params: { threadId: 'voice' } }) + '\n');
   assert.equal(writes[1].error?.code, -32601); rpc.stop();
+});
+
+test('voice catalog parsing is strictly bounded and rejects malformed shapes', () => {
+  const good = { voices: { v1: ['alloy'], v2: ['cedar', 'cedar-dry'] }, defaultV1: 'alloy', defaultV2: null };
+  const parsed = parseVoiceCatalog(good);
+  assert.deepEqual(parsed, { v1: ['alloy'], v2: ['cedar', 'cedar-dry'], all: ['alloy', 'cedar', 'cedar-dry'], defaultV1: 'alloy', defaultV2: null });
+  const long = 'x'.repeat(121);
+  for (const bad of [null, [], {}, { voices: null }, { voices: [] }, { voices: { v1: 'alloy' } },
+    { voices: { v1: [42] } }, { voices: { v1: [''] } }, { voices: { v1: [long] } }, { voices: { v1: ['a'], v2: [long] } },
+    { voices: { v1: ['a'], v2: [] }, defaultV1: 7 }, { voices: { v1: ['a'], v2: [] }, defaultV2: long },
+    { voices: { v1: Array(65).fill('a') } }]) {
+    assert.throws(() => parseVoiceCatalog(bad), `should reject ${JSON.stringify(bad)?.slice(0, 40)}`);
+  }
+});
+
+test('explicit voice validates against a fresh catalog: forward, reject, and omit at realtime/start', async t => {
+  const { rpc, voice } = fixture(t, undefined, 'cedar');
+  await voice.start(OFFER);
+  const start = rpc.calls.find(c => c.method === 'thread/realtime/start');
+  assert.equal(start?.params.voice, 'cedar'); // forwarded, top-level
+  const listCall = rpc.calls.some(c => c.method === 'thread/realtime/listVoices');
+  assert.ok(listCall); // catalog fetched before realtime/start
+  await voice.close();
+
+  const rejected = fixture(t, undefined, 'not-in-catalog');
+  rejected.rpc.catalog = { voices: { v1: ['alloy'], v2: [] }, defaultV1: 'alloy', defaultV2: null };
+  await assert.rejects(rejected.voice.start(OFFER), /not in your account catalog/);
+  assert.ok(!rejected.rpc.calls.some(c => c.method === 'thread/realtime/start')); // fail closed: no realtime session
+  await rejected.voice.close();
+
+  const omitted = fixture(t);
+  await omitted.voice.start(OFFER); // null means account default: no voice field
+  const omittedStart = omitted.rpc.calls.find(c => c.method === 'thread/realtime/start');
+  assert.ok(omittedStart && !('voice' in omittedStart.params));
+  await omitted.voice.close();
+});
+
+test('an unreadable catalog fails closed for an explicit voice; the default path skips discovery', async t => {
+  const broken = fixture(t, undefined, 'cedar');
+  broken.rpc.catalog = { voices: { v1: 'alloy' } };
+  await assert.rejects(broken.voice.start(OFFER), /unreadable voice catalog/);
+  assert.ok(!broken.rpc.calls.some(c => c.method === 'thread/realtime/start'));
+  await broken.voice.close();
+
+  const skipped = fixture(t);
+  skipped.rpc.catalog = { voices: { v1: 'alloy' } }; // malformed, and never fetched
+  await skipped.voice.start(OFFER); // null voice: account default, no catalog call
+  const st = skipped.rpc.calls.find(c => c.method === 'thread/realtime/start');
+  assert.ok(st && !('voice' in st.params));
+  assert.ok(!skipped.rpc.calls.some(c => c.method === 'thread/realtime/listVoices'));
+  await skipped.voice.close();
 });

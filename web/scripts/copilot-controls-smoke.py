@@ -1,6 +1,7 @@
 """Actual SET shell, popup and personal settings; fake external agent/audio/account only."""
 import json
 import os
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright, expect
@@ -11,16 +12,36 @@ artifacts = Path('/tmp/copilot-controls'); artifacts.mkdir(parents=True, exist_o
 
 with sync_playwright() as p:
     browser = p.chromium.launch(executable_path=os.environ.get('SET_BROWSER_EXECUTABLE'))
-    for name, width, settings in [('phone', 390, False), ('small-phone', 320, False), ('desktop', 1440, False), ('account', 390, True), ('catalog-unavailable', 390, True), ('catalog-malformed', 390, True), ('cloud', 390, True)]:
+    for name, width, settings in [('phone', 390, False), ('small-phone', 320, False), ('desktop', 1440, False), ('account', 390, True), ('catalog-unavailable', 390, True), ('catalog-malformed', 390, True), ('voice-settings', 390, True), ('voice-catalog-unavailable', 390, True), ('cloud', 390, True)]:
         page = browser.new_page(viewport={'width': width, 'height': 900}, reduced_motion='reduce')
         errors, uploads, selections, model_saves, catalogs = [], [], [], [], []
         fail_model_save = False
         defer_model_save, pending_models = False, []
+        voice_sessions, voice_deletes, voice_catalog_requests = [], [], []
+        pending_voices, defer_voices = [], False
+        native_voice = name in ('voice-settings', 'voice-catalog-unavailable')
         account = {'connected': False, 'selected': False, 'busy': False, 'account': None, 'login': None, 'error': None, 'selectedModel': None}
         page.on('pageerror', lambda e: errors.append(str(e)))
+        if native_voice:
+            # WebRTC is faked (the fixture microphone is); signaling routes stay real mocks.
+            # Installed for the whole page so the production mic click runs end to end.
+            page.add_init_script("window.RTCPeerConnection = class FakePC { constructor() { this.connectionState = 'new'; this.iceGatheringState = 'complete'; this.localDescription = { sdp: 'v=0\\r\\nm=audio 9' }; } addEventListener() {} removeEventListener() {} createDataChannel() {} addTrack() {} async createOffer() { return { type: 'offer', sdp: 'v=0' }; } async setLocalDescription() {} async setRemoteDescription() {} close() {} }")
         def transport(route):
             request = route.request; path = urlparse(request.url).path
-            if path.endswith('/voice/capabilities'): route.fulfill(json={'serverTranscription': True})
+            if path.endswith('/voice/capabilities'):
+                route.fulfill(json={'serverTranscription': True, **({'codexRealtime': {'enabled': True, 'selected': True, 'experimental': True}} if native_voice else {})})
+            elif path.endswith('/voice/codex/voices'):
+                voice_catalog_requests.append(path)
+                if name == 'voice-catalog-unavailable': route.fulfill(status=503, json={'error': 'Voice catalog unavailable'})
+                elif defer_voices: pending_voices.append(route) # response held back: fulfilled manually, late
+                else: route.fulfill(json={'v1': ['alloy'], 'v2': ['cedar', 'maple'], 'defaultV1': 'alloy', 'defaultV2': 'cedar'})
+            elif request.method == 'POST' and path.endswith('/voice/codex/sessions'):
+                voice_sessions.append(request.post_data_json)
+                route.fulfill(json={'sessionId': '22222222-2222-4222-8222-222222222222', 'sdp': 'v=0\r\nm=audio 9'})
+            elif request.method == 'DELETE' and '/voice/codex/sessions/' in path:
+                voice_deletes.append(path); route.fulfill(json={'stopped': True})
+            elif request.method == 'GET' and '/voice/codex/sessions/' in path and path.endswith('/events'):
+                route.fulfill(json={'events': [], 'cursor': 0})
             elif path.endswith('/voice/transcribe'):
                 uploads.append(path); route.fulfill(json={'text': 'Summarize the joint limits'})
             elif path.endswith('/codex/capabilities'): route.fulfill(json={'available': name != 'cloud'})
@@ -59,6 +80,93 @@ with sync_playwright() as p:
             expect(mic).to_be_enabled()
             if settings:
                 card = page.get_by_role('region', name='Codex · Sign in with ChatGPT')
+                if name in ('voice-settings', 'voice-catalog-unavailable'):
+                    voice_card = page.get_by_role('region', name='Voice setup')
+                    expect(voice_card).to_be_visible()
+                    if name == 'voice-catalog-unavailable':
+                        expect(voice_card.get_by_role('button', name='Could not load voices: Voice catalog unavailable. Retry')).to_be_visible()
+                        # Fails closed: no picker, and picking is impossible while the catalog is down.
+                        expect(voice_card.get_by_role('combobox', name='Voice')).to_have_count(0)
+                        assert voice_sessions == [], 'No audio session may start while the voice catalog is unavailable'
+                        print('PASS', name, 'voice catalog fails closed with retry')
+                        assert not errors, errors
+                        continue
+                    picker = voice_card.get_by_role('combobox', name='Voice')
+                    expect(picker).to_be_visible()
+                    expect(picker).to_have_value('')
+                    # Neutral protocol groups, not model-tier labels.
+                    expect(picker.locator('optgroup[label="Voices (v1 protocol)"]')).to_have_count(1)
+                    expect(picker.locator('optgroup[label="Voices (v2 protocol)"]')).to_have_count(1)
+                    expect(picker.locator('optgroup[label="Voices (v1 protocol)"] option[value="alloy"]')).to_have_count(1)
+                    expect(picker.locator('optgroup[label="Voices (v2 protocol)"] option[value="cedar"]')).to_have_count(1)
+                    # Selection HOLDS (reactive store rerender): the regression the module-global setter hid.
+                    picker.select_option('cedar')
+                    expect(picker).to_have_value('cedar')
+                    assert voice_sessions == [], 'Picking a voice must not start an audio session'
+                    assert voice_deletes == [], 'Picking a voice must not create or delete an audio session'
+                    # The REAL production path: mic click → provider start() → client reads the
+                    # store choice → POST carries the voice. No synthetic client re-creation.
+                    mic = dock.get_by_role('button', name='Talk to Copilot', exact=True)
+                    expect(mic).to_be_enabled()
+                    with page.expect_response('**/api/copilot/voice/codex/sessions') as session_response:
+                        mic.click()
+                    popup = page.locator('[data-copilot-popup]')
+                    expect(popup).to_be_visible()
+                    expect(popup.locator('[data-set-voice-orb]')).to_be_visible()
+                    assert session_response.value.ok
+                    assert voice_sessions[-1].get('voice') == 'cedar', voice_sessions[-1]
+                    assert len(voice_sessions) == 1, voice_sessions
+                    # Closing the popup cancels the native session (DELETE; owned cleanup).
+                    with page.expect_response(lambda r: r.request.method == 'DELETE' and '/voice/codex/sessions/' in r.url):
+                        popup.locator('[data-testid="copilot-close-button"]').click()
+                    expect(popup).to_have_count(0)
+                    assert len(voice_deletes) == 1
+                    # A late catalog response must never clobber the user's newer choice
+                    # (identity-change guard: effect re-runs discard stale responses).
+                    defer_voices = True
+                    picker.select_option('maple')
+                    expect(picker).to_have_value('maple')
+                    assert len(voice_sessions) == 1, 'Changing the picker must not start another session'
+                    # Module bindings pre-imported, then dispatch in a second evaluate:
+                    # expect_* must be fully armed before the network event fires.
+                    page.evaluate("async () => { window.__voiceModules = { caps: await import('/src/components/copilot/voiceCapabilities.ts'), app: await import('/src/stores/app.ts') }; }")
+                    page.evaluate("() => { window.dispatchEvent(new Event(window.__voiceModules.caps.AI_CONNECTION_CHANGED)); }")
+                    with page.expect_request('**/api/copilot/voice/codex/voices*'):
+                        pass
+                    # The request event can beat the route handler's own bookkeeping.
+                    deadline = time.time() + 5
+                    while time.time() < deadline and len(pending_voices) < 1: page.wait_for_timeout(100)
+                    assert len(pending_voices) == 1, 'Recheck must refetch the voice catalog'
+                    # A USER CHANGE invalidates every in-flight catalog response (late-response
+                    # guard): capabilities recheck resets `native`, the picker effect re-runs
+                    # (multiple times), and only the newest response may ever reach the DOM.
+                    page.evaluate("() => { window.__voiceModules.app.useApp.setState(s => ({ user: { ...s.user, id: 'next-user' } })); }")
+                    quiet, seen = time.time() + 10, len(pending_voices)
+                    while time.time() < quiet:
+                        page.wait_for_timeout(250)
+                        if len(pending_voices) > seen: seen, quiet = len(pending_voices), time.time() + 10
+                        elif time.time() > quiet - 9: break  # ~1s without growth: quiescent
+                    assert len(pending_voices) >= 2, pending_voices
+                    for stale_route in pending_voices[:-1]:  # every earlier response arrives late
+                        stale_route.fulfill(json={'v1': [], 'v2': ['stale-voice'], 'defaultV1': None, 'defaultV2': None})
+                    pending_voices[-1].fulfill(json={'v1': [], 'v2': ['fresh-voice'], 'defaultV1': None, 'defaultV2': None})
+                    expect(picker).to_have_value('')  # user change reset the choice
+                    expect(picker.locator('option[value="stale-voice"]')).to_have_count(0)  # late stale responses discarded
+                    expect(picker.locator('option[value="fresh-voice"]')).to_have_count(1)
+                    defer_voices = False
+                    # Default (no choice): the production POST omits voice entirely.
+                    with page.expect_response('**/api/copilot/voice/codex/sessions') as default_response:
+                        mic.click()
+                    expect(page.locator('[data-copilot-popup]')).to_be_visible()
+                    assert default_response.value.ok
+                    assert 'voice' not in voice_sessions[-1], voice_sessions[-1]
+                    assert len(voice_sessions) == 2, voice_sessions
+                    page.locator('[data-copilot-popup]').locator('[data-testid="copilot-close-button"]').click()
+                    expect(page.locator('[data-copilot-popup]')).to_have_count(0)
+                    assert len(voice_deletes) == 2
+                    print('PASS', name, 'voice selection rerender, production POST carries voice, default omits voice, user-change resets choice and discards stale catalog')
+                    assert not errors, errors
+                    continue
                 if name == 'cloud':
                     expect(card).to_have_count(0)
                 else:

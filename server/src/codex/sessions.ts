@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CodexRpc } from './rpc.js';
 import { CodexBridge } from './bridge.js';
-import { CodexVoice } from './voice.js';
+import { CodexVoice, parseVoiceCatalog, type CodexVoiceCatalog } from './voice.js';
 import { CodexError, codexOAuthEnabled, requireCodexOAuth, requireCodexVoice, validateDeviceLogin } from './policy.js';
 
 export const PRIVATE_CONFIG = [
@@ -390,7 +390,7 @@ export class CodexSessions {
   }
 
   /** One audio adapter per personal CLI; its handoffs still acquire the normal text bridge. */
-  async openVoice(userId: string, spaceId: string): Promise<CodexVoice> {
+  async openVoice(userId: string, spaceId: string, voice: string | null = null): Promise<CodexVoice> {
     requireCodexVoice();
     if (this.mutations.has(userId) || this.disconnecting.has(userId)) throw new CodexError(409, 'Finish the account operation before starting voice.');
     const s = await this.get(userId);
@@ -401,14 +401,43 @@ export class CodexSessions {
       if (!(await this.selected(userId)) || (await s.rpc.request('account/read', { refreshToken: false }))?.account?.type !== 'chatgpt') {
         throw new CodexError(409, 'Connect and select your personal Codex account in Settings before starting voice.');
       }
-      const voice = new CodexVoice(s.rpc, s.workDir, spaceId, healthy => {
-        if (s.voice === voice) s.voice = undefined;
+      if (voice !== null && (typeof voice !== 'string' || !voice.trim() || voice.length > 120)) {
+        throw new CodexError(400, 'Choose a voice from the list.');
+      }
+      const voiceAdapter = new CodexVoice(s.rpc, s.workDir, spaceId, healthy => {
+        if (s.voice === voiceAdapter) s.voice = undefined;
         s.touched = Date.now();
         if (!healthy) s.rpc.stop();
-      });
-      s.voice = voice;
-      return voice;
+      }, voice);
+      s.voice = voiceAdapter;
+      return voiceAdapter;
     });
+  }
+
+  /** One live voice catalog per personal CLI, read through the user's own runtime. */
+  async voices(userId: string): Promise<CodexVoiceCatalog> {
+    requireCodexVoice();
+    if (this.mutations.has(userId) || this.disconnecting.has(userId)) throw new CodexError(409, 'Finish the account operation before loading voices.');
+    const s = await this.get(userId);
+    if (!(await this.selected(userId)) || (await s.rpc.request('account/read', { refreshToken: false }))?.account?.type !== 'chatgpt') {
+      throw new CodexError(409, 'Connect and select your personal Codex account in Settings before loading voices.');
+    }
+    return this.exclusive(s, () => this.listVoices(s));
+  }
+
+  /** Ephemeral thread: the realtime voice catalog lives behind a realtime thread context. */
+  private async listVoices(s: Session): Promise<CodexVoiceCatalog> {
+    if (s.busy || s.voice) throw new CodexError(409, 'Stop the active Copilot or voice session before loading voices.');
+    const started = await s.rpc.request('thread/start', {
+      cwd: s.workDir, sandbox: 'read-only', approvalPolicy: 'never', ephemeral: true,
+    });
+    const threadId = started?.thread?.id;
+    if (typeof threadId !== 'string' || !threadId) throw new CodexError(502, 'Codex returned an unreadable voice catalog.');
+    try {
+      return parseVoiceCatalog(await s.rpc.request('thread/realtime/listVoices', { threadId }));
+    } finally {
+      await s.rpc.request('thread/unsubscribe', { threadId }, 2000).catch(() => {});
+    }
   }
 
   /** Look up only an existing, user-owned session. Polling never spawns a process. */

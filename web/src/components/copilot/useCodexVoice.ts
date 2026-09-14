@@ -2,9 +2,24 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getToken } from '../../lib/api';
 import { useApp } from '../../stores/app';
 import type { VoiceCapabilities } from './voiceCapabilities';
-import { CodexVoiceClient, type CopilotVoiceResult } from './codexVoiceClient';
+import { CodexVoiceClient, type CodexVoiceCatalog, type CopilotVoiceResult } from './codexVoiceClient';
+
+/** A user never sees another user's leftover choice; keying by user IS the reset. */
+export function voiceChoiceForUser(choice: { userId: string; voice: string | null }, userId: string): string | null {
+  return choice.userId === userId ? choice.voice : null;
+}
+
+/** Reactive, session-scoped picker state: per-user, in-memory, never persisted. */
+export function useCodexVoiceChoice() {
+  const userId = useApp(s => s.user?.id ?? '');
+  const choice = useApp(s => s.codexVoiceChoice);
+  const voice = voiceChoiceForUser(choice, userId);
+  const setVoice = useCallback((next: string | null) => useApp.getState().setCodexVoiceChoice(userId, next), [userId]);
+  return { voice, setVoice };
+}
 
 export function useCodexVoice(onRequest: (text: string, signal: AbortSignal) => Promise<CopilotVoiceResult>, spoken: boolean) {
+  const { voice: chosenVoice, setVoice } = useCodexVoiceChoice();
   const [state, setState] = useState<'idle' | 'requesting' | 'live'>('idle');
   const [error, setError] = useState('');
   const [interim, setInterim] = useState('');
@@ -21,6 +36,7 @@ export function useCodexVoice(onRequest: (text: string, signal: AbortSignal) => 
   }, []);
   useEffect(() => cancel, [cancel]);
   useEffect(() => { client.current?.setMuted(!spoken); }, [spoken]);
+
   const start = useCallback(async (capabilities: VoiceCapabilities) => {
     cancel(); setError(''); setSelected(true); setState('requesting');
     const current = generation.current;
@@ -32,12 +48,13 @@ export function useCodexVoice(onRequest: (text: string, signal: AbortSignal) => 
       onTranscript: text => { if (current === generation.current) setInterim(text); },
       onError: message => { if (current === generation.current) { setError(message); setState('idle'); } },
       onRequest: (text, signal) => request.current(text, signal),
-    });
+    }, chosenVoice ?? undefined);
     client.current = c; c.setMuted(muted.current);
     const handled = await c.start(capabilities);
     if (current !== generation.current) return true;
     if (!handled) { cancel(); setSelected(false); }
     return handled;
-  }, [cancel]);
-  return { state, error, interim, selected, inputStream, outputStream, start, cancel };
+  }, [cancel, chosenVoice]);
+
+  return { state, error, interim, selected, inputStream, outputStream, start, cancel, voice: chosenVoice, setVoice };
 }

@@ -1,9 +1,10 @@
 import type { VoiceCapabilities } from './voiceCapabilities';
 
+export interface CodexVoiceCatalog { v1: string[]; v2: string[]; all: string[]; defaultV1: string | null; defaultV2: string | null }
 export interface CopilotVoiceResult { success: boolean; text: string }
 export interface CodexVoiceCallbacks {
   onConnecting?: () => void;
-  /** Read-only visualization taps. The client remains the sole microphone owner. */
+  /** Read-only taps for visualizations. The client remains the sole microphone owner. */
   onInputStream?: (stream: MediaStream | null) => void;
   onOutputStream?: (stream: MediaStream | null) => void;
   onLive: () => void;
@@ -25,7 +26,7 @@ export class CodexVoiceClient {
   private handled = new Set<string>();
   private pollTimer?: ReturnType<typeof setTimeout>;
   private connectTimer?: ReturnType<typeof setTimeout>;
-  constructor(private readonly token: string, private readonly spaceId: string, private readonly callbacks: CodexVoiceCallbacks) {}
+  constructor(private readonly token: string, private readonly spaceId: string, private readonly callbacks: CodexVoiceCallbacks, private readonly voice?: string) {}
   get signal() { return this.abort.signal; }
   setMuted(muted: boolean) { this.muted = muted; if (this.output) this.output.muted = muted; }
 
@@ -79,7 +80,9 @@ export class CodexVoiceClient {
       if (this.stopped) return true;
       // Do not abort the signaling fetch on local cancel: consume a late response
       // and delete its session. Server also closes work if the HTTP client drops.
-      const connected = await this.request('/codex/sessions', 'POST', { spaceId: this.spaceId, sdp: peer.localDescription?.sdp }, AbortSignal.timeout(35_000));
+      const connected = await this.request('/codex/sessions', 'POST', {
+        spaceId: this.spaceId, sdp: peer.localDescription?.sdp, ...(this.voice ? { voice: this.voice } : {}),
+      }, AbortSignal.timeout(35_000));
       if (typeof connected.sessionId !== 'string' || !/^[\da-f-]{36}$/i.test(connected.sessionId) || typeof connected.sdp !== 'string') {
         throw new Error('Invalid Codex voice signaling response.');
       }
@@ -99,14 +102,14 @@ export class CodexVoiceClient {
   private gatherIce(peer: RTCPeerConnection) {
     return new Promise<void>((resolve, reject) => {
       const finish = (error?: Error) => {
-        clearTimeout(timer); peer.removeEventListener('icegatheringstatechange', changed); this.signal.removeEventListener('abort', cancelled);
+        clearTimeout(timer); peer.removeEventListener('icegatheringstatechange', changed); this.abort.signal.removeEventListener('abort', cancelled);
         if (error) reject(error); else resolve();
       };
       const changed = () => { if (peer.iceGatheringState === 'complete') finish(); };
       const cancelled = () => finish(new Error('Voice cancelled.'));
       const timer = setTimeout(() => finish(new Error('WebRTC network negotiation timed out.')), 10_000);
-      peer.addEventListener('icegatheringstatechange', changed); this.signal.addEventListener('abort', cancelled, { once: true });
-      if (this.signal.aborted) cancelled(); else changed();
+      peer.addEventListener('icegatheringstatechange', changed); this.abort.signal.addEventListener('abort', cancelled, { once: true });
+      if (this.abort.signal.aborted) cancelled(); else changed();
     });
   }
 
@@ -137,7 +140,7 @@ export class CodexVoiceClient {
 
   private async handleRequest(requestId: string, text: string) {
     try {
-      const result = await this.callbacks.onRequest(text, this.signal);
+      const result = await this.callbacks.onRequest(text, this.abort.signal);
       if (this.stopped) return;
       if (typeof result.success !== 'boolean' || typeof result.text !== 'string' || !result.text.trim()) throw new Error('Copilot did not return a completed answer. Review the chat.');
       await this.request(`/codex/sessions/${this.sessionId}/result`, 'POST', {
