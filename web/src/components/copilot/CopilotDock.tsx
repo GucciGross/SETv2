@@ -30,8 +30,34 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
   const [mode, setMode] = useState<'voice' | 'text'>('text');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
+  const [runError, setRunError] = useState('');
+  const stoppedByUser = useRef(false);
   const [spoken, setSpoken] = useState(true);
   const [speaking, setSpeaking] = useState(false);
+  // Typed chat is sent by CopilotKit, not our voice callbacks. Listen to the
+  // shared agent as well, otherwise RUN_ERROR/HTTP failures leave only a user
+  // bubble. Do not expose raw provider bodies or automatically replay tools.
+  useEffect(() => {
+    if (!agent) return;
+    const subscription = agent.subscribe({
+      onRunInitialized: () => { stoppedByUser.current = false; setRunError(''); },
+      onRunErrorEvent: ({ event }) => {
+        if (stoppedByUser.current || event.code === 'abort') return;
+        const hint = /empty response/i.test(event.message)
+          ? 'The AI returned no reply.'
+          : /sign.in|unauthenticated|unauthorized|\b401\b/i.test(event.message)
+            ? 'Copilot needs you to sign in again.'
+            : 'Copilot could not finish this reply.';
+        setRunError(`${hint} Open AI setup to check your connection, then retry. Review any completed actions before retrying.`);
+      },
+      onRunFailed: ({ error }) => {
+        if (stoppedByUser.current || error.name === 'AbortError') return;
+        setRunError(previous => previous || 'The Copilot connection failed. Check your connection and AI setup, then retry. Review any completed actions before retrying.');
+      },
+    });
+    return () => subscription.unsubscribe();
+  }, [agent]);
+
   const utterance = useRef<SpeechSynthesisUtterance | null>(null);
   const origin = useRef<HTMLElement | undefined>(undefined);
   const focusCleanup = useRef<(() => void) | undefined>(undefined);
@@ -113,7 +139,7 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
     const mounting = new MutationObserver(() => { if (connect()) mounting.disconnect(); });
     if (!connect()) mounting.observe(document.body, { childList: true, subtree: true });
     const hidden = () => { if (document.hidden) { voice.cancel(); } };
-    const reset = () => { voice.cancel(); setMode('text'); };
+    const reset = () => { stoppedByUser.current = true; voice.cancel(); setMode('text'); setSendError(''); setRunError(''); };
     document.addEventListener('visibilitychange', hidden);
     window.addEventListener('set:copilot-reset-input', reset);
     return () => {
@@ -167,13 +193,14 @@ export function CopilotInteractionProvider({ children }: { children: ReactNode }
     void voice.start();
   };
   const value: Interaction = {
-    open, mode, state: voice.state, error: mode === 'voice' ? sendError || voice.error : sendError, interim: voice.interim,
+    open, mode, state: voice.state, error: runError || (mode === 'voice' ? sendError || voice.error : sendError), interim: voice.interim,
     sending: sending || !!agent?.isRunning, ready: voice.ready, spoken, speaking,
     inputStream: nativeSelected ? native.inputStream : dictation.inputStream,
     outputStream: spoken ? native.outputStream : null,
     text, voice: toggleVoice,
     toggleSpoken: () => { setSpoken(v => !v); stopSpeech(); },
     stopRun: () => {
+      stoppedByUser.current = true;
       voice.cancel();
       try { copilotkit.stopAgent({ agent }); }
       catch { try { agent.abortRun(); } catch { setSendError('Copilot could not stop. Switch to text to review the run.'); } }

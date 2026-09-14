@@ -1,7 +1,7 @@
 import { codexSessions } from '../codex/service.js';
 import type { CodexBridge } from '../codex/bridge.js';
 import { one, q } from '../db.js';
-import { getProvider, chatCompletionStream, ensureBootstrapProvider, type ChatMessage, type ToolDef } from '../llm/router.js';
+import { getProvider, chatCompletionStream, ensureBootstrapProvider, type ChatMessage, type ChatResult, type ToolDef } from '../llm/router.js';
 import { getTool, TOOL_DEFS } from './tools.js';
 import { getRole } from '../lib/http.js';
 import { approvalGates, approvalStopResult, type ApprovalOutcome } from './approvals.js';
@@ -258,10 +258,22 @@ Workflow integrity:
         assistantContent += delta;
         emit('TEXT_MESSAGE_CONTENT', { messageId, delta });
       };
-      const result = await (codex
-        ? codex.complete(completionOptions, onDelta)
-        : chatCompletionStream(provider!, null, completionOptions, onDelta)
-      ).finally(() => { if (messageId) emit('TEXT_MESSAGE_END', { messageId }); });
+      let result: ChatResult;
+      try {
+        result = await (codex
+          ? codex.complete(completionOptions, onDelta)
+          : chatCompletionStream(provider!, null, completionOptions, onDelta));
+        // Some adapters return a completed answer without calling onDelta. It
+        // must reach AG-UI, not just the persisted thread. Never echo a reply
+        // that was already streamed; close its envelope only after this fallback.
+        if (!assistantContent && result.content) onDelta(result.content);
+        if (!assistantContent.trim() && !result.tool_calls.length) {
+          throw new Error('The AI returned an empty response. Check AI setup and retry your message.');
+        }
+        result.content ||= assistantContent || null;
+      } finally {
+        if (messageId) emit('TEXT_MESSAGE_END', { messageId });
+      }
 
       if (!result.tool_calls.length) {
         thread.push({ role: 'assistant', content: result.content ?? '' });

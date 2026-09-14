@@ -17,7 +17,7 @@ import '../../src/index.css';
 import styles from 'virtual:copilotkit-v2-styles';
 const style = document.createElement('style'); style.textContent = styles; document.head.append(style);
 const spaceId = '10000000-0000-4000-8000-000000000001';
-const fixture = (window as any).controlsFixture = { calls: [] as any[], stoppedTracks: 0, permissionRequests: 0, deferPermission: false, denyPermission: false, grant: () => {}, hideMascot: () => {}, studio: () => {} };
+const fixture = (window as any).controlsFixture = { calls: [] as any[], nextRun: '' as string, stoppedTracks: 0, permissionRequests: 0, deferPermission: false, denyPermission: false, grant: () => {}, hideMascot: () => {}, studio: () => {} };
 useApp.setState({ currentSpaceId: spaceId, user: { id: 'tester', name: 'Test author', email: 'tester@example.invalid', onboarding: { welcomed: true }, mascot: { ...DEFAULT_MASCOT, enabled: false } } as any, spaces: [{ id: spaceId, name: 'Robotics lab', kind: 'team', icon: '', role: 'owner' }], shellMode: 'simple' });
 fixture.hideMascot = () => useApp.setState(s => ({ user: { ...s.user, mascot: { ...DEFAULT_MASCOT, enabled: false } } as any }));
 fixture.studio = () => useApp.getState().setShellMode('studio');
@@ -28,6 +28,12 @@ class FixtureAgent extends AbstractAgent {
       const messageId = crypto.randomUUID();
       const send = (type: string, rest = {}) => subscriber.next({ type, ...rest } as BaseEvent);
       send('RUN_STARTED', { threadId: input.threadId, runId: input.runId });
+      const failure = fixture.nextRun; fixture.nextRun = '';
+      if (failure === 'transport-error') { subscriber.error(new Error('Network request failed: PRIVATE-UPSTREAM-DETAIL')); return; }
+      if (failure === 'server-error' || failure === 'empty-error') {
+        send('RUN_ERROR', { message: failure === 'empty-error' ? 'The AI returned an empty response.' : 'Selected Codex account needs sign-in. PRIVATE-UPSTREAM-DETAIL' });
+        subscriber.complete(); return;
+      }
       send('TEXT_MESSAGE_START', { messageId, role: 'assistant' });
       send('TEXT_MESSAGE_CONTENT', { messageId, delta: `Received in the same Copilot conversation: ${input.messages.filter((m: any) => m.role === 'user').at(-1)?.content}` });
       send('TEXT_MESSAGE_END', { messageId });
